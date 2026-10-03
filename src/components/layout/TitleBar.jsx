@@ -1,9 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Minus, Square, X, Maximize2, Terminal, Cloud, CloudOff, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Minus, Square, X, Maximize2, Cloud, CloudOff, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { ShopLogo } from '../shop/ShopLogo';
+import { APP_NAME } from '../../lib/appInfo';
 
 export function TitleBar() {
     const [time, setTime] = useState(new Date());
-    const [syncStatus, setSyncStatus] = useState({ status: 'idle', details: null });
+    // Sync is optional and off unless a sync transport is configured
+    const [syncStatus, setSyncStatus] = useState({ status: 'idle', enabled: false, details: null });
+    const { settings } = useSettingsStore();
 
     useEffect(() => {
         const timer = setInterval(() => setTime(new Date()), 1000);
@@ -82,12 +87,10 @@ export function TitleBar() {
         <div className="h-10 bg-dark-secondary border-b border-dark-border flex items-center justify-between px-4 titlebar-drag">
             {/* Logo */}
             <div className="flex items-center gap-3 titlebar-no-drag">
-                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                    <Terminal size={14} className="text-white" />
-                </div>
+                <ShopLogo fileName={settings.shopLogo} size={24} />
                 <div className="flex flex-col leading-none">
-                    <span className="font-bold text-sm bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Cirvex One</span>
-                    <span className="text-[9px] text-zinc-500 font-medium">Powered by Gemini AI</span>
+                    <span className="font-bold text-sm text-white truncate max-w-[240px]">{settings.businessName || APP_NAME}</span>
+                    <span className="text-[9px] text-zinc-500 font-medium">{APP_NAME}</span>
                 </div>
             </div>
 

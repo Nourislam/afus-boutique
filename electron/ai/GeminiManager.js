@@ -175,7 +175,7 @@ class GeminiManager {
 
         try {
             const response = await this.currentModel.invoke([
-                new SystemMessage("You are a smart retail assistant for 'Cirvex One'."),
+                new SystemMessage("You are a smart retail assistant for this clothing store's point of sale system."),
                 new HumanMessage(prompt)
             ]);
             return response.content;
@@ -291,7 +291,7 @@ class GeminiManager {
             
             // System Prompt with Injected Context
             messages.push(new SystemMessage(
-                `You are Cirvex One AI, a helpful assistant for this POS system.
+                `You are a helpful assistant for this clothing store's POS system.
                  You have access to the business's real-time data which is provided below.
                  ALWAYS use this data to answer questions about sales, inventory, or trends.
                  

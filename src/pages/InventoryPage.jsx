@@ -21,6 +21,7 @@ export default function InventoryPage() {
     const [showLogsModal, setShowLogsModal] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [variantsByProduct, setVariantsByProduct] = useState({});
 
     const { currentEmployee } = useAuthStore();
     const { settings, loadSettings } = useSettingsStore();
@@ -32,11 +33,15 @@ export default function InventoryPage() {
 
     const loadData = async () => {
         try {
-            const [productsData, lowStock, logs] = await Promise.all([
+            const [productsData, lowStock, logs, allVariants] = await Promise.all([
                 window.electronAPI.products.getAll(),
                 window.electronAPI.inventory.getLowStock(),
                 window.electronAPI.inventory.getLogs(),
+                window.electronAPI.catalog.searchVariants('', 10000),
             ]);
+            const byProduct = {};
+            for (const v of allVariants) (byProduct[v.product_id] = byProduct[v.product_id] || []).push(v);
+            setVariantsByProduct(byProduct);
             setProducts(productsData);
             setLowStockProducts(lowStock);
             setInventoryLogs(logs);
@@ -133,18 +138,24 @@ export default function InventoryPage() {
                             <span className="font-semibold">Low Stock Alert</span>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {lowStockProducts.slice(0, 4).map(product => (
+                            {lowStockProducts.slice(0, 8).map(row => (
                                 <div
-                                    key={product.id}
+                                    key={row.variant_id || row.product_id}
                                     className="p-3 rounded-lg bg-dark-tertiary/50"
                                 >
-                                    <p className="font-medium truncate">{product.name}</p>
+                                    <p className="font-medium truncate">{row.product_name}</p>
+                                    {(row.color || row.size) && (
+                                        <p className="text-xs text-zinc-300 truncate">{[row.color, row.size].filter(Boolean).join(' / ')}</p>
+                                    )}
                                     <p className="text-sm text-amber-400">
-                                        {product.stock_quantity} remaining
+                                        {row.stock_quantity} remaining
                                     </p>
                                 </div>
                             ))}
                         </div>
+                        {lowStockProducts.length > 8 && (
+                            <p className="text-xs text-amber-400 mt-2">+ {lowStockProducts.length - 8} more variants/products are low on stock</p>
+                        )}
                     </div>
                 )}
 
@@ -174,7 +185,22 @@ export default function InventoryPage() {
                                             <div className="w-10 h-10 rounded-lg bg-dark-tertiary flex items-center justify-center">
                                                 <Package className="w-5 h-5 text-zinc-600" />
                                             </div>
-                                            <span className="font-medium">{product.name}</span>
+                                            <div className="min-w-0">
+                                                <span className="font-medium">{product.name}</span>
+                                                {variantsByProduct[product.id]?.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                        {variantsByProduct[product.id].map(v => (
+                                                            <span
+                                                                key={v.id}
+                                                                title={v.sku}
+                                                                className={`text-[11px] px-1.5 py-0.5 rounded bg-dark-tertiary ${v.stock_quantity <= 0 ? 'text-red-400' : v.stock_quantity <= v.min_stock_level ? 'text-amber-400' : 'text-zinc-300'}`}
+                                                            >
+                                                                {[v.color, v.size].filter(Boolean).join('/') || v.sku}: {v.stock_quantity}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </TableCell>
                                     <TableCell className="text-zinc-400">{product.sku || '-'}</TableCell>
@@ -242,22 +268,30 @@ export default function InventoryPage() {
                                     className="flex items-center justify-between p-3 rounded-lg bg-dark-tertiary"
                                 >
                                     <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-lg ${log.type === 'add' ? 'bg-green-500/20' : 'bg-red-500/20'
-                                            }`}>
-                                            {log.type === 'add' ? (
-                                                <Plus className={`w-4 h-4 text-green-400`} />
-                                            ) : (
-                                                <Minus className={`w-4 h-4 text-red-400`} />
-                                            )}
-                                        </div>
-                                        <div>
-                                            <p className="font-medium">
-                                                {log.type === 'add' ? '+' : '-'}{log.quantity_change} units
-                                            </p>
-                                            <p className="text-sm text-zinc-400">
-                                                {log.reason || 'No reason specified'} • {log.employee_name}
-                                            </p>
-                                        </div>
+                                        {(() => {
+                                            // Older manual adjustments stored a positive quantity with type 'remove'
+                                            const isOut = log.quantity_change < 0 || log.type === 'remove';
+                                            const amount = Math.abs(log.quantity_change);
+                                            return (
+                                                <>
+                                                    <div className={`p-2 rounded-lg ${isOut ? 'bg-red-500/20' : 'bg-green-500/20'}`}>
+                                                        {isOut ? <Minus className="w-4 h-4 text-red-400" /> : <Plus className="w-4 h-4 text-green-400" />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-medium">
+                                                            {isOut ? '-' : '+'}{amount} units
+                                                            {(log.variant_color || log.variant_size) && (
+                                                                <span className="ml-2 text-sm text-accent-primary">{[log.variant_color, log.variant_size].filter(Boolean).join(' / ')}</span>
+                                                            )}
+                                                            {log.variant_sku && <span className="ml-2 text-xs font-mono text-zinc-500">{log.variant_sku}</span>}
+                                                        </p>
+                                                        <p className="text-sm text-zinc-400">
+                                                            {log.reason || log.type || 'No reason specified'}{log.employee_name ? ` • ${log.employee_name}` : ''}
+                                                        </p>
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                     <div className="text-right">
                                         <p className="text-sm text-zinc-400">
@@ -282,14 +316,29 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
     const [quantity, setQuantity] = useState('');
     const [reason, setReason] = useState('');
     const [loading, setLoading] = useState(false);
+    const [variants, setVariants] = useState([]);
+    const [variantId, setVariantId] = useState('');
 
     useEffect(() => {
         if (isOpen) {
             setQuantity('');
             setReason('');
             setAdjustType('add');
+            setVariants([]);
+            setVariantId('');
+            // Clothing products are counted per colour/size
+            if (product?.variant_count > 0) {
+                window.electronAPI.catalog.getVariants(product.id).then((rows) => {
+                    setVariants(rows);
+                    if (rows.length === 1) setVariantId(rows[0].id);
+                });
+            }
         }
-    }, [isOpen]);
+    }, [isOpen, product]);
+
+    const selectedVariant = variants.find(v => v.id === variantId) || null;
+    const needsVariant = product?.variant_count > 0;
+    const currentStock = needsVariant ? (selectedVariant?.stock_quantity ?? 0) : (product?.stock_quantity ?? 0);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -300,7 +349,12 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
             return;
         }
 
-        if (adjustType === 'remove' && qty > product.stock_quantity) {
+        if (needsVariant && !selectedVariant) {
+            toast.error('Choose the colour / size');
+            return;
+        }
+
+        if (adjustType === 'remove' && qty > currentStock) {
             toast.error('Cannot remove more than current stock');
             return;
         }
@@ -309,6 +363,7 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
         try {
             await window.electronAPI.products.updateStock({
                 id: product.id,
+                variantId: selectedVariant ? selectedVariant.id : null,
                 quantity: qty,
                 type: adjustType,
                 reason,
@@ -333,8 +388,26 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
                         {/* Product Info */}
                         <div className="p-4 rounded-lg bg-dark-tertiary">
                             <p className="font-medium">{product.name}</p>
-                            <p className="text-sm text-zinc-400">Current Stock: {product.stock_quantity}</p>
+                            <p className="text-sm text-zinc-400">
+                                Current Stock: {currentStock}
+                                {needsVariant && ` (total for all variants: ${product.stock_quantity})`}
+                            </p>
                         </div>
+
+                        {needsVariant && (
+                            <Select
+                                label="Colour / size *"
+                                value={variantId}
+                                onChange={setVariantId}
+                                options={[
+                                    { value: '', label: 'Select variant' },
+                                    ...variants.map(v => ({
+                                        value: v.id,
+                                        label: `${[v.color, v.size].filter(Boolean).join(' / ') || v.sku} — ${v.sku} (stock ${v.stock_quantity})`,
+                                    })),
+                                ]}
+                            />
+                        )}
 
                         {/* Adjustment Type */}
                         <div className="grid grid-cols-2 gap-2">
@@ -394,8 +467,8 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
                                 <p className="text-sm text-zinc-400">New Stock Level</p>
                                 <p className="text-2xl font-bold">
                                     {adjustType === 'add'
-                                        ? product.stock_quantity + parseInt(quantity || 0)
-                                        : product.stock_quantity - parseInt(quantity || 0)
+                                        ? currentStock + parseInt(quantity || 0)
+                                        : currentStock - parseInt(quantity || 0)
                                     }
                                 </p>
                             </div>

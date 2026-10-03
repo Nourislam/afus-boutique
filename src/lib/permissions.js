@@ -59,8 +59,6 @@ export const PERMISSIONS = {
 
     // Settings
     SETTINGS_VIEW: 'settings.view',
-    // Profile
-    PROFILE_VIEW: 'profile.view',
 };
 
 // Role-Permission mapping
@@ -92,7 +90,6 @@ const ROLE_PERMISSIONS = {
         PERMISSIONS.PROMOTIONS_VIEW,
         PERMISSIONS.PROMOTIONS_MANAGE,
         PERMISSIONS.REPORTS_VIEW,
-        'profile.view', // Added manually or use PERMISSIONS object after re-import if splitting file, here string literal is safer for immediate patching
     ],
 
     [ROLES.CASHIER]: [
@@ -104,7 +101,6 @@ const ROLE_PERMISSIONS = {
         PERMISSIONS.CUSTOMERS_CREATE,
         PERMISSIONS.CUSTOMERS_EDIT,
         PERMISSIONS.GIFT_CARDS_VIEW,
-        'profile.view',
     ],
 };
 

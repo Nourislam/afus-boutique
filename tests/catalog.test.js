@@ -1,0 +1,212 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createRequire } from 'module';
+import { createLegacyDb, createApi } from './helpers/testDb';
+
+const require = createRequire(import.meta.url);
+const { applyMigrations, getPendingMigrations, getColumns } = require('../electron/database/migrations');
+const catalog = require('../electron/services/catalogService');
+
+function makeVariants(colors, sizes, stock = 5) {
+    const list = [];
+    for (const color of colors) {
+        for (const size of sizes) list.push({ color, size, stock_quantity: stock, min_stock_level: 2 });
+    }
+    return list;
+}
+
+describe('versioned migrations', () => {
+    it('upgrades a legacy database in place and keeps existing data', async () => {
+        const db = await createLegacyDb();
+        db.run("INSERT INTO products (id, sku, name, price, stock_quantity) VALUES ('p1', 'OLD-1', 'Old product', 10, 7)");
+        db.run("INSERT INTO sales (id, receipt_number, subtotal, total) VALUES ('s1', 'R-1', 10, 10)");
+        db.run("INSERT INTO sale_items (id, sale_id, product_id, product_name, quantity, unit_price, total) VALUES ('si1', 's1', 'p1', 'Old product', 1, 10, 10)");
+
+        const applied = applyMigrations(db);
+        expect(applied).toContain('2025_01_clothing_variants');
+
+        expect(getColumns(db, 'products')).toEqual(expect.arrayContaining(['brand', 'has_variants']));
+        expect(getColumns(db, 'sale_items')).toEqual(expect.arrayContaining(['variant_id', 'variant_label', 'sku']));
+        expect(getColumns(db, 'inventory_logs')).toContain('variant_id');
+
+        const api = createApi(db);
+        expect(api.get('SELECT * FROM products WHERE id = ?', ['p1'])).toMatchObject({ name: 'Old product', stock_quantity: 7, has_variants: 0 });
+        expect(api.get('SELECT COUNT(*) AS n FROM sale_items').n).toBe(1);
+    });
+
+    it('removes the legacy online activation data and disables the old hosted sync', async () => {
+        const db = await createLegacyDb();
+        db.run("INSERT INTO settings (key, value) VALUES ('activation_data', ?)", [JSON.stringify({ uid: 'x', email: 'a@b.c' })]);
+        db.run("INSERT INTO settings (key, value) VALUES ('sync_settings', ?)", [JSON.stringify({ provider: 'firebase', interval: '5' })]);
+        db.run("INSERT INTO settings (key, value) VALUES ('store_config', ?)", [JSON.stringify({ businessName: 'My Shop' })]);
+        applyMigrations(db);
+        const api = createApi(db);
+        expect(api.get("SELECT * FROM settings WHERE key = 'activation_data'")).toBeNull();
+        expect(JSON.parse(api.get("SELECT value FROM settings WHERE key = 'sync_settings'").value)).toEqual({ provider: 'none', interval: '5' });
+        // Shop data is untouched
+        expect(JSON.parse(api.get("SELECT value FROM settings WHERE key = 'store_config'").value).businessName).toBe('My Shop');
+    });
+
+    it('is idempotent', async () => {
+        const db = await createLegacyDb();
+        applyMigrations(db);
+        expect(getPendingMigrations(db)).toHaveLength(0);
+        expect(applyMigrations(db)).toEqual([]);
+    });
+
+    it('calls beforeApply (backup hook) only when something is pending', async () => {
+        const db = await createLegacyDb();
+        let calls = 0;
+        applyMigrations(db, { beforeApply: () => { calls++; } });
+        applyMigrations(db, { beforeApply: () => { calls++; } });
+        expect(calls).toBe(1);
+    });
+});
+
+describe('catalog service', () => {
+    let db;
+    let api;
+
+    beforeEach(async () => {
+        db = await createLegacyDb();
+        applyMigrations(db);
+        api = createApi(db);
+    });
+
+    it('generates deterministic, unique SKUs', () => {
+        const variants = makeVariants(['Black', 'White'], ['M', 'L']);
+        const skus = catalog.generateSkus(api, { name: 'T-Shirt Nike Basic' }, variants);
+        expect(skus).toEqual(['TSH-BLK-M-001', 'TSH-BLK-L-001', 'TSH-WHT-M-001', 'TSH-WHT-L-001']);
+        expect(catalog.generateSkus(api, { name: 'T-Shirt Nike Basic' }, variants)).toEqual(skus);
+    });
+
+    it('maps French and Arabic colour names to the same codes', () => {
+        const skus = catalog.generateSkus(api, { name: 'Robe' }, [{ color: 'Noir', size: 'S' }, { color: 'أبيض', size: 'S' }]);
+        expect(skus).toEqual(['ROB-BLK-S-001', 'ROB-WHT-S-001']);
+    });
+
+    it('skips sequence numbers already taken in the database', () => {
+        const variants = makeVariants(['Black'], ['M']).map(v => ({ ...v, sku: 'TSH-BLK-M-001' }));
+        catalog.saveProduct(api, { id: 'p1', name: 'T-Shirt', price: 20 }, variants, { isNew: true });
+        const [next] = catalog.generateSkus(api, { name: 'T-Shirt Other' }, [{ color: 'Black', size: 'M' }]);
+        expect(next).toBe('TSH-BLK-M-002');
+    });
+
+    it('creates a product with variants, initial stock logs and derived product stock', () => {
+        const variants = makeVariants(['Black', 'White'], ['S', 'M']);
+        const skus = catalog.generateSkus(api, { name: 'Tee' }, variants);
+        variants.forEach((v, i) => { v.sku = skus[i]; });
+        variants[1].stock_quantity = 8;
+
+        const result = catalog.saveProduct(api, { id: 'p1', name: 'Tee', price: 25 }, variants, { isNew: true });
+        expect(result.product.has_variants).toBe(1);
+        expect(result.variants).toHaveLength(4);
+        expect(result.product.stock_quantity).toBe(5 + 8 + 5 + 5);
+        // QR code defaults to the SKU
+        expect(result.variants[0].qr_code).toBe(result.variants[0].sku);
+        const logs = api.all("SELECT * FROM inventory_logs WHERE type = 'initial'");
+        expect(logs).toHaveLength(4);
+        expect(logs.every(l => l.variant_id)).toBe(true);
+    });
+
+    it('rejects duplicate SKUs within a product and across products', () => {
+        const dup = [
+            { color: 'Black', size: 'M', sku: 'DUP-1', stock_quantity: 1 },
+            { color: 'Black', size: 'L', sku: 'dup-1', stock_quantity: 1 },
+        ];
+        expect(() => catalog.saveProduct(api, { id: 'p1', name: 'A', price: 1 }, dup, { isNew: true })).toThrow(/also used by variant 1/);
+
+        catalog.saveProduct(api, { id: 'p1', name: 'A', price: 1 }, [{ color: 'Black', size: 'M', sku: 'AAA-1', stock_quantity: 1 }], { isNew: true });
+        expect(() => catalog.saveProduct(api, { id: 'p2', name: 'B', price: 1 }, [{ color: 'Red', size: 'M', sku: 'aaa-1', stock_quantity: 1 }], { isNew: true }))
+            .toThrow(/already used by A/);
+        // A simple product cannot take a variant SKU either
+        expect(() => catalog.saveProduct(api, { id: 'p3', name: 'C', price: 1, sku: 'AAA-1' }, [], { isNew: true })).toThrow(/already used/);
+        // Nothing was half-written by the failed saves
+        expect(api.get("SELECT COUNT(*) AS n FROM products WHERE id IN ('p2','p3')").n).toBe(0);
+    });
+
+    it('rejects identifiers that scanners cannot type reliably', () => {
+        expect(catalog.validateIdentifier('TSH BLK')).toMatch(/may only contain/);
+        expect(catalog.validateIdentifier('تيشيرت')).toMatch(/may only contain/);
+        expect(catalog.validateIdentifier('tsh-blk-m-001')).toBeNull();
+    });
+
+    it('looks up variants by QR, SKU and barcode, case-insensitively', () => {
+        catalog.saveProduct(api, { id: 'p1', name: 'Jeans', price: 50 }, [
+            { color: 'Blue', size: '32', sku: 'JEA-BLU-32-001', barcode: '6130000000017', price: 55, stock_quantity: 3 },
+        ], { isNew: true });
+
+        const byQr = catalog.lookupCode(api, ' jea-blu-32-001\n');
+        expect(byQr.type).toBe('variant');
+        expect(byQr.variant.size).toBe('32');
+        expect(byQr.variant.effective_price).toBe(55);
+
+        expect(catalog.lookupCode(api, '6130000000017').variant.sku).toBe('JEA-BLU-32-001');
+        expect(catalog.lookupCode(api, 'NOPE')).toBeNull();
+    });
+
+    it('keeps the printed QR valid after the SKU changes, until it is regenerated', () => {
+        const { variants } = catalog.saveProduct(api, { id: 'p1', name: 'Tee', price: 10 }, [
+            { color: 'Red', size: 'M', sku: 'TEE-RED-M-001', stock_quantity: 1 },
+        ], { isNew: true });
+        const v = variants[0];
+        catalog.saveProduct(api, { id: 'p1', name: 'Tee', price: 12 }, [{ ...v, sku: 'TEE-RED-M-900' }]);
+
+        expect(catalog.lookupCode(api, 'TEE-RED-M-001').variant.id).toBe(v.id);
+        expect(catalog.lookupCode(api, 'TEE-RED-M-900').variant.id).toBe(v.id);
+
+        const regenerated = catalog.regenerateQrCode(api, v.id);
+        expect(regenerated.qr_code).toBe('TEE-RED-M-900');
+    });
+
+    it('moves stock only on the chosen variant and logs it', () => {
+        const { variants } = catalog.saveProduct(api, { id: 'p1', name: 'Tee', price: 10 }, [
+            { color: 'Black', size: 'M', sku: 'T-B-M', stock_quantity: 8 },
+            { color: 'Black', size: 'L', sku: 'T-B-L', stock_quantity: 5 },
+        ], { isNew: true });
+        const blackM = variants.find(v => v.size === 'M');
+
+        catalog.adjustStock(api, { productId: 'p1', variantId: blackM.id, delta: -1, type: 'sale', reason: 'Sale #1' });
+
+        const after = catalog.getVariants(api, 'p1');
+        expect(after.find(v => v.size === 'M').stock_quantity).toBe(7);
+        expect(after.find(v => v.size === 'L').stock_quantity).toBe(5);
+        expect(api.get('SELECT stock_quantity FROM products WHERE id = ?', ['p1']).stock_quantity).toBe(12);
+        const log = api.get("SELECT * FROM inventory_logs WHERE type = 'sale'");
+        expect(log).toMatchObject({ variant_id: blackM.id, quantity_change: -1, quantity_before: 8, quantity_after: 7 });
+    });
+
+    it('refuses product-level stock moves on products with variants', () => {
+        catalog.saveProduct(api, { id: 'p1', name: 'Tee', price: 10 }, [{ color: 'Black', size: 'M', sku: 'X-1', stock_quantity: 1 }], { isNew: true });
+        expect(() => catalog.adjustStock(api, { productId: 'p1', delta: -1, type: 'sale' })).toThrow(/choose a variant/);
+    });
+
+    it('keeps simple products (no variants) working as before', () => {
+        catalog.saveProduct(api, { id: 'p1', name: 'Belt', price: 15, sku: 'BELT-1', stock_quantity: 4 }, [], { isNew: true });
+        expect(catalog.lookupCode(api, 'belt-1')).toMatchObject({ type: 'product' });
+        catalog.adjustStock(api, { productId: 'p1', delta: -1, type: 'sale' });
+        expect(api.get('SELECT stock_quantity FROM products WHERE id = ?', ['p1']).stock_quantity).toBe(3);
+    });
+
+    it('deactivates (never deletes) variants removed from the form', () => {
+        const { variants } = catalog.saveProduct(api, { id: 'p1', name: 'Tee', price: 10 }, [
+            { color: 'Black', size: 'M', sku: 'R-1', stock_quantity: 1 },
+            { color: 'Black', size: 'L', sku: 'R-2', stock_quantity: 1 },
+        ], { isNew: true });
+        catalog.saveProduct(api, { id: 'p1', name: 'Tee', price: 10 }, [variants[0]]);
+        const all = catalog.getVariants(api, 'p1', { includeInactive: true });
+        expect(all).toHaveLength(2);
+        expect(all.find(v => v.sku === 'R-2').is_active).toBe(0);
+        // The retired SKU stays reserved
+        expect(catalog.findIdentifierOwner(api, 'R-2')).not.toBeNull();
+    });
+
+    it('reports low stock per variant', () => {
+        catalog.saveProduct(api, { id: 'p1', name: 'Tee', price: 10 }, [
+            { color: 'Black', size: 'M', sku: 'L-1', stock_quantity: 1, min_stock_level: 2 },
+            { color: 'Black', size: 'L', sku: 'L-2', stock_quantity: 9, min_stock_level: 2 },
+        ], { isNew: true });
+        const low = catalog.getLowStock(api);
+        expect(low).toHaveLength(1);
+        expect(low[0]).toMatchObject({ sku: 'L-1', size: 'M' });
+    });
+});

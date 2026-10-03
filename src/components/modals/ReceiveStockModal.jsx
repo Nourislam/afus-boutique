@@ -46,6 +46,7 @@ export default function ReceiveStockModal({ isOpen, onClose, onComplete, purchas
             .map(item => ({
                 po_item_id: item.id,
                 product_id: item.product_id,
+                variant_id: item.variant_id || null,
                 product_name: item.product_name,
                 quantity_ordered: item.quantity,
                 quantity_received: item.receive_now
@@ -110,7 +111,10 @@ export default function ReceiveStockModal({ isOpen, onClose, onComplete, purchas
                                         const remaining = Math.max(0, item.quantity - received);
                                         return (
                                             <tr key={item.id} className="hover:bg-zinc-800/50">
-                                                <td className="p-3 font-medium">{item.product_name}</td>
+                                                <td className="p-3 font-medium">
+                                                    {item.product_name}
+                                                    {item.variant_label && <div className="text-xs text-accent-primary">{item.variant_label}</div>}
+                                                </td>
                                                 <td className="p-3 text-center">{item.quantity}</td>
                                                 <td className="p-3 text-center text-zinc-400">{received}</td>
                                                 <td className="p-3 text-center text-amber-500 font-medium">{remaining}</td>

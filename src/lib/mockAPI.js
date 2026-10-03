@@ -37,7 +37,7 @@ let mockBundles = [];
 let mockPromotions = [];
 
 const mockSettings = {
-    businessName: 'POSbyCirvex Demo',
+    businessName: 'Demo Shop',
     businessAddress: '123 Demo Street',
     businessPhone: '555-0000',
     businessEmail: 'demo@pos.com',

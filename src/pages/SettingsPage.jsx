@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Building, Receipt, Percent, Database, Save, RefreshCw, Download, Upload, Mail, Cloud, Globe, Lock, ShieldCheck, CheckCircle, ExternalLink, Unlink } from 'lucide-react';
+import { Building, Receipt, Percent, Database, Save, Download, Upload, Mail, Cloud, Lock, CheckCircle, Printer, ScanLine, Hash } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, TextArea } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
@@ -9,19 +9,25 @@ import { Tabs } from '../components/ui/Tabs';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
 import { currencies } from '../data/currencies';
-import { db, auth } from '../lib/firebase';
-import { collection, getDocs, doc, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { ShopInfoForm } from '../components/settings/ShopInfoForm';
+import { PrinterSettingsForm } from '../components/settings/PrinterSettingsForm';
+import { ScannerSettingsForm } from '../components/settings/ScannerSettingsForm';
+import { DEFAULT_SHOP, LANGUAGES, loadShopConfiguration, saveShopConfiguration } from '../lib/shopSettings';
+import { useSettingsStore } from '../stores/settingsStore';
 import { SystemLogs } from '../components/settings/SystemLogs';
 import { EcommerceSettings } from '../components/settings/EcommerceSettings';
 
 
 const baseTabs = [
-    { id: 'business', label: 'Business Info' },
-    { id: 'tax', label: 'Tax Settings' },
-    { id: 'mail', label: 'Email Settings' },
-    { id: 'cloud', label: 'Cloud Sync' },
-    { id: 'ecommerce', label: 'E-commerce' },
+    { id: 'business', label: 'Shop' },
+    { id: 'tax', label: 'Tax & Currency' },
     { id: 'receipt', label: 'Receipt' },
+    { id: 'printers', label: 'Printers & Labels' },
+    { id: 'scanner', label: 'Scanner' },
+    { id: 'sku', label: 'SKU / QR' },
+    { id: 'mail', label: 'Email Settings' },
+    { id: 'cloud', label: 'Sync' },
+    { id: 'ecommerce', label: 'E-commerce' },
     { id: 'backup', label: 'Backup' },
 ];
 
@@ -42,19 +48,20 @@ export default function SettingsPage() {
         email_host: 'smtp.gmail.com',
         email_port: 587,
         email_secure: false,
-        sync_provider: 'none', // 'none', 'firebase'
+        sync_provider: 'none', // only 'none' (local) is available
         sync_interval: '0', // 0 = Realtime/Instant, 5, 15, 30, 60
     });
     const [loading, setLoading] = useState(true);
-    const [isManualSyncing, setIsManualSyncing] = useState(false);
-    const [importing, setImporting] = useState(false);
-    const [importProgress, setImportProgress] = useState('');
-
-
     const [saving, setSaving] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-    const [syncStatus, setSyncStatus] = useState({ status: 'idle', details: null });
+    // Printer, label, scanner and SKU configuration (separate settings keys)
+    const [printers, setPrinters] = useState(null);
+    const [labels, setLabels] = useState({});
+    const [scanner, setScanner] = useState(null);
+    const [sku, setSku] = useState(null);
+    const [appInfo, setAppInfo] = useState(null);
+    const reloadStoreSettings = useSettingsStore(state => state.loadSettings);
 
 
 
@@ -66,27 +73,6 @@ export default function SettingsPage() {
     // Load initial settings
     useEffect(() => {
         loadSettings();
-    }, []);
-
-    useEffect(() => {
-        const handleStatusChange = (data) => {
-            setSyncStatus(data || { status: 'idle' });
-            const status = data?.status;
-            if (status === 'idle' || status === 'error') {
-                setIsManualSyncing(false);
-            } else if (status === 'syncing') {
-                setIsManualSyncing(true);
-            }
-        };
-
-        let unsubscribe;
-        if (window.electronAPI?.sync) {
-            unsubscribe = window.electronAPI.sync.onStatusChange(handleStatusChange);
-        }
-
-        return () => {
-            if (unsubscribe) unsubscribe();
-        };
     }, []);
 
     const loadSettings = async () => {
@@ -136,7 +122,14 @@ export default function SettingsPage() {
                 } catch (e) { console.error('Failed to parse sync_settings', e); }
             }
 
-            setSettings(prev => ({ ...prev, ...parsedSettings }));
+            setSettings(prev => ({ ...prev, ...DEFAULT_SHOP, ...parsedSettings }));
+
+            const config = await loadShopConfiguration();
+            setPrinters(config.printers);
+            setLabels(config.labels);
+            setScanner(config.scanner);
+            setSku(config.sku);
+            window.electronAPI.app.getInfo().then(setAppInfo).catch(() => { });
         } catch (error) {
             toast.error('Failed to load settings');
             console.error(error);
@@ -149,19 +142,16 @@ export default function SettingsPage() {
         setSaving(true);
         try {
             // Group settings into JSON blobs
-            const storeConfig = {
-                businessName: settings.businessName,
-                businessAddress: settings.businessAddress,
-                businessPhone: settings.businessPhone,
-                businessEmail: settings.businessEmail,
-                taxRate: settings.taxRate,
-                taxName: settings.taxName,
-                taxType: settings.taxType,
-                currency: settings.currency,
-                currencySymbol: settings.currencySymbol,
-                receiptHeader: settings.receiptHeader,
-                receiptFooter: settings.receiptFooter,
-            };
+            if (!String(settings.businessName || '').trim()) {
+                toast.error('The shop name cannot be empty');
+                setSaving(false);
+                return;
+            }
+            const storeConfig = {};
+            for (const key of Object.keys(DEFAULT_SHOP)) storeConfig[key] = settings[key];
+            storeConfig.poSignatureName = settings.poSignatureName || '';
+            storeConfig.poSignatureTitle = settings.poSignatureTitle || '';
+            storeConfig.poSignatureImage = settings.poSignatureImage || '';
 
             const emailConfig = {
                 host: settings.email_host,
@@ -177,15 +167,10 @@ export default function SettingsPage() {
             };
 
             // Save structured data
-            await window.electronAPI.settings.set({ key: 'store_config', value: storeConfig });
             await window.electronAPI.settings.set({ key: 'email_settings', value: emailConfig });
             await window.electronAPI.settings.set({ key: 'sync_settings', value: syncConfig });
-
-            // If sync provider changed, we might need to trigger main process to re-init
-            // For now, just saving.
-
-            // Notify app components that settings changed (triggers SyncProvider reload)
-            window.dispatchEvent(new Event('pos:settings-changed'));
+            await saveShopConfiguration({ shop: storeConfig, printers, labels, scanner, sku });
+            await reloadStoreSettings();
 
             console.log('Settings saved successfully');
             toast.success('Settings saved');
@@ -201,88 +186,6 @@ export default function SettingsPage() {
         setSettings(prev => ({ ...prev, [key]: value }));
     };
 
-
-    const handleSyncNow = async () => {
-        try {
-            setIsManualSyncing(true); // Optimistic UI
-            await window.electronAPI.sync.trigger();
-            toast.info('Sync triggered...');
-        } catch (error) {
-            console.error('Sync trigger failed:', error);
-            toast.error('Sync failed');
-            setIsManualSyncing(false);
-        }
-    };
-
-    const handleForcePush = async () => {
-        if (!confirm('This will re-upload ALL local data to the cloud. Use this if your cloud data is out of sync. Continue?')) return;
-        try {
-            setIsManualSyncing(true); // Share loading state
-            await window.electronAPI.sync.forcePush();
-            toast.success('Full Re-Sync Triggered!');
-        } catch (error) {
-            console.error('Force Sync failed:', error);
-            toast.error('Force Sync failed');
-            setIsManualSyncing(false);
-        }
-    };
-
-    const handleImportFromCloud = async () => {
-        if (!auth.currentUser) {
-            toast.error('You must be logged in to import data.');
-            return;
-        }
-
-        if (!confirm('This will fetch all data from the cloud and update your local database. Existing records with same IDs will be overwritten. Continue?')) {
-            return;
-        }
-
-        setImporting(true);
-        setImportProgress('Starting import...');
-
-        try {
-            const uid = auth.currentUser.uid;
-
-            const collections = [
-                'products', 'customers', 'sales', 'employees',
-                'gift_cards', 'bundles', 'promotions',
-                'categories', 'suppliers', 'purchase_orders', 'receivings', 'supplier_invoices',
-                'sale_items', 'purchase_order_items', 'receiving_items',
-                'credit_sales', 'credit_payments',
-                'quotations', 'quotation_items',
-                'returns', 'return_items', 'supplier_payments'
-            ];
-
-            let totalImported = 0;
-
-            for (const tableName of collections) {
-                setImportProgress(`Importing ${tableName}...`);
-                try {
-                    const colRef = collection(db, 'tenants', uid, tableName);
-                    const snapshot = await getDocs(colRef);
-
-                    if (!snapshot.empty) {
-                        console.log(`Importing ${snapshot.size} records for ${tableName}`);
-                        for (const doc of snapshot.docs) {
-                            await window.electronAPI.sync.incoming(tableName, doc.data());
-                            totalImported++;
-                        }
-                    }
-                } catch (err) {
-                    console.error(`Error importing ${tableName}:`, err);
-                    // Continue to next table
-                }
-            }
-
-            toast.success(`Cloud Import Complete! Processed ${totalImported} records.`);
-            setImportProgress('');
-        } catch (error) {
-            console.error('Import failed:', error);
-            toast.error('Import failed: ' + error.message);
-        } finally {
-            setImporting(false);
-        }
-    };
 
     const handleExport = async () => {
         try {
@@ -365,40 +268,11 @@ export default function SettingsPage() {
                                         <Building className="w-6 h-6 text-accent-primary" />
                                     </div>
                                     <div>
-                                        <h3 className="font-semibold">Business Information</h3>
-                                        <p className="text-sm text-zinc-400">Your business details for receipts and reports</p>
+                                        <h3 className="font-semibold">Shop information</h3>
+                                        <p className="text-sm text-zinc-400">Name, logo and contact details used on receipts, labels and the sales screen</p>
                                     </div>
                                 </div>
-
-                                <div className="grid gap-4">
-                                    <Input
-                                        label="Business Name"
-                                        value={settings.businessName}
-                                        onChange={(e) => handleChange('businessName', e.target.value)}
-                                        placeholder="Enter your business name"
-                                    />
-                                    <TextArea
-                                        label="Business Address"
-                                        value={settings.businessAddress}
-                                        onChange={(e) => handleChange('businessAddress', e.target.value)}
-                                        placeholder="Enter your business address"
-                                    />
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <Input
-                                            label="Phone"
-                                            value={settings.businessPhone}
-                                            onChange={(e) => handleChange('businessPhone', e.target.value)}
-                                            placeholder="Phone number"
-                                        />
-                                        <Input
-                                            label="Email"
-                                            type="email"
-                                            value={settings.businessEmail}
-                                            onChange={(e) => handleChange('businessEmail', e.target.value)}
-                                            placeholder="Email address"
-                                        />
-                                    </div>
-                                </div>
+                                <ShopInfoForm value={settings} onChange={(next) => setSettings(next)} />
                             </Card>
                         )}
 
@@ -457,13 +331,20 @@ export default function SettingsPage() {
                                             }))}
                                         />
                                     </div>
-                                    <Input
-                                        label="Currency Symbol"
-                                        value={settings.currencySymbol}
-                                        onChange={(e) => handleChange('currencySymbol', e.target.value)}
-                                        placeholder="$"
-                                        className="w-24"
-                                    />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <Input
+                                            label="Currency Symbol"
+                                            value={settings.currencySymbol}
+                                            onChange={(e) => handleChange('currencySymbol', e.target.value)}
+                                            placeholder="$"
+                                        />
+                                        <Select
+                                            label="Default language for documents"
+                                            value={settings.defaultLanguage || 'en'}
+                                            onChange={(value) => handleChange('defaultLanguage', value)}
+                                            options={LANGUAGES}
+                                        />
+                                    </div>
                                 </div>
                             </Card>
                         )}
@@ -582,163 +463,111 @@ export default function SettingsPage() {
                                         <Cloud className="w-6 h-6 text-sky-400" />
                                     </div>
                                     <div>
-                                        <h3 className="font-semibold">Cloud Synchronization</h3>
-                                        <p className="text-sm text-zinc-400">Sync your data across multiple devices</p>
+                                        <h3 className="font-semibold">Data &amp; synchronization</h3>
+                                        <p className="text-sm text-zinc-400">How this POS stores its data</p>
                                     </div>
                                 </div>
-
-                                <div className="grid gap-6">
-                                    {/* Provider Selection */}
-                                    <div>
-                                        <label className="text-sm font-medium text-zinc-300 mb-3 block">Sync Provider</label>
-                                        <div className="grid md:grid-cols-3 gap-4">
-                                            <button
-                                                onClick={() => handleChange('sync_provider', 'none')}
-                                                className={`p-4 rounded-xl border-2 text-left transition-all ${settings.sync_provider === 'none'
-                                                    ? 'border-accent-primary bg-accent-primary/10'
-                                                    : 'border-dark-border bg-dark-tertiary hover:border-zinc-600'
-                                                    }`}
-                                            >
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <Lock className="w-5 h-5 text-zinc-400" />
-                                                    {settings.sync_provider === 'none' && <CheckCircle className="w-5 h-5 text-accent-primary" />}
-                                                </div>
-                                                <div className="font-semibold">Local Only</div>
-                                                <div className="text-xs text-zinc-500 mt-1">Data stored on this device only. No syncing.</div>
-                                            </button>
-
-                                            <button
-                                                onClick={() => handleChange('sync_provider', 'firebase')}
-                                                className={`p-4 rounded-xl border-2 text-left transition-all ${settings.sync_provider === 'firebase'
-                                                    ? 'border-accent-primary bg-accent-primary/10'
-                                                    : 'border-dark-border bg-dark-tertiary hover:border-zinc-600'
-                                                    }`}
-                                            >
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <Cloud className="w-5 h-5 text-orange-400" />
-                                                    {settings.sync_provider === 'firebase' && <CheckCircle className="w-5 h-5 text-accent-primary" />}
-                                                </div>
-                                                <div className="font-semibold">Cirvex Cloud</div>
-                                                <div className="text-xs text-zinc-500 mt-1">Managed secure cloud. Best for most users.</div>
-                                            </button>
-
-
-
-
-                                        </div>
+                                <div className="p-4 rounded-xl border-2 border-accent-primary bg-accent-primary/10">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <Lock className="w-5 h-5 text-zinc-300" />
+                                        <CheckCircle className="w-5 h-5 text-accent-primary" />
                                     </div>
-
-
-
-                                    {/* Firebase Info */}
-                                    {settings.sync_provider === 'firebase' && (
-                                        <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-200 text-sm">
-                                            <p className="font-semibold flex items-center gap-2 mb-1">
-                                                <CheckCircle className="w-4 h-4" />
-                                                Ready to Sync
-                                            </p>
-                                            <p className="opacity-80">
-                                                Your data will be synced to our secure cloud servers. You can access your inventory from any other device logged in with this account.
-                                            </p>
-                                        </div>
+                                    <div className="font-semibold">Local mode (active)</div>
+                                    <div className="text-sm text-zinc-400 mt-1">
+                                        All products, sales, customers and settings are stored in a database on this computer.
+                                        The POS works without internet and without any account.
+                                    </div>
+                                    {appInfo && (
+                                        <div className="text-xs text-zinc-500 mt-3 font-mono break-all">{appInfo.databasePath}</div>
                                     )}
+                                </div>
+                                <div className="p-4 rounded-lg bg-dark-tertiary border border-dark-border text-sm text-zinc-400 space-y-2">
+                                    <p className="font-medium text-zinc-300">Online store (future)</p>
+                                    <p>
+                                        An online store can later be connected through a secure synchronization service. The website will
+                                        never access this computer&apos;s database directly; this POS will remain the main record of stock and sales.
+                                    </p>
+                                    <p>No synchronization service is configured. Use the Backup tab to keep copies of your data.</p>
+                                </div>
+                            </Card>
+                        )}
 
+                        {activeTab === 'printers' && printers && (
+                            <Card className="space-y-6">
+                                <div className="flex items-center gap-3 pb-4 border-b border-dark-border">
+                                    <div className="p-3 rounded-lg bg-violet-500/20">
+                                        <Printer className="w-6 h-6 text-violet-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold">Printers &amp; labels</h3>
+                                        <p className="text-sm text-zinc-400">Receipt printer, QR label printer and label layout (sizes in millimetres)</p>
+                                    </div>
+                                </div>
+                                <PrinterSettingsForm
+                                    printers={printers}
+                                    onPrintersChange={setPrinters}
+                                    labels={labels}
+                                    onLabelsChange={setLabels}
+                                />
+                            </Card>
+                        )}
 
+                        {activeTab === 'scanner' && scanner && (
+                            <Card className="space-y-6">
+                                <div className="flex items-center gap-3 pb-4 border-b border-dark-border">
+                                    <div className="p-3 rounded-lg bg-emerald-500/20">
+                                        <ScanLine className="w-6 h-6 text-emerald-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold">Barcode / QR scanner</h3>
+                                        <p className="text-sm text-zinc-400">Standard USB scanners (keyboard mode) work without drivers or internet</p>
+                                    </div>
+                                </div>
+                                <ScannerSettingsForm value={scanner} onChange={setScanner} />
+                            </Card>
+                        )}
 
-                                    {/* Status Display (Mock for now, will implement actual status later) */}
-                                    {/* Sync Interval Configuration */}
-                                    {settings.sync_provider !== 'none' && (
-                                        <div className="pt-4 border-t border-dark-border mt-6">
-                                            <label className="text-sm font-medium text-zinc-300 mb-3 block">Sync Frequency</label>
-                                            <div className="grid md:grid-cols-2 gap-4">
-                                                <Select
-                                                    label="Auto-Sync Interval"
-                                                    value={settings.sync_interval}
-                                                    onChange={(value) => handleChange('sync_interval', value)}
-                                                    options={[
-                                                        { value: '0', label: 'Realtime (Instant)' },
-                                                        { value: '5', label: 'Every 5 Minutes' },
-                                                        { value: '15', label: 'Every 15 Minutes' },
-                                                        { value: '30', label: 'Every 30 Minutes' },
-                                                        { value: '60', label: 'Every Hour' },
-                                                    ]}
-                                                />
-                                                <div className="text-xs text-zinc-500 mt-8">
-                                                    Realtime mode pushes changes immediately. Intervals are useful for saving bandwidth or as a backup.
-                                                </div>
-                                            </div>
-
-                                            {/* Sync Actions */}
-                                            <div className="border-t border-dark-border pt-6 mt-6">
-                                                <h4 className="font-medium mb-4">Sync Actions</h4>
-
-                                                <div className="grid md:grid-cols-3 gap-4">
-                                                    {/* Sync Now */}
-                                                    <div className="p-4 bg-dark-tertiary rounded-lg border border-dark-border flex flex-col justify-between">
-                                                        <div>
-                                                            <h5 className="font-medium mb-1">Sync Now</h5>
-                                                            <p className="text-sm text-zinc-500 mb-4">
-                                                                Trigger manual sync check.
-                                                            </p>
-                                                        </div>
-                                                        <Button
-                                                            onClick={handleSyncNow}
-                                                            disabled={loading || isManualSyncing}
-                                                            variant="secondary"
-                                                            className="w-full"
-                                                        >
-                                                            <RefreshCw className="w-4 h-4 mr-2" />
-                                                            Sync Now
-                                                        </Button>
-                                                    </div>
-
-                                                    {/* Import / Download */}
-                                                    <div className="p-4 bg-dark-tertiary rounded-lg border border-dark-border flex flex-col justify-between">
-                                                        <div>
-                                                            <h5 className="font-medium mb-1">Import from Cloud</h5>
-                                                            <p className="text-sm text-zinc-500 mb-4">
-                                                                Download all data from cloud.
-                                                            </p>
-                                                        </div>
-                                                        <Button
-                                                            onClick={handleImportFromCloud}
-                                                            variant="secondary"
-                                                            disabled={loading || isManualSyncing || importing}
-                                                            className="w-full"
-                                                        >
-                                                            <Download className="w-4 h-4 mr-2" />
-                                                            {importing ? importProgress : 'Download All'}
-                                                        </Button>
-                                                    </div>
-
-                                                    {/* Repair / Upload */}
-                                                    <div className="p-4 bg-dark-tertiary rounded-lg border border-dark-border flex flex-col justify-between">
-                                                        <div>
-                                                            <h5 className="font-medium mb-1">Repair Sync</h5>
-                                                            <p className="text-sm text-zinc-500 mb-4">
-                                                                Force re-upload ALL local data.
-                                                            </p>
-                                                        </div>
-                                                        <Button
-                                                            onClick={handleForcePush}
-                                                            variant="outline"
-                                                            disabled={loading || isManualSyncing}
-                                                            className="w-full border-red-500/50 hover:bg-red-500/10 text-red-400"
-                                                        >
-                                                            <Upload className="w-4 h-4 mr-2" />
-                                                            Re-Upload All
-                                                        </Button>
-                                                    </div>
-
-
-                                                </div>
-                                                {importing && <div className="text-xs text-accent-primary animate-pulse mt-2">{importProgress}</div>}
-                                            </div>
-                                        </div>
-                                    )}
-
-
-
+                        {activeTab === 'sku' && sku && (
+                            <Card className="space-y-6">
+                                <div className="flex items-center gap-3 pb-4 border-b border-dark-border">
+                                    <div className="p-3 rounded-lg bg-amber-500/20">
+                                        <Hash className="w-6 h-6 text-amber-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-semibold">SKU &amp; QR identifiers</h3>
+                                        <p className="text-sm text-zinc-400">How automatic SKUs are built for product variants</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4">
+                                    <Input
+                                        label="Prefix (optional)"
+                                        value={sku.prefix}
+                                        onChange={(e) => setSku({ ...sku, prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) })}
+                                        placeholder="e.g. BA"
+                                    />
+                                    <Select
+                                        label="Separator"
+                                        value={sku.separator}
+                                        onChange={(v) => setSku({ ...sku, separator: v })}
+                                        options={[{ value: '-', label: 'Dash ( - )' }, { value: '_', label: 'Underscore ( _ )' }, { value: '.', label: 'Dot ( . )' }]}
+                                    />
+                                    <Select
+                                        label="Number digits"
+                                        value={String(sku.digits)}
+                                        onChange={(v) => setSku({ ...sku, digits: parseInt(v, 10) })}
+                                        options={[{ value: '2', label: '2 (01)' }, { value: '3', label: '3 (001)' }, { value: '4', label: '4 (0001)' }]}
+                                    />
+                                </div>
+                                <div className="p-4 rounded-lg bg-dark-tertiary text-sm space-y-2">
+                                    <p>Example for “T-Shirt”, colour Black, size M:</p>
+                                    <p className="font-mono text-lg text-accent-primary">
+                                        {`${sku.prefix || ''}TSH${sku.separator}BLK${sku.separator}M${sku.separator}${'1'.padStart(sku.digits, '0')}`}
+                                    </p>
+                                    <p className="text-zinc-400">
+                                        SKUs are generated once, when a variant is created, and are never reused. The QR code printed on a
+                                        label contains only this identifier (not the price or stock), so prices can change without reprinting labels.
+                                        Allowed characters: A–Z, 0–9, “-”, “_” and “.”.
+                                    </p>
                                 </div>
                             </Card>
                         )}
@@ -956,11 +785,11 @@ export default function SettingsPage() {
                                     <div className="grid grid-cols-2 gap-4 text-sm">
                                         <div className="p-3 rounded-lg bg-dark-tertiary">
                                             <p className="text-zinc-400">App Version</p>
-                                            <p className="font-medium">1.0.0</p>
+                                            <p className="font-medium">{appInfo?.version || '-'}</p>
                                         </div>
                                         <div className="p-3 rounded-lg bg-dark-tertiary">
-                                            <p className="text-zinc-400">Database</p>
-                                            <p className="font-medium">SQLite</p>
+                                            <p className="text-zinc-400">Database (local SQLite)</p>
+                                            <p className="font-medium font-mono text-xs break-all">{appInfo?.databasePath || 'SQLite'}</p>
                                         </div>
                                         <div className="p-3 rounded-lg bg-dark-tertiary">
                                             <p className="text-zinc-400">Platform</p>

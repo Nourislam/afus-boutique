@@ -728,7 +728,7 @@ class EcommerceSyncManager {
      * platforms send inventory update webhooks
      */
     startWebhookListener() {
-        // This will be initialized by the renderer when Firebase is ready
+        // Initialized later, once the main window exists
         // The listener runs in the renderer and calls back to main via IPC
         ipcMain.handle('ecommerce:webhookEvent', async (_, event) => {
             return this.processWebhookEvent(event);

@@ -126,7 +126,10 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
                             <tbody className="divide-y divide-dark-border">
                                 {items.map(item => (
                                     <tr key={item.id} className={item.returnQty > 0 ? 'bg-blue-500/10' : ''}>
-                                        <td className="p-3 text-white font-medium">{item.product_name}</td>
+                                        <td className="p-3 text-white font-medium">
+                                            {item.product_name}
+                                            {item.variant_label && <div className="text-xs text-accent-primary">{item.variant_label}{item.sku ? ` · ${item.sku}` : ''}</div>}
+                                        </td>
                                         <td className="p-3 text-zinc-300">{item.quantity}</td>
                                         <td className="p-3 text-zinc-300">{formatCurrency(item.unit_price)}</td>
                                         <td className="p-3">

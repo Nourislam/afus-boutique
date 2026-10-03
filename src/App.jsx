@@ -3,7 +3,6 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
 import LoginScreen from './components/employees/LoginScreen';
 import SetupWizard from './components/SetupWizard';
-import ActivationScreen from './components/auth/ActivationScreen';
 import POSPage from './pages/POSPage';
 import ProductsPage from './pages/ProductsPage';
 import InventoryPage from './pages/InventoryPage';
@@ -17,8 +16,8 @@ import GiftCardsPage from './pages/GiftCardsPage';
 import BundlesPage from './pages/BundlesPage';
 import PromotionsPage from './pages/PromotionsPage';
 import BarcodeLabelPage from './pages/BarcodeLabelPage';
+import QrLabelsPage from './pages/QrLabelsPage';
 import TransactionsPage from './pages/TransactionsPage';
-import ProfilePage from './pages/ProfilePage';
 
 import SuppliersPage from './pages/SuppliersPage';
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
@@ -27,64 +26,31 @@ import { useAuthStore, PERMISSIONS } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { Toaster } from './components/ui/Toast';
-import { EcommerceWebhookListener } from './components/ecommerce/EcommerceWebhookListener';
+import { APP_NAME } from './lib/appInfo';
 
 function App() {
-    const { currentEmployee, isAuthenticated, checkAuth } = useAuthStore();
+    const { isAuthenticated, checkAuth, startSession } = useAuthStore();
     const { loadSettings } = useSettingsStore();
     const [isLoading, setIsLoading] = useState(true);
     const [showSetupWizard, setShowSetupWizard] = useState(false);
-    const [isActivated, setIsActivated] = useState(null); // null = loading, false = not activated, true = activated
 
     useEffect(() => {
+        // Everything is local: no account, activation or internet connection
+        // is needed to open the POS.
         const init = async () => {
             try {
-                // 0. Load Global Settings (Store)
                 await loadSettings();
 
-                // 1. Check Activation Status (New)
-                const activationData = await window.electronAPI.settings.get('activation_data');
-                console.log('App init - activation:', activationData);
-
-                if (activationData && activationData.uid) {
-                    setIsActivated(true);
-                } else {
-                    setIsActivated(false);
-                    setIsLoading(false); // Stop globally loading to show activation screen
-                    return; // Stop initialization here
-                }
-
-                // 2. Check if setup has been completed
                 const settings = await window.electronAPI.settings.getAll();
-                console.log('App init - settings:', settings);
-
                 // Handle both string 'true' and boolean true
                 const setupCompleted = settings.setup_completed === 'true' || settings.setup_completed === true;
-                console.log('Setup completed:', setupCompleted);
 
                 if (!setupCompleted) {
                     setShowSetupWizard(true);
-                    setIsLoading(false);
                     return;
                 }
 
-                // If setup is done, check authentication
                 await checkAuth();
-
-                // 3. Listen for Firebase Auth changes and sync token to Main Process
-                const { onAuthStateChanged } = await import('firebase/auth');
-                const { auth } = await import('./lib/firebase');
-
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        console.log('App: Firebase user detected, syncing token...');
-                        const token = await user.getIdToken();
-                        await window.electronAPI.sync.setToken(token);
-                    } else {
-                        console.log('App: No Firebase user.');
-                        await window.electronAPI.sync.setToken(null);
-                    }
-                });
             } catch (error) {
                 console.error('Init error:', error);
             } finally {
@@ -94,15 +60,12 @@ function App() {
         init();
     }, []);
 
-    const handleSetupComplete = () => {
+    const handleSetupComplete = async (adminEmployee) => {
+        await loadSettings();
+        // The person who just set up the shop goes straight to the sales screen
+        if (adminEmployee) startSession(adminEmployee);
+        window.location.hash = '#/pos';
         setShowSetupWizard(false);
-        // After setup, show login screen
-        window.location.reload();
-    };
-
-    const handleActivationSuccess = () => {
-        setIsActivated(true);
-        window.location.reload();
     };
 
     if (isLoading) {
@@ -110,18 +73,9 @@ function App() {
             <div className="h-screen w-screen flex items-center justify-center bg-dark-primary">
                 <div className="flex flex-col items-center gap-4">
                     <div className="w-12 h-12 border-4 border-accent-primary border-t-transparent rounded-full animate-spin" />
-                    <p className="text-zinc-400">Loading POS System...</p>
+                    <p className="text-zinc-400">Loading {APP_NAME}...</p>
                 </div>
             </div>
-        );
-    }
-
-    if (isActivated === false) {
-        return (
-            <>
-                <ActivationScreen onActivationSuccess={handleActivationSuccess} />
-                <Toaster />
-            </>
         );
     }
 
@@ -225,19 +179,18 @@ function App() {
                     } />
                     <Route path="/barcode-labels" element={
                         <ProtectedRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
-                            <BarcodeLabelPage />
+                            <QrLabelsPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/profile" element={
-                        <ProtectedRoute permission={'profile.view'}>
-                            <ProfilePage />
+                    <Route path="/barcode-generator" element={
+                        <ProtectedRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
+                            <BarcodeLabelPage />
                         </ProtectedRoute>
                     } />
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </MainLayout>
             <Toaster />
-            <EcommerceWebhookListener />
         </HashRouter>
     );
 }

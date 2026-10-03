@@ -14,7 +14,7 @@ export default function AIAssistant() {
     const [isOpen, setIsOpen] = useState(false);
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState([
-        { role: 'model', content: "Hi! I'm Cirvex AI. Ask me anything about your sales, inventory, or business performance." }
+        { role: 'model', content: "Hi! I'm your AI assistant. Ask me anything about your sales, inventory, or business performance." }
     ]);
     const [isStreaming, setIsStreaming] = useState(false);
     const messagesEndRef = useRef(null);
@@ -102,7 +102,7 @@ export default function AIAssistant() {
                 className={`fixed bottom-6 right-6 p-4 rounded-full shadow-lg z-50 transition-all duration-300 hover:scale-110 ${
                     isOpen ? 'bg-zinc-700 rotate-90' : 'bg-gradient-to-r from-indigo-600 to-purple-600 animate-pulse-slow'
                 }`}
-                title="Cirvex AI Assistant"
+                title="AI Assistant"
             >
                 {isOpen ? <X className="text-white" /> : <Sparkles className="text-white" />}
             </button>
@@ -118,7 +118,7 @@ export default function AIAssistant() {
                             <Sparkles size={16} className="text-white" />
                         </div>
                         <div>
-                            <h3 className="font-bold text-white text-sm">Cirvex One AI</h3>
+                            <h3 className="font-bold text-white text-sm">AI Assistant</h3>
                             <p className="text-[10px] text-indigo-200">Powered by Gemini 2.0</p>
                         </div>
                     </div>

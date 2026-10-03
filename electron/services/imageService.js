@@ -134,7 +134,8 @@ function getImageBase64(fileName) {
         if (!filePath) return null;
 
         const buffer = fs.readFileSync(filePath);
-        const ext = path.extname(fileName).slice(1) || 'jpeg';
+        const rawExt = (path.extname(fileName).slice(1) || 'jpeg').toLowerCase();
+        const ext = rawExt === 'svg' ? 'svg+xml' : rawExt === 'jpg' ? 'jpeg' : rawExt;
         const base64 = buffer.toString('base64');
         return `data:image/${ext};base64,${base64}`;
     } catch (error) {
@@ -143,9 +144,44 @@ function getImageBase64(fileName) {
     }
 }
 
+/**
+ * Save the shop logo. Kept as PNG (transparency matters for logos on receipts
+ * and labels) and limited to 600 px.
+ */
+async function saveLogo(base64Data, originalName = 'logo.png') {
+    try {
+        const match = /^data:image\/(png|jpe?g|webp|gif|bmp|svg\+xml);base64,/i.exec(base64Data || '');
+        if (!match) return { success: false, error: 'Unsupported image format (use PNG or JPG)' };
+        const buffer = Buffer.from(base64Data.slice(match[0].length), 'base64');
+        if (buffer.length > 5 * 1024 * 1024) return { success: false, error: 'Logo must be smaller than 5 MB' };
+
+        const imagesDir = getImagesDir();
+        const fileName = `logo-${Date.now()}.png`;
+        const filePath = path.join(imagesDir, fileName);
+        try {
+            const sharp = require('sharp');
+            await sharp(buffer)
+                .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
+                .png()
+                .toFile(filePath);
+            return { success: true, fileName, filePath };
+        } catch {
+            // sharp unavailable: keep the original bytes and extension
+            const ext = match[1].toLowerCase().replace('jpeg', 'jpg').replace('svg+xml', 'svg');
+            const rawName = `logo-${Date.now()}.${ext}`;
+            fs.writeFileSync(path.join(imagesDir, rawName), buffer);
+            return { success: true, fileName: rawName, filePath: path.join(imagesDir, rawName), originalName };
+        }
+    } catch (error) {
+        console.error('Failed to save logo:', error);
+        return { success: false, error: error.message };
+    }
+}
+
 module.exports = {
     getImagesDir,
     saveImage,
+    saveLogo,
     saveImageFromPath,
     deleteImage,
     getImagePath,

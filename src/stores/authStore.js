@@ -37,6 +37,14 @@ export const useAuthStore = create((set, get) => ({
         }
     },
 
+    // Open a session for an employee that was just created and verified locally
+    // (used right after the first-launch shop setup).
+    startSession: (employee) => {
+        const sessionData = { id: employee.id, name: employee.name, role: employee.role };
+        sessionStorage.setItem('pos_auth', JSON.stringify(sessionData));
+        set({ currentEmployee: sessionData, isAuthenticated: true });
+    },
+
     logout: () => {
         sessionStorage.removeItem('pos_auth');
         set({ currentEmployee: null, isAuthenticated: false });

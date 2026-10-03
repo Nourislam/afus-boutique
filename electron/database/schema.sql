@@ -1,4 +1,4 @@
--- POSbyCirvex Database Schema
+-- Store POS database schema (base tables; later changes are in init.js and migrations.js)
 
 -- Categories
 CREATE TABLE IF NOT EXISTS categories (

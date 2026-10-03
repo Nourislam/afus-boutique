@@ -177,10 +177,10 @@ export default function BarcodeLabelPage() {
         }
     };
 
-    const printLabels = () => {
-        // Open print dialog with the preview content
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
+    const printLabels = async () => {
+        // Printed through the main process (pop-up windows are blocked in the app)
+        const escapeHtml = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const html = (`
             <!DOCTYPE html>
             <html>
             <head>
@@ -208,16 +208,19 @@ export default function BarcodeLabelPage() {
                 ${generatedLabels.map(label => `
                     <div class="label" style="width: ${label.template?.labelWidth || 50}mm;">
                         <img class="barcode-image" src="${label.barcode}" alt="Barcode" />
-                        ${label.template?.showName ? `<div class="product-name">${label.productName}</div>` : ''}
+                        ${label.template?.showName ? `<div class="product-name">${escapeHtml(label.productName)}</div>` : ''}
                         ${label.template?.showPrice ? `<div class="product-price">${settings.currencySymbol || '$'}${label.price?.toFixed(2)}</div>` : ''}
-                        <div class="barcode-data">${label.barcodeData}</div>
+                        <div class="barcode-data">${escapeHtml(label.barcodeData)}</div>
                     </div>
                 `).join('')}
             </body>
             </html>
         `);
-        printWindow.document.close();
-        printWindow.print();
+        try {
+            await window.electronAPI.labels.printHtml(html);
+        } catch (error) {
+            toast.error(`Printing failed: ${error.message}`);
+        }
     };
 
     const filteredProducts = products.filter(product =>
@@ -242,9 +245,9 @@ export default function BarcodeLabelPage() {
                 <div>
                     <h1 className="text-2xl font-bold flex items-center gap-3">
                         <Barcode className="w-7 h-7 text-indigo-500" />
-                        Barcode Labels
+                        Barcode generator (other formats)
                     </h1>
-                    <p className="text-zinc-400 mt-1">Generate and print product labels with barcodes</p>
+                    <p className="text-zinc-400 mt-1">EAN, UPC, Code128, DataMatrix and other barcode formats. For clothing QR labels use the QR Labels page.</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <Button variant="secondary" onClick={() => setShowCustomModal(true)}>

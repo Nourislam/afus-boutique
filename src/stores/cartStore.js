@@ -57,44 +57,64 @@ export const useCartStore = create((set, get) => ({
     setServiceCharge: (amount) => set({ serviceCharge: amount }),
     setTaxExempt: (isExempt) => set({ taxExempt: isExempt }),
 
-    addItem: (product, quantity = 1) => {
+    /**
+     * Add a product, or one variant (colour/size) of it, to the cart.
+     * Lines are keyed by product + variant, so scanning the same variant again
+     * increases its quantity while a different size gets its own line.
+     */
+    addItem: (product, quantity = 1, variant = null) => {
         const { items, globalTaxRate } = get();
-        const existingIndex = items.findIndex(item => item.product_id === product.id);
+        const variantId = variant ? variant.id : null;
+        const existingIndex = items.findIndex(item =>
+            item.product_id === product.id && (item.variant_id || null) === variantId);
         // Use product-specific tax only if explicitly set (> 0), otherwise use global rate
         const itemTaxRate = (product.tax_rate && product.tax_rate > 0) ? product.tax_rate : globalTaxRate;
+        const unitPrice = variant && variant.price !== null && variant.price !== undefined && variant.price !== ''
+            ? Number(variant.price)
+            : Number(product.price) || 0;
+        const available = variant ? (variant.stock_quantity ?? 0) : product.stock_quantity;
 
         if (existingIndex >= 0) {
             const newItems = [...items];
-            const currentQty = newItems[existingIndex].quantity;
-            const maxStock = newItems[existingIndex].max_stock || product.stock_quantity || 999999;
+            const line = newItems[existingIndex];
+            const maxStock = line.max_stock ?? available ?? 999999;
 
-            if (currentQty + quantity > maxStock) {
+            if (line.quantity + quantity > maxStock) {
                 return { success: false, message: 'Insufficient stock' };
             }
 
-            newItems[existingIndex].quantity += quantity;
-            newItems[existingIndex].total = newItems[existingIndex].quantity * newItems[existingIndex].unit_price;
-            set({ items: newItems });
-            return { success: true };
-        } else {
-            if (quantity > product.stock_quantity) {
-                return { success: false, message: 'Insufficient stock' };
-            }
-
-            const newItem = {
-                id: uuid(),
-                product_id: product.id,
-                product_name: product.name,
-                quantity,
-                unit_price: product.price,
-                tax_rate: itemTaxRate,
-                discount: 0,
-                total: quantity * product.price,
-                max_stock: product.stock_quantity
+            newItems[existingIndex] = {
+                ...line,
+                quantity: line.quantity + quantity,
+                total: (line.quantity + quantity) * line.unit_price - (line.discount || 0),
             };
-            set({ items: [...items, newItem] });
-            return { success: true };
+            set({ items: newItems });
+            return { success: true, quantity: newItems[existingIndex].quantity };
         }
+
+        if (quantity > available) {
+            return { success: false, message: 'Insufficient stock' };
+        }
+
+        const variantLabel = variant ? [variant.color, variant.size].filter(Boolean).join(' / ') : '';
+        const newItem = {
+            id: uuid(),
+            product_id: product.id,
+            product_name: product.name,
+            variant_id: variantId,
+            variant_label: variantLabel || null,
+            color: variant?.color || null,
+            size: variant?.size || null,
+            sku: variant ? variant.sku : (product.sku || null),
+            quantity,
+            unit_price: unitPrice,
+            tax_rate: itemTaxRate,
+            discount: 0,
+            total: quantity * unitPrice,
+            max_stock: available
+        };
+        set({ items: [...items, newItem] });
+        return { success: true, quantity };
     },
 
     updateItemQuantity: (itemId, quantity) => {
@@ -250,6 +270,8 @@ export const useCartStore = create((set, get) => ({
                 id: uuid(),
                 product_id: item.product_id,
                 product_name: item.product_name,
+                variant_id: item.variant_id || null,
+                variant_label: item.variant_label || null,
                 quantity: item.quantity,
                 unit_price: item.unit_price,
                 tax_rate: 0,
@@ -262,7 +284,7 @@ export const useCartStore = create((set, get) => ({
         });
     },
 
-    processPayment: async (payments, employeeId) => {
+    processPayment: async (payments, employeeId, employeeName = null) => {
         const { items, customer, notes, discount, discountType, serviceCharge, taxExempt } = get();
         if (items.length === 0) throw new Error('Cart is empty');
 
@@ -281,6 +303,8 @@ export const useCartStore = create((set, get) => ({
             id: uuid(),
             receipt_number: receiptNumber,
             employee_id: employeeId,
+            employee_name: employeeName,
+            created_at: new Date().toISOString(),
             customer_id: customer?.id || null,
             subtotal,
             tax_amount: taxAmount,
@@ -294,7 +318,9 @@ export const useCartStore = create((set, get) => ({
             payments: payments.map(p => ({ ...p, id: uuid() })),
         };
 
-        await window.electronAPI.sales.create(sale);
+        // The saved sale comes back with the variant/SKU snapshot of each line
+        const saved = await window.electronAPI.sales.create(sale);
+        if (saved && saved.items) sale.items = saved.items;
 
         if (customer) {
             const points = Math.floor(total / 10);

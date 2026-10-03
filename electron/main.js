@@ -2,7 +2,9 @@ console.log('=== MAIN.JS LOADED ===');
 const { app, BrowserWindow, ipcMain, dialog, protocol, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { initDatabase, runQuery, runInsert, getOne, saveDatabase, addDatabaseChangeListener } = require('./database/init');
+const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener } = require('./database/init');
+const dbApi = require('./database/api');
+const catalog = require('./services/catalogService');
 const { v4: uuid } = require('uuid');
 const { getImagesDir } = require('./services/imageService');
 const ReceiptService = require('./services/receiptService');
@@ -25,6 +27,24 @@ function logSystemAction(actionType, description, details = null, employeeId = n
   }
 }
 
+// Read one JSON-encoded value from the settings table
+function getSettingValue(key) {
+  const row = getOne('SELECT value FROM settings WHERE key = ?', [key]);
+  if (!row) return null;
+  try { return JSON.parse(row.value); } catch { return row.value; }
+}
+
+// All settings with store_config merged in at top level (the shape the
+// receipt/label templates expect)
+function getStoreSettings() {
+  const settings = {};
+  runQuery('SELECT key, value FROM settings').forEach(row => {
+    try { settings[row.key] = JSON.parse(row.value); } catch { settings[row.key] = row.value; }
+  });
+  Object.assign(settings, settings.store_config || {});
+  return settings;
+}
+
 let mainWindow;
 
 function createWindow() {
@@ -41,7 +61,14 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     },
-    icon: path.join(__dirname, '../public/icon.ico')
+    // public/ is copied into dist/ by Vite; only dist/ is packaged
+    icon: path.join(__dirname, app.isPackaged ? '../dist/icon.ico' : '../public/icon.ico')
+  });
+
+  // Links with target="_blank" open in the user's browser, never inside the app
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
   });
 
   // Load the app
@@ -61,43 +88,49 @@ function createWindow() {
 }
 
 
+// ------------------------------------------------------------------
+// Data folder
+// ------------------------------------------------------------------
+// The database and images live in a fixed folder under %APPDATA% so that
+// renaming the application never "loses" a shop's data. Installations made
+// under the previous product name are copied (not moved) on first start.
+const DATA_DIR_NAME = 'StorePOS';
+const LEGACY_DATA_DIR_NAMES = ['pos-by-cirvex', 'Cirvex One', 'POS by Cirvex'];
+
+function configureDataDirectory() {
+  const appData = app.getPath('appData');
+  const target = path.join(appData, DATA_DIR_NAME);
+  const targetDb = path.join(target, 'pos-database.sqlite');
+
+  if (!fs.existsSync(targetDb)) {
+    for (const name of LEGACY_DATA_DIR_NAMES) {
+      const legacyDir = path.join(appData, name);
+      const legacyDb = path.join(legacyDir, 'pos-database.sqlite');
+      if (!fs.existsSync(legacyDb)) continue;
+      try {
+        fs.mkdirSync(target, { recursive: true });
+        fs.copyFileSync(legacyDb, targetDb);
+        const legacyImages = path.join(legacyDir, 'images');
+        if (fs.existsSync(legacyImages)) {
+          fs.cpSync(legacyImages, path.join(target, 'images'), { recursive: true, force: false });
+        }
+        console.log(`Copied existing shop data from ${legacyDir} to ${target}`);
+      } catch (error) {
+        console.error('Failed to copy existing data folder:', error);
+      }
+      break;
+    }
+  }
+
+  app.setPath('userData', target);
+}
+
+configureDataDirectory();
+
 // Register scheme as privileged
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
 ]);
-
-// Handle deep links from any source
-function handleDeepLink(url) {
-  console.log('[DeepLink] Received:', url);
-  
-  // Handle Shopify OAuth callback
-  if (url.includes('posbycirvex://shopify/callback')) {
-    const urlObj = new URL(url);
-    const token = urlObj.searchParams.get('token');
-    const shop = urlObj.searchParams.get('shop');
-    const name = urlObj.searchParams.get('name');
-    const scope = urlObj.searchParams.get('scope');
-    
-    if (token && shop) {
-      console.log('[DeepLink] Shopify OAuth callback received for:', shop);
-      // Send to renderer to complete the connection
-      if (mainWindow) {
-        mainWindow.webContents.send('ecommerce:shopify-oauth-complete', {
-          accessToken: token,
-          storeUrl: shop,
-          storeName: name || shop,
-          scope: scope
-        });
-      }
-    }
-    return;
-  }
-  
-  // Other deep links (Supabase, etc.)
-  if (mainWindow) {
-    mainWindow.webContents.send('supabase-oauth-callback', url);
-  }
-}
 
 // Request single instance lock - prevents multiple app instances
 const gotTheLock = app.requestSingleInstanceLock();
@@ -106,28 +139,29 @@ if (!gotTheLock) {
   // Another instance is already running, quit this one
   app.quit();
 } else {
-  // Handle deep links on Windows (second instance trying to open)
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-    // Someone tried to run a second instance, we should focus our window.
+  // A second launch (e.g. double-clicking the shortcut again) focuses the running window
+  app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
-    }
-
-    // Find the deep link in command line args (Windows passes protocol URL as argument)
-    const url = commandLine.find(arg => arg.startsWith('posbycirvex://'));
-    if (url) {
-      console.log('[DeepLink] Received from second instance:', url);
-      handleDeepLink(url);
     }
   });
 
   // App lifecycle
   app.whenReady().then(async () => {
-    // Initialize database
-    await initDatabase();
+    // Initialize database. If it cannot be opened, tell the user instead of
+    // hanging without a window.
+    try {
+      await initDatabase();
+    } catch (error) {
+      console.error('Database initialization failed:', error);
+      dialog.showErrorBox('Store POS could not start',
+        `The local database could not be opened.\n\n${error.message}\n\nData folder: ${app.getPath('userData')}`);
+      app.quit();
+      return;
+    }
 
-    // Initialize Sync Manager (Firebase)
+    // Initialize the (optional, currently disabled) sync boundary
     await SyncManager.init();
 
     // Initialize E-commerce Sync Manager
@@ -135,20 +169,6 @@ if (!gotTheLock) {
     
     // Initialize AI Manager
     await GeminiManager.init();
-
-    if (process.defaultApp) {
-      if (process.argv.length >= 2) {
-        app.setAsDefaultProtocolClient('posbycirvex', process.execPath, [path.resolve(process.argv[1])])
-      }
-    } else {
-      app.setAsDefaultProtocolClient('posbycirvex')
-    }
-
-    // Handle deep links (macOS)
-    app.on('open-url', (event, url) => {
-      event.preventDefault();
-      handleDeepLink(url);
-    });
 
   // Register app protocol for serving images
   protocol.registerFileProtocol('app', (request, callback) => {
@@ -406,6 +426,10 @@ ipcMain.handle('backup:reset', async () => {
   const dbPath = path.join(app.getPath('userData'), 'pos-database.sqlite');
   try {
     if (fs.existsSync(dbPath)) {
+      // Keep a copy so an accidental reset can still be recovered
+      const safetyCopy = `${dbPath}.before-reset-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+      fs.copyFileSync(dbPath, safetyCopy);
+      console.log('Database copied before reset:', safetyCopy);
       fs.unlinkSync(dbPath);
     }
     await initDatabase();
@@ -415,6 +439,14 @@ ipcMain.handle('backup:reset', async () => {
     return { success: false, error: error.message };
   }
 });
+
+ipcMain.handle('app:getInfo', () => ({
+  version: app.getVersion(),
+  dataPath: app.getPath('userData'),
+  databasePath: path.join(app.getPath('userData'), 'pos-database.sqlite'),
+  platform: process.platform,
+  electron: process.versions.electron,
+}));
 
 ipcMain.handle('db:categories:create', (_, category) => {
   runInsert('INSERT INTO categories (id, name, color, icon, is_synced) VALUES (?, ?, ?, ?, 0)',
@@ -436,23 +468,74 @@ ipcMain.handle('db:categories:delete', (_, id) => {
 });
 
 // Products
+const PRODUCT_LIST_COLUMNS = `
+    p.*, c.name as category_name, c.color as category_color,
+    (SELECT COUNT(*) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) AS variant_count,
+    (SELECT MIN(COALESCE(v.price, p.price)) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) AS min_variant_price,
+    (SELECT MAX(COALESCE(v.price, p.price)) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) AS max_variant_price
+`;
+
 ipcMain.handle('db:products:getAll', () => {
   return runQuery(`
-    SELECT p.*, c.name as category_name, c.color as category_color 
-    FROM products p 
-    LEFT JOIN categories c ON p.category_id = c.id 
+    SELECT ${PRODUCT_LIST_COLUMNS}
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
     WHERE p.is_active = 1
     ORDER BY p.name
   `);
 });
 
 ipcMain.handle('db:products:getById', (_, id) => {
-  return getOne(`
-    SELECT p.*, c.name as category_name, c.color as category_color 
-    FROM products p 
-    LEFT JOIN categories c ON p.category_id = c.id 
+  const product = getOne(`
+    SELECT ${PRODUCT_LIST_COLUMNS}
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
     WHERE p.id = ?
   `, [id]);
+  if (!product) return null;
+  return { ...product, variants: catalog.getVariants(dbApi, id) };
+});
+
+// ------------------------------------------------------------------
+// Product variants, identifiers and code lookup (clothing catalog)
+// ------------------------------------------------------------------
+ipcMain.handle('catalog:getVariants', (_, { productId, includeInactive = false }) => {
+  return catalog.getVariants(dbApi, productId, { includeInactive });
+});
+
+ipcMain.handle('catalog:saveProduct', (_, { product, variants, employeeId, isNew }) => {
+  const result = catalog.saveProduct(dbApi, product, variants || [], { employeeId, isNew: !!isNew });
+  logSystemAction(isNew ? 'create' : 'update', `${isNew ? 'Created' : 'Updated'} product: ${product.name}`,
+    { id: product.id, variants: (variants || []).length }, employeeId || null);
+  SyncManager.triggerSync();
+  return result;
+});
+
+ipcMain.handle('catalog:generateSkus', (_, { product, variants, reserved }) => {
+  return catalog.generateSkus(dbApi, product, variants, getSettingValue('sku_settings') || {}, new Set(reserved || []));
+});
+
+ipcMain.handle('catalog:checkIdentifier', (_, { code, excludeVariantId, excludeProductId }) => {
+  const formatError = catalog.validateIdentifier(code, 'Code');
+  if (formatError) return { valid: false, message: formatError };
+  const owner = catalog.findIdentifierOwner(dbApi, code, { excludeVariantId, excludeProductId });
+  return owner
+    ? { valid: false, message: `Already used by ${catalog.describeOwner(owner)}`, owner }
+    : { valid: true };
+});
+
+ipcMain.handle('catalog:lookupCode', (_, code) => {
+  return catalog.lookupCode(dbApi, code);
+});
+
+ipcMain.handle('catalog:searchVariants', (_, { query, limit }) => {
+  return catalog.searchVariants(dbApi, query, limit);
+});
+
+ipcMain.handle('catalog:regenerateQr', (_, variantId) => {
+  const variant = catalog.regenerateQrCode(dbApi, variantId);
+  SyncManager.triggerSync();
+  return variant;
 });
 
 ipcMain.handle('db:products:search', (_, query) => {
@@ -485,32 +568,27 @@ ipcMain.handle('db:products:getByCategory', (_, categoryId) => {
   `, [categoryId]);
 });
 
+// Simple (non-variant) product create/update, e.g. from the Excel import.
+// Both go through the catalog service so identifiers are checked for
+// duplicates and stock changes are written to inventory_logs.
 ipcMain.handle('db:products:create', (_, product) => {
-  runInsert(`
-    INSERT INTO products (id, sku, barcode, name, description, category_id, price, cost, stock_quantity, min_stock_level, tax_rate, is_active, image_path, is_synced)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-  `, [product.id, product.sku, product.barcode, product.name, product.description,
-  product.category_id, product.price, product.cost, product.stock_quantity,
-  product.min_stock_level, product.tax_rate, product.is_active ? 1 : 0, product.image_path]);
-  
+  const { product: saved } = catalog.saveProduct(dbApi, product, product.variants || [], { isNew: true });
   logSystemAction('create', `Created product: ${product.name}`, { id: product.id, sku: product.sku });
   SyncManager.triggerSync();
-  return product;
+  return saved;
 });
 
 ipcMain.handle('db:products:update', (_, product) => {
-  runInsert(`
-    UPDATE products SET 
-      sku = ?, barcode = ?, name = ?, description = ?, category_id = ?,
-      price = ?, cost = ?, stock_quantity = ?, min_stock_level = ?,
-      tax_rate = ?, is_active = ?, image_path = ?, updated_at = CURRENT_TIMESTAMP, is_synced = 0
-    WHERE id = ?
-  `, [product.sku, product.barcode, product.name, product.description, product.category_id,
-  product.price, product.cost, product.stock_quantity, product.min_stock_level,
-  product.tax_rate, product.is_active ? 1 : 0, product.image_path, product.id]);
+  // Callers that do not send variants must not wipe a product's variants
+  let variants = product.variants;
+  if (variants === undefined) {
+    const current = getOne('SELECT has_variants FROM products WHERE id = ?', [product.id]);
+    variants = current && current.has_variants ? catalog.getVariants(dbApi, product.id) : [];
+  }
+  const { product: saved } = catalog.saveProduct(dbApi, product, variants);
   logSystemAction('update', `Updated product: ${product.name}`, { id: product.id });
   SyncManager.triggerSync();
-  return product;
+  return saved;
 });
 
 ipcMain.handle('db:products:delete', (_, id) => {
@@ -520,20 +598,19 @@ ipcMain.handle('db:products:delete', (_, id) => {
   return true;
 });
 
-ipcMain.handle('db:products:updateStock', (_, { id, quantity, type, reason, employeeId }) => {
-  const product = getOne('SELECT stock_quantity FROM products WHERE id = ?', [id]);
-  const newQuantity = type === 'add' ? product.stock_quantity + quantity : product.stock_quantity - quantity;
-
-  runInsert('UPDATE products SET stock_quantity = ?, updated_at = CURRENT_TIMESTAMP, is_synced = 0 WHERE id = ?', [newQuantity, id]);
-
-  // Log inventory change
-  runInsert(`
-    INSERT INTO inventory_logs (id, product_id, type, quantity_change, quantity_before, quantity_after, reason, employee_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `, [uuid(), id, type, quantity, product.stock_quantity, newQuantity, reason, employeeId]);
+ipcMain.handle('db:products:updateStock', (_, { id, variantId, quantity, type, reason, employeeId }) => {
+  const qty = Math.abs(parseInt(quantity, 10) || 0);
+  const result = runTransaction(() => catalog.adjustStock(dbApi, {
+    productId: id,
+    variantId: variantId || null,
+    delta: type === 'add' ? qty : -qty,
+    type,
+    reason,
+    employeeId,
+  }));
 
   SyncManager.triggerSync();
-  return { id, stock_quantity: newQuantity };
+  return { id, variant_id: result.variantId, stock_quantity: result.after };
 });
 
 // Customers
@@ -606,7 +683,7 @@ ipcMain.handle('db:employees:getById', (_, id) => {
 });
 
 ipcMain.handle('db:employees:verifyPin', (_, { id, pin }) => {
-  const employee = getOne('SELECT * FROM employees WHERE id = ? AND pin = ?', [id, pin]);
+  const employee = getOne('SELECT * FROM employees WHERE id = ? AND pin = ? AND is_active = 1', [id, pin]);
   if (employee) {
     logSystemAction('login', `Employee Login: ${employee.name}`, null, employee.id);
     return { id: employee.id, name: employee.name, role: employee.role };
@@ -670,81 +747,88 @@ ipcMain.handle('db:employees:delete', (_, id) => {
 
 // Sales
 ipcMain.handle('db:sales:create', (_, sale) => {
-  console.log('DEBUG: db:sales:create called with payments:', JSON.stringify(sale.payments));
-  runInsert(`
-    INSERT INTO sales (id, receipt_number, employee_id, customer_id, subtotal, tax_amount, discount_amount, total, status, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [sale.id, sale.receipt_number, sale.employee_id, sale.customer_id,
-  sale.subtotal, sale.tax_amount, sale.discount_amount, sale.total, sale.status, sale.notes]);
-
-  for (const item of sale.items) {
-    let unitCost = 0;
-    // Fetch current product cost
-    const productData = getOne('SELECT cost FROM products WHERE id = ?', [item.product_id]);
-    if (productData) {
-        unitCost = productData.cost;
-    }
-
+  // The whole sale (header, lines, stock movements, payments, gift card
+  // redemptions) is written in one transaction: if anything fails - e.g. a
+  // gift card without enough balance or a variant that no longer exists -
+  // nothing is saved and stock is left untouched.
+  runTransaction(() => {
     runInsert(`
-      INSERT INTO sale_items (id, sale_id, product_id, product_name, quantity, unit_price, discount, tax_amount, total, unit_cost)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [item.id, sale.id, item.product_id, item.product_name, item.quantity, item.unit_price, item.discount, item.tax_amount, item.total, unitCost]);
+      INSERT INTO sales (id, receipt_number, employee_id, customer_id, subtotal, tax_amount, discount_amount, total, status, notes, service_charge, tax_exempt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [sale.id, sale.receipt_number, sale.employee_id ?? null, sale.customer_id ?? null,
+    sale.subtotal ?? 0, sale.tax_amount ?? 0, sale.discount_amount ?? 0, sale.total ?? 0, sale.status || 'completed', sale.notes ?? null,
+    sale.service_charge || 0, sale.tax_exempt ? 1 : 0]);
 
-    // Update stock logic (Handling Products vs Bundles)
-    const productExists = getOne('SELECT id FROM products WHERE id = ?', [item.product_id]);
+    for (const item of sale.items) {
+      const product = getOne('SELECT id, cost, has_variants FROM products WHERE id = ?', [item.product_id]);
+      const variant = item.variant_id
+        ? getOne('SELECT * FROM product_variants WHERE id = ?', [item.variant_id])
+        : null;
+      if (item.variant_id && !variant) {
+        throw new Error(`Variant for "${item.product_name}" no longer exists`);
+      }
+      if (product && product.has_variants && !variant) {
+        throw new Error(`"${item.product_name}" has sizes/colours: please select a variant`);
+      }
 
-    if (productExists) {
-      // It's a regular product
-      runInsert('UPDATE products SET stock_quantity = stock_quantity - ?, is_synced = 0 WHERE id = ?', [item.quantity, item.product_id]);
+      // Cost snapshot for profit reports: variant cost if set, else product cost
+      let unitCost = 0;
+      if (variant && variant.cost !== null && variant.cost !== undefined) unitCost = variant.cost;
+      else if (product) unitCost = product.cost || 0;
 
-      // Log inventory movement
       runInsert(`
-            INSERT INTO inventory_logs (id, product_id, type, quantity_change, quantity_before, quantity_after, reason, created_at)
-            SELECT ?, ?, 'sale', ?, stock_quantity + ?, stock_quantity, ?, CURRENT_TIMESTAMP
-            FROM products WHERE id = ?
-        `, [uuid(), item.product_id, -item.quantity, item.quantity, `Sale #${sale.receipt_number}`, item.product_id]);
+        INSERT INTO sale_items (id, sale_id, product_id, variant_id, variant_label, sku, product_name, quantity, unit_price, discount, tax_amount, total, unit_cost)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [item.id, sale.id, item.product_id, variant ? variant.id : null,
+      variant ? catalog.variantLabel(variant) : (item.variant_label || null),
+      variant ? variant.sku : (item.sku || null),
+      item.product_name, item.quantity, item.unit_price, item.discount || 0, item.tax_amount || 0, item.total, unitCost]);
 
-    } else {
-      // Check if it's a bundle
+      if (product) {
+        // Regular product or one variant of it
+        catalog.adjustStock(dbApi, {
+          productId: item.product_id,
+          variantId: variant ? variant.id : null,
+          delta: -item.quantity,
+          type: 'sale',
+          reason: `Sale #${sale.receipt_number}`,
+          employeeId: sale.employee_id || null,
+        });
+        continue;
+      }
+
+      // Not a product: check if it's a bundle
       const bundle = getOne('SELECT * FROM bundles WHERE id = ?', [item.product_id]);
-
       if (bundle && bundle.deduct_component_stock === 1) {
         const bundleItems = runQuery('SELECT * FROM bundle_items WHERE bundle_id = ?', [bundle.id]);
-
         for (const bItem of bundleItems) {
-          // Deduct stock from component product
-          runInsert('UPDATE products SET stock_quantity = stock_quantity - ?, is_synced = 0 WHERE id = ?', [bItem.quantity * item.quantity, bItem.product_id]);
-
-          // Log inventory movement for component
-          runInsert(`
-                    INSERT INTO inventory_logs (id, product_id, type, quantity_change, quantity_before, quantity_after, reason, created_at)
-                    SELECT ?, ?, 'sale_bundle', ?, stock_quantity + ?, stock_quantity, ?, CURRENT_TIMESTAMP
-                    FROM products WHERE id = ?
-                `, [uuid(), bItem.product_id, -(bItem.quantity * item.quantity), (bItem.quantity * item.quantity), `Bundle Sale: ${bundle.name} (Sale #${sale.receipt_number})`, bItem.product_id]);
+          catalog.adjustStock(dbApi, {
+            productId: bItem.product_id,
+            delta: -(bItem.quantity * item.quantity),
+            type: 'sale_bundle',
+            reason: `Bundle Sale: ${bundle.name} (Sale #${sale.receipt_number})`,
+            employeeId: sale.employee_id || null,
+          });
         }
       } else if (bundle) {
         // Deduct stock from bundle itself (Pre-packed)
         runInsert('UPDATE bundles SET stock_quantity = stock_quantity - ? WHERE id = ?', [item.quantity, bundle.id]);
       }
     }
-  }
 
-  if (sale.payments) {
-    console.log('DEBUG: Processing payments loop', sale.payments.length);
-    for (const payment of sale.payments) {
-        console.log('DEBUG: Inserting payment', payment);
-    runInsert(`
-      INSERT INTO payments (id, sale_id, method, amount, reference)
-      VALUES (?, ?, ?, ?, ?)
-    `, [payment.id, sale.id, payment.method, payment.amount, payment.reference]);
+    for (const payment of sale.payments || []) {
+      runInsert(`
+        INSERT INTO payments (id, sale_id, method, amount, reference)
+        VALUES (?, ?, ?, ?, ?)
+      `, [payment.id, sale.id, payment.method, payment.amount, payment.reference ?? null]);
 
-    // Handle Gift Card Redemption
-    if (payment.method === 'gift_card') {
-      const code = payment.reference; // Reference holds the gift card code
-      const amount = payment.amount;
+      // Handle Gift Card Redemption
+      if (payment.method === 'gift_card') {
+        const code = payment.reference; // Reference holds the gift card code
+        const amount = payment.amount;
 
-      const card = getOne('SELECT * FROM gift_cards WHERE code = ?', [code]);
-      if (card) {
+        const card = getOne('SELECT * FROM gift_cards WHERE code = ?', [code]);
+        if (!card) throw new Error(`Gift Card ${code} not found`);
         const newBalance = card.current_balance - amount;
         if (newBalance < 0) throw new Error(`Insufficient balance on Gift Card ${code}`);
 
@@ -753,22 +837,23 @@ ipcMain.handle('db:sales:create', (_, sale) => {
         // Update payment reference with balance info for receipt
         const refData = JSON.stringify({ code: code, remaining: newBalance });
         runInsert('UPDATE payments SET reference = ? WHERE id = ?', [refData, payment.id]);
+        payment.reference = refData;
 
         // Log transaction
         runInsert(`
           INSERT INTO gift_card_transactions (id, gift_card_id, sale_id, amount, type, balance_before, balance_after, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `, [uuid(), card.id, sale.id, amount, 'redeem', card.current_balance, newBalance]);
-      } else {
-        console.warn(`Gift Card ${code} not found during payment processing`);
       }
     }
-  }
-  } // End of if (sale.payments)
+  });
 
   logSystemAction('create', `New Sale #${sale.receipt_number}`, { id: sale.id, total: sale.total }, sale.employee_id);
   SyncManager.triggerSync();
-  return sale;
+
+  // Return the sale with the variant snapshots the receipt needs
+  const items = runQuery('SELECT * FROM sale_items WHERE sale_id = ?', [sale.id]);
+  return { ...sale, items: sale.items.map(i => ({ ...i, ...(items.find(r => r.id === i.id) || {}) })) };
 });
 
 ipcMain.handle('db:sales:getAll', (_, params = {}) => {
@@ -921,32 +1006,24 @@ ipcMain.handle('db:settings:getAll', () => {
 
 // Inventory Logs
 ipcMain.handle('db:inventory:getLogs', (_, productId) => {
-  if (productId) {
-    return runQuery(`
-      SELECT il.*, p.name as product_name, e.name as employee_name
-      FROM inventory_logs il
-      LEFT JOIN products p ON il.product_id = p.id
-      LEFT JOIN employees e ON il.employee_id = e.id
-      WHERE il.product_id = ?
-      ORDER BY il.created_at DESC
-    `, [productId]);
-  }
-  return runQuery(`
-    SELECT il.*, p.name as product_name, e.name as employee_name
+  const select = `
+    SELECT il.*, p.name as product_name, e.name as employee_name,
+           v.color as variant_color, v.size as variant_size, v.sku as variant_sku
     FROM inventory_logs il
     LEFT JOIN products p ON il.product_id = p.id
+    LEFT JOIN product_variants v ON il.variant_id = v.id
     LEFT JOIN employees e ON il.employee_id = e.id
-    ORDER BY il.created_at DESC
-    LIMIT 100
-  `);
+  `;
+  if (productId) {
+    return runQuery(`${select} WHERE il.product_id = ? ORDER BY il.created_at DESC`, [productId]);
+  }
+  return runQuery(`${select} ORDER BY il.created_at DESC LIMIT 100`);
 });
 
+// Low stock at the most specific level: one row per variant for clothing
+// products, one row per product for simple products.
 ipcMain.handle('db:inventory:getLowStock', () => {
-  return runQuery(`
-    SELECT * FROM products 
-    WHERE stock_quantity <= min_stock_level AND is_active = 1
-    ORDER BY stock_quantity ASC
-  `);
+  return catalog.getLowStock(dbApi);
 });
 
 // System Logs
@@ -1150,27 +1227,33 @@ ipcMain.handle('db:returns:create', (_, returnData) => {
     VALUES (?, ?, ?, ?, ?, ?)
   `, [returnData.id, returnData.sale_id, returnData.return_number, returnData.total_refund, returnData.reason, returnData.employee_id]);
 
-  // Insert return items
-  for (const item of returnData.items) {
-    runInsert(`
-      INSERT INTO return_items (id, return_id, sale_item_id, product_id, quantity, refund_amount, condition)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [uuid(), returnData.id, item.sale_item_id, item.product_id, item.quantity, item.refund_amount, item.condition]);
-
-    // Restock if sellable
-    if (item.condition === 'sellable') {
-      const product = getOne('SELECT stock_quantity FROM products WHERE id = ?', [item.product_id]);
-      const currentStock = product ? product.stock_quantity : 0;
-      const newStock = currentStock + item.quantity;
-
-      runInsert('UPDATE products SET stock_quantity = ? WHERE id = ?', [newStock, item.product_id]);
+  // Insert return items and restock the exact variant that was sold
+  runTransaction(() => {
+    for (const item of returnData.items) {
+      const saleItem = item.sale_item_id
+        ? getOne('SELECT product_id, variant_id FROM sale_items WHERE id = ?', [item.sale_item_id])
+        : null;
+      const variantId = item.variant_id || (saleItem && saleItem.variant_id) || null;
+      const productId = item.product_id || (saleItem && saleItem.product_id);
 
       runInsert(`
-        INSERT INTO inventory_logs (id, product_id, type, quantity_change, quantity_before, quantity_after, reason, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      `, [uuid(), item.product_id, 'return', item.quantity, currentStock, newStock, `Return: ${returnData.return_number}`]);
+        INSERT INTO return_items (id, return_id, sale_item_id, product_id, variant_id, quantity, refund_amount, condition)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [uuid(), returnData.id, item.sale_item_id, productId, variantId, item.quantity, item.refund_amount, item.condition]);
+
+      // Restock if sellable
+      if (item.condition === 'sellable' && productId && getOne('SELECT id FROM products WHERE id = ?', [productId])) {
+        catalog.adjustStock(dbApi, {
+          productId,
+          variantId,
+          delta: item.quantity,
+          type: 'return',
+          reason: `Return: ${returnData.return_number}`,
+          employeeId: returnData.employee_id || null,
+        });
+      }
     }
-  }
+  });
 
   // Check if sale is fully or partially refunded
   const sale = getOne('SELECT total FROM sales WHERE id = ?', [returnData.sale_id]);
@@ -1201,6 +1284,10 @@ const { testEmailConnection, sendTestEmail, sendReceiptEmail, initEmailService }
 // Image Service
 ipcMain.handle('images:save', async (_, { base64Data, originalName }) => {
   return saveImage(base64Data, originalName);
+});
+
+ipcMain.handle('images:saveLogo', async (_, { base64Data, originalName }) => {
+  return require('./services/imageService').saveLogo(base64Data, originalName);
 });
 
 ipcMain.handle('images:saveFromPath', async (_, sourcePath) => {
@@ -1405,7 +1492,7 @@ ipcMain.handle('email:sendPurchaseOrder', async (_, { to, po }) => {
       </div>
       
       <div style="text-align: center; padding-bottom: 40px; color: #94a3b8; font-size: 12px;">
-        <p>Sent via POSbyCirvex</p>
+        <p>Sent from our point of sale system</p>
       </div>
     </body>
     </html>
@@ -1442,7 +1529,7 @@ ipcMain.handle('email:sendPurchaseOrder', async (_, { to, po }) => {
   await transporter.sendMail({
     from: settings.email_user,
     to,
-    subject: `Purchase Order #${fullPO.po_number || fullPO.id?.slice(0, 8)} from ${settings.businessName || 'POSbyCirvex'}`,
+    subject: `Purchase Order #${fullPO.po_number || fullPO.id?.slice(0, 8)} from ${settings.businessName || 'our store'}`,
     html,
     attachments,
   });
@@ -1454,46 +1541,42 @@ ipcMain.handle('email:sendPurchaseOrder', async (_, { to, po }) => {
 // RECEIPTS
 // ==========================================
 
-ipcMain.handle('receipts:print', async (_, sale) => {
-  const settingsRows = runQuery('SELECT key, value FROM settings');
-  const storeSettings = {};
-  settingsRows.forEach(row => {
-    try { storeSettings[row.key] = JSON.parse(row.value); } catch (e) { storeSettings[row.key] = row.value; }
-  });
+const DEFAULT_PRINTER_SETTINGS = {
+  receipt: { printerName: '', paperWidthMm: 80, copies: 1, autoPrint: false, silent: false },
+  label: { printerName: '', copies: 1, silent: false, dpi: 0 },
+};
 
-  // Merge store_config
-  const storeConfig = storeSettings['store_config'] || {};
-  Object.assign(storeSettings, storeConfig);
+function getPrinterSettings() {
+  const saved = getSettingValue('printer_settings') || {};
+  return {
+    receipt: { ...DEFAULT_PRINTER_SETTINGS.receipt, ...(saved.receipt || {}) },
+    label: { ...DEFAULT_PRINTER_SETTINGS.label, ...(saved.label || {}) },
+  };
+}
 
-  return receiptService.print(sale, storeSettings);
+// Shop settings plus the logo as a data URI, for receipts and labels
+function getShopSettingsForPrint() {
+  const settings = getStoreSettings();
+  const { getImageBase64: imageAsBase64 } = require('./services/imageService');
+  settings.shopLogoDataUri = settings.shopLogo ? imageAsBase64(settings.shopLogo) : null;
+  settings.receiptPaperWidthMm = getPrinterSettings().receipt.paperWidthMm;
+  return settings;
+}
+
+ipcMain.handle('receipts:print', async (_, sale, overrides = {}) => {
+  const printer = { ...getPrinterSettings().receipt, ...overrides };
+  // Without a selected printer the system print dialog is shown
+  if (!printer.printerName) printer.silent = false;
+  return receiptService.print(sale, getShopSettingsForPrint(), printer);
 });
 
 ipcMain.handle('receipts:getHtml', async (_, sale) => {
-  const settingsRows = runQuery('SELECT key, value FROM settings');
-  const storeSettings = {};
-  settingsRows.forEach(row => {
-    try { storeSettings[row.key] = JSON.parse(row.value); } catch (e) { storeSettings[row.key] = row.value; }
-  });
-
-  // Merge store_config if it exists (CRITICAL FIX)
-  const storeConfig = storeSettings['store_config'] || {};
-  Object.assign(storeSettings, storeConfig);
-
-  return receiptService.getHtml(sale, storeSettings);
+  return receiptService.getHtml(sale, getShopSettingsForPrint());
 });
 
 ipcMain.handle('receipts:savePdf', async (_, sale) => {
   try {
-    const settingsRows = runQuery('SELECT key, value FROM settings');
-    const settings = {};
-    settingsRows.forEach(row => {
-      try { settings[row.key] = JSON.parse(row.value); } catch (e) { settings[row.key] = row.value; }
-    });
-
-    // Merge store_config if it exists
-    const storeConfig = settings['store_config'] || {};
-    Object.assign(settings, storeConfig);
-
+    const settings = getShopSettingsForPrint();
     const dialogResult = await dialog.showSaveDialog({
       title: 'Save Receipt PDF',
       defaultPath: `Receipt_${sale.receipt_number || sale.id}.pdf`,
@@ -1507,6 +1590,143 @@ ipcMain.handle('receipts:savePdf', async (_, sale) => {
     throw error;
   }
 });
+
+// ==========================================
+// PRINTERS
+// ==========================================
+// Lists the printers installed in the operating system (Windows printers,
+// including thermal receipt/label printers that have a Windows driver).
+ipcMain.handle('printers:list', async () => {
+  if (!mainWindow) return [];
+  const printers = await mainWindow.webContents.getPrintersAsync();
+  return printers.map(p => ({
+    name: p.name,
+    displayName: p.displayName || p.name,
+    description: p.description || '',
+    isDefault: !!p.isDefault,
+    status: p.status,
+  }));
+});
+
+ipcMain.handle('printers:getSettings', () => getPrinterSettings());
+
+// ==========================================
+// QR LABELS
+// ==========================================
+const labelService = require('./services/labelService');
+
+function getLabelSettings(overrides = {}) {
+  return { ...labelService.DEFAULT_LABEL_SETTINGS, ...(getSettingValue('label_settings') || {}), ...overrides };
+}
+
+// items: [{ variantId?, productId?, quantity }]
+function buildLabelData(items) {
+  const settings = getStoreSettings();
+  const labels = [];
+  for (const item of items || []) {
+    const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
+    if (item.variantId) {
+      const variant = getOne('SELECT * FROM product_variants WHERE id = ?', [item.variantId]);
+      if (!variant) throw new Error('Variant not found');
+      const product = getOne('SELECT * FROM products WHERE id = ?', [variant.product_id]);
+      labels.push({
+        productName: product ? product.name : '',
+        variantLabel: catalog.variantLabel(variant),
+        sku: variant.sku,
+        qrValue: variant.qr_code || variant.sku,
+        price: catalog.effectivePrice(product || {}, variant),
+        currency: settings.currency,
+        currencySymbol: settings.currencySymbol,
+        quantity,
+      });
+    } else if (item.productId) {
+      const product = getOne('SELECT * FROM products WHERE id = ?', [item.productId]);
+      if (!product) throw new Error('Product not found');
+      if (product.has_variants) throw new Error(`"${product.name}" has variants: choose which variant to label`);
+      const code = product.sku || product.barcode;
+      if (!code) throw new Error(`"${product.name}" has no SKU or barcode to put in the QR code`);
+      labels.push({
+        productName: product.name,
+        variantLabel: '',
+        sku: product.sku || product.barcode,
+        qrValue: code,
+        price: product.price,
+        currency: settings.currency,
+        currencySymbol: settings.currencySymbol,
+        quantity,
+      });
+    }
+  }
+  return labels;
+}
+
+function buildLabelsDocument(items, layoutOverrides) {
+  const layout = getLabelSettings(layoutOverrides);
+  const shop = getShopSettingsForPrint();
+  const html = labelService.buildLabelsHtml(buildLabelData(items), layout, {
+    name: shop.businessName,
+    logo: shop.shopLogoDataUri,
+  });
+  return { html, layout };
+}
+
+ipcMain.handle('labels:getTemplates', () => ({
+  templates: labelService.LABEL_TEMPLATES,
+  defaults: labelService.DEFAULT_LABEL_SETTINGS,
+}));
+
+ipcMain.handle('labels:getSettings', () => getLabelSettings());
+
+ipcMain.handle('labels:preview', (_, { items, layout }) => {
+  const doc = buildLabelsDocument(items, layout);
+  return { html: doc.html, page: labelService.getPageSize(labelService.resolveLayout(doc.layout)) };
+});
+
+ipcMain.handle('labels:print', async (_, { items, layout, printer }) => {
+  const doc = buildLabelsDocument(items, layout);
+  const options = { ...getPrinterSettings().label, ...(printer || {}) };
+  if (!options.printerName) options.silent = false;
+  return labelService.printLabels(BrowserWindow, doc.html, doc.layout, options);
+});
+
+ipcMain.handle('labels:savePdf', async (_, { items, layout }) => {
+  const doc = buildLabelsDocument(items, layout);
+  const result = await dialog.showSaveDialog({
+    title: 'Save labels as PDF',
+    defaultPath: 'labels.pdf',
+    filters: [{ name: 'PDF Documents', extensions: ['pdf'] }],
+  });
+  if (result.canceled) return null;
+  const pdf = await labelService.labelsToPdf(BrowserWindow, doc.html, doc.layout);
+  await fs.promises.writeFile(result.filePath, pdf);
+  return result.filePath;
+});
+
+// Print an HTML document prepared by the renderer (used by the generic barcode
+// generator). Rendered in a sandboxed window with scripts disabled; the system
+// print dialog is always shown.
+ipcMain.handle('print:html', async (_, { html }) => {
+  if (typeof html !== 'string' || html.length > 20 * 1024 * 1024) throw new Error('Invalid document');
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, javascript: false },
+  });
+  try {
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    return await new Promise((resolve, reject) => {
+      win.webContents.print({ silent: false, printBackground: true }, (success, reason) => {
+        if (success) resolve(true);
+        else if (reason === 'cancelled') resolve(false);
+        else reject(new Error(reason || 'Printing failed'));
+      });
+    });
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+});
+
+// QR image (SVG) for an identifier, for on-screen previews
+ipcMain.handle('labels:qrSvg', (_, text) => labelService.qrSvg(text));
 
 ipcMain.handle('db:receipts:getBySale', (_, saleId) => {
   return runQuery('SELECT * FROM receipts WHERE sale_id = ? ORDER BY created_at DESC', [saleId]);
@@ -1607,7 +1827,7 @@ ipcMain.handle('email:sendReceipt', async (_, sale, toEmail) => {
   await transporter.sendMail({
     from: settings.email_user,
     to: toEmail,
-    subject: `Receipt #${receiptNumber} from ${settings.businessName || 'POSbyCirvex'}`,
+    subject: `Receipt #${receiptNumber} from ${settings.businessName || 'our store'}`,
     html,
     attachments,
   });
@@ -1784,32 +2004,30 @@ ipcMain.handle('db:purchaseReturns:create', (_, data) => {
     const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.unit_cost), 0);
     const returnNumber = 'RET-' + Date.now().toString().slice(-6);
 
-    // 1. Create Return Record
-    runInsert(`
-      INSERT INTO purchase_returns (id, return_number, purchase_order_id, supplier_id, total_amount, notes, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [id, returnNumber, purchase_order_id, supplier_id, totalAmount, notes, 'complated']);
-
-    // 2. Insert Items & Update Stock
-    items.forEach(item => {
+    runTransaction(() => {
+      // 1. Create Return Record
       runInsert(`
-        INSERT INTO purchase_return_items (id, return_id, product_id, product_name, quantity, unit_cost, reason)
+        INSERT INTO purchase_returns (id, return_number, purchase_order_id, supplier_id, total_amount, notes, status)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [uuid(), id, item.product_id, item.product_name, item.quantity, item.unit_cost, item.reason]);
+      `, [id, returnNumber, purchase_order_id, supplier_id, totalAmount, notes, 'complated']);
 
-      // Reduce Stock (Returning to supplier means we lose stock)
-      // LOGIC: quantity is positive in return item. We SUBTRACT from our inventory.
-      const product = getOne('SELECT stock_quantity FROM products WHERE id = ?', [item.product_id]);
-      if (product) {
-        const newStock = Math.max(0, product.stock_quantity - item.quantity);
-        runInsert('UPDATE products SET stock_quantity = ? WHERE id = ?', [newStock, item.product_id]);
-
-        // Log inventory change
+      // 2. Insert Items & Update Stock (returning to the supplier removes stock)
+      items.forEach(item => {
         runInsert(`
-            INSERT INTO inventory_logs (id, product_id, type, quantity_change, quantity_before, quantity_after, reason, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `, [uuid(), item.product_id, 'return_out', -item.quantity, product.stock_quantity, newStock, `Return #${returnNumber}`, new Date().toISOString()]);
-      }
+          INSERT INTO purchase_return_items (id, return_id, product_id, variant_id, product_name, quantity, unit_cost, reason)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [uuid(), id, item.product_id, item.variant_id || null, item.product_name, item.quantity, item.unit_cost, item.reason]);
+
+        if (getOne('SELECT id FROM products WHERE id = ?', [item.product_id])) {
+          catalog.adjustStock(dbApi, {
+            productId: item.product_id,
+            variantId: item.variant_id || null,
+            delta: -item.quantity,
+            type: 'return_out',
+            reason: `Return #${returnNumber}`,
+          });
+        }
+      });
     });
 
     // 3. Update Supplier Balance (They owe us credit, or we owe them less)
@@ -1899,10 +2117,10 @@ ipcMain.handle('db:purchaseOrders:create', (_, po) => {
   // Insert PO items
   for (const item of po.items) {
     runInsert(`
-      INSERT INTO purchase_order_items (id, purchase_order_id, product_id, product_name, quantity, unit_cost, tax_rate, tax_amount, discount_amount, total_cost)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO purchase_order_items (id, purchase_order_id, product_id, variant_id, variant_label, product_name, quantity, unit_cost, tax_rate, tax_amount, discount_amount, total_cost)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      item.id || uuid(), id, item.product_id, item.product_name, item.quantity, item.unit_cost,
+      item.id || uuid(), id, item.product_id, item.variant_id || null, item.variant_label || null, item.product_name, item.quantity, item.unit_cost,
       item.tax_rate || 0, item.tax_amount || 0, item.discount_amount || 0, item.total_cost
     ]);
   }
@@ -1945,22 +2163,25 @@ ipcMain.handle('db:receivings:create', (_, data) => {
   const receiveNumber = 'GRN-' + Date.now().toString().slice(-6);
 
   try {
-    // 1. Create Receiving Record
-    runInsert(`
-      INSERT INTO receivings (id, receive_number, purchase_order_id, supplier_id, notes)
-      SELECT ?, ?, id, supplier_id, ? FROM purchase_orders WHERE id = ?
-    `, [receivingId, receiveNumber, notes, poId]);
+    runTransaction(() => {
+      // 1. Create Receiving Record
+      runInsert(`
+        INSERT INTO receivings (id, receive_number, purchase_order_id, supplier_id, notes)
+        SELECT ?, ?, id, supplier_id, ? FROM purchase_orders WHERE id = ?
+      `, [receivingId, receiveNumber, notes, poId]);
 
-    let allItemsFullyReceived = true;
+      // 2. Process Items (stock goes to the ordered variant)
+      for (const item of items) {
+        if (!(item.quantity_received > 0)) continue;
+        const poItem = item.po_item_id
+          ? getOne('SELECT variant_id FROM purchase_order_items WHERE id = ?', [item.po_item_id])
+          : null;
+        const variantId = item.variant_id || (poItem && poItem.variant_id) || null;
 
-    // 2. Process Items
-    for (const item of items) {
-      if (item.quantity_received > 0) {
-        // Add Receiving Item
         runInsert(`
-          INSERT INTO receiving_items (id, receiving_id, product_id, product_name, quantity_ordered, quantity_received)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `, [uuid(), receivingId, item.product_id, item.product_name, item.quantity_ordered, item.quantity_received]);
+          INSERT INTO receiving_items (id, receiving_id, product_id, variant_id, product_name, quantity_ordered, quantity_received)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [uuid(), receivingId, item.product_id, variantId, item.product_name, item.quantity_ordered, item.quantity_received]);
 
         // Update PO Item Received Qty
         runInsert(`
@@ -1969,20 +2190,15 @@ ipcMain.handle('db:receivings:create', (_, data) => {
           WHERE id = ?
         `, [item.quantity_received, item.po_item_id]);
 
-        // Update Product Stock
-        runInsert(`
-          UPDATE products
-          SET stock_quantity = stock_quantity + ?
-          WHERE id = ?
-        `, [item.quantity_received, item.product_id]);
-
-        // Log Inventory
-        runInsert(`
-          INSERT INTO inventory_logs (id, product_id, type, quantity, reason, reference_id)
-          VALUES (?, ?, 'purchase', ?, ?, ?)
-        `, [uuid(), item.product_id, item.quantity_received, `GRN: ${receiveNumber}`, receivingId]);
+        catalog.adjustStock(dbApi, {
+          productId: item.product_id,
+          variantId,
+          delta: item.quantity_received,
+          type: 'purchase',
+          reason: `GRN: ${receiveNumber}`,
+        });
       }
-    }
+    });
 
     // 3. Check PO Status
     // Get all items for this PO to check if everything is received
@@ -2691,12 +2907,14 @@ ipcMain.handle('db:quotations:create', (_, quote) => {
 
   for (const item of quote.items) {
     runInsert(`
-      INSERT INTO quotation_items (id, quotation_id, product_id, product_name, quantity, unit_price, discount, tax_amount, total)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO quotation_items (id, quotation_id, product_id, variant_id, variant_label, product_name, quantity, unit_price, discount, tax_amount, total)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       uuid(),
       quote.id,
       item.product_id || null,
+      item.variant_id || null,
+      item.variant_label || null,
       item.product_name,
       item.quantity,
       item.unit_price || 0,
@@ -2742,23 +2960,22 @@ ipcMain.handle('db:purchaseOrders:receiveStock', (_, { poId, receivedItems }) =>
   // 1. Update PO status
   runInsert("UPDATE purchase_orders SET status = 'received', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [poId]);
 
-  // 2. Update Product Stock and Log
+  // 2. Update Product/Variant Stock and Log
   const items = runQuery('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?', [poId]);
 
-  for (const item of items) {
-    if (item.product_id) {
-      const product = getOne('SELECT stock_quantity FROM products WHERE id = ?', [item.product_id]);
-      const currentStock = product ? product.stock_quantity : 0;
-      const newStock = currentStock + item.quantity;
-
-      runInsert('UPDATE products SET stock_quantity = ? WHERE id = ?', [newStock, item.product_id]);
-
-      runInsert(
-        'INSERT INTO inventory_logs (id, product_id, type, quantity_change, quantity_before, quantity_after, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
-        [uuid(), item.product_id, 'receive_po', item.quantity, currentStock, newStock, `Received PO #${poId}`]
-      );
+  runTransaction(() => {
+    for (const item of items) {
+      if (item.product_id && getOne('SELECT id FROM products WHERE id = ?', [item.product_id])) {
+        catalog.adjustStock(dbApi, {
+          productId: item.product_id,
+          variantId: item.variant_id || null,
+          delta: item.quantity,
+          type: 'receive_po',
+          reason: `Received PO #${poId}`,
+        });
+      }
     }
-  }
+  });
   return true;
 });
 

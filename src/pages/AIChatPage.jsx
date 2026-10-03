@@ -30,7 +30,7 @@ const AVAILABLE_MODELS = [
 export default function AIChatPage() {
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState([
-        { role: 'model', content: "Hello! I'm Cirvex One AI. I can analyze sales data, images, and help with your business operations. How can I assist you today?" }
+        { role: 'model', content: "Hello! I'm your AI assistant. I can analyze sales data, images, and help with your business operations. How can I assist you today?" }
     ]);
     const [isStreaming, setIsStreaming] = useState(false);
     const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0].id);
@@ -208,7 +208,7 @@ export default function AIChatPage() {
                         <Bot className="text-white w-6 h-6" />
                     </div>
                     <div>
-                        <h1 className="text-lg font-bold text-white tracking-tight">Cirvex One AI</h1>
+                        <h1 className="text-lg font-bold text-white tracking-tight">AI Assistant</h1>
                         <div className="flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                             <span className="text-xs text-zinc-400">Online & Ready</span>
@@ -237,7 +237,7 @@ export default function AIChatPage() {
                             
                             {/* Role Label */}
                             <span className="text-xs text-zinc-500 mb-1 px-1">
-                                {msg.role === 'user' ? 'You' : 'Cirvex AI'}
+                                {msg.role === 'user' ? 'You' : 'AI'}
                             </span>
 
                             {/* Message Bubble */}
@@ -352,7 +352,7 @@ export default function AIChatPage() {
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder="Ask Cirvex One anything..."
+                            placeholder="Ask the assistant anything..."
                             className="flex-1 bg-dark-tertiary border border-dark-border text-white rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none h-12 max-h-32 shadow-inner"
                         />
                         
@@ -370,7 +370,7 @@ export default function AIChatPage() {
                     </div>
                 </div>
                 <div className="text-center mt-2">
-                     <p className="text-[10px] text-zinc-500">Cirvex One can make mistakes. Consider checking important information.</p>
+                     <p className="text-[10px] text-zinc-500">The AI assistant can make mistakes. Consider checking important information.</p>
                 </div>
             </div>
         </div>

@@ -16,7 +16,21 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
         items: []
     });
     const [searchQuery, setSearchQuery] = useState('');
+    const [variantResults, setVariantResults] = useState([]);
     const [loading, setLoading] = useState(false);
+
+    // Clothing products are ordered per colour/size so received stock goes to the right variant
+    useEffect(() => {
+        let cancelled = false;
+        if (!searchQuery.trim()) {
+            setVariantResults([]);
+            return undefined;
+        }
+        window.electronAPI.catalog.searchVariants(searchQuery, 20)
+            .then(rows => { if (!cancelled) setVariantResults(rows); })
+            .catch(() => { if (!cancelled) setVariantResults([]); });
+        return () => { cancelled = true; };
+    }, [searchQuery]);
 
 
 
@@ -53,31 +67,51 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
         }
     };
 
-    const handleAddItem = (product) => {
-        const existing = formData.items.find(i => i.product_id === product.id);
+    const addLine = (line) => {
+        const existing = formData.items.find(i => i.key === line.key);
         if (existing) {
-            updateItem(product.id, 'quantity', existing.quantity + 1);
+            updateItem(line.key, 'quantity', existing.quantity + 1);
         } else {
-            setFormData(prev => ({
-                ...prev,
-                items: [...prev.items, {
-                    product_id: product.id,
-                    product_name: product.name,
-                    quantity: 1,
-                    unit_cost: product.cost_price || 0,
-                    total_cost: product.cost_price || 0,
-                    tax_rate: 0 // Optional: inherit from product if desired
-                }]
-            }));
+            setFormData(prev => ({ ...prev, items: [...prev.items, line] }));
         }
         setSearchQuery('');
     };
 
-    const updateItem = (productId, field, value) => {
+    const handleAddItem = (product) => {
+        addLine({
+            key: product.id,
+            product_id: product.id,
+            variant_id: null,
+            product_name: product.name,
+            quantity: 1,
+            unit_cost: product.cost || 0,
+            total_cost: product.cost || 0,
+            tax_rate: 0 // Optional: inherit from product if desired
+        });
+    };
+
+    const handleAddVariant = (variant) => {
+        const product = products.find(p => p.id === variant.product_id);
+        const cost = variant.cost ?? product?.cost ?? 0;
+        addLine({
+            key: variant.id,
+            product_id: variant.product_id,
+            variant_id: variant.id,
+            variant_label: [variant.color, variant.size].filter(Boolean).join(' / '),
+            sku: variant.sku,
+            product_name: variant.product_name,
+            quantity: 1,
+            unit_cost: cost,
+            total_cost: cost,
+            tax_rate: 0
+        });
+    };
+
+    const updateItem = (key, field, value) => {
         setFormData(prev => ({
             ...prev,
             items: prev.items.map(item => {
-                if (item.product_id === productId) {
+                if (item.key === key) {
                     const updates = { [field]: parseFloat(value) || 0 };
                     if (field === 'quantity' || field === 'unit_cost') {
                         const qty = field === 'quantity' ? parseFloat(value) : item.quantity;
@@ -91,10 +125,10 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
         }));
     };
 
-    const removeItem = (productId) => {
+    const removeItem = (key) => {
         setFormData(prev => ({
             ...prev,
-            items: prev.items.filter(i => i.product_id !== productId)
+            items: prev.items.filter(i => i.key !== key)
         }));
     };
 
@@ -141,10 +175,11 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
         }
     };
 
-    const filteredProducts = products.filter(p =>
+    // Products with variants are listed through their variants instead
+    const filteredProducts = products.filter(p => !(p.variant_count > 0) && (
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.sku?.toLowerCase().includes(searchQuery.toLowerCase())
-    ).slice(0, 5);
+    )).slice(0, 5);
 
     const selectedSupplier = suppliers.find(s => s.id === formData.supplier_id);
 
@@ -198,7 +233,22 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                             <p className="text-xs text-zinc-500">Stock: {product.stock_quantity}</p>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-sm text-accent-primary font-medium">Cost: ${product.cost_price || 0}</p>
+                                            <p className="text-sm text-accent-primary font-medium">Cost: {product.cost || 0}</p>
+                                        </div>
+                                    </button>
+                                ))}
+                                {variantResults.map(variant => (
+                                    <button
+                                        key={variant.id}
+                                        className="w-full text-left p-3 hover:bg-zinc-700 transition-colors flex justify-between items-center"
+                                        onClick={() => handleAddVariant(variant)}
+                                    >
+                                        <div>
+                                            <p className="font-medium">{variant.product_name} <span className="text-accent-primary">{[variant.color, variant.size].filter(Boolean).join(' / ')}</span></p>
+                                            <p className="text-xs text-zinc-500"><span className="font-mono">{variant.sku}</span> · Stock: {variant.stock_quantity}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-sm text-accent-primary font-medium">Cost: {variant.cost ?? '-'}</p>
                                         </div>
                                     </button>
                                 ))}
@@ -227,14 +277,17 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                     </tr>
                                 ) : (
                                     formData.items.map(item => (
-                                        <tr key={item.product_id} className="hover:bg-zinc-800/50">
-                                            <td className="p-3 font-medium">{item.product_name}</td>
+                                        <tr key={item.key} className="hover:bg-zinc-800/50">
+                                            <td className="p-3 font-medium">
+                                                {item.product_name}
+                                                {item.variant_label && <div className="text-xs text-accent-primary">{item.variant_label} <span className="font-mono text-zinc-500">{item.sku}</span></div>}
+                                            </td>
                                             <td className="p-3">
                                                 <Input
                                                     type="number"
                                                     min="1"
                                                     value={item.quantity}
-                                                    onChange={e => updateItem(item.product_id, 'quantity', e.target.value)}
+                                                    onChange={e => updateItem(item.key, 'quantity', e.target.value)}
                                                     className="h-8 w-full text-center"
                                                 />
                                             </td>
@@ -246,7 +299,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                                         min="0"
                                                         step="0.01"
                                                         value={item.unit_cost}
-                                                        onChange={e => updateItem(item.product_id, 'unit_cost', e.target.value)}
+                                                        onChange={e => updateItem(item.key, 'unit_cost', e.target.value)}
                                                         className="h-8 w-full pl-6"
                                                     />
                                                 </div>
@@ -256,7 +309,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                             </td>
                                             <td className="p-3">
                                                 <button
-                                                    onClick={() => removeItem(item.product_id)}
+                                                    onClick={() => removeItem(item.key)}
                                                     className="text-red-400 hover:text-red-300 p-1 hover:bg-red-400/10 rounded"
                                                 >
                                                     <Trash2 className="w-4 h-4" />

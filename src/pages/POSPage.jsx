@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, ShoppingCart, Pause, Trash2, Plus, Minus, CreditCard, Banknote, Wallet, Printer, Mail, Check, Download, FileText, Gift, SlidersHorizontal } from 'lucide-react';
 import { useCartStore } from '../stores/cartStore';
 import { useAuthStore } from '../stores/authStore';
@@ -10,6 +11,8 @@ import ReceiptPreviewModal from '../components/modals/ReceiptPreviewModal';
 import { NumPad } from '../components/ui/NumPad';
 import { DatePicker } from '../components/ui/DatePicker';
 import CartOptionsModal from '../components/modals/CartOptionsModal';
+import { VariantPickerModal } from '../components/pos/VariantPickerModal';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 
 export default function POSPage() {
     const [products, setProducts] = useState([]);
@@ -24,9 +27,12 @@ export default function POSPage() {
     const [receiptData, setReceiptData] = useState(null);
     const [activeMobileTab, setActiveMobileTab] = useState('products'); // 'products' or 'cart'
     const searchRef = useRef(null);
+    const [variantProduct, setVariantProduct] = useState(null); // product whose colour/size is being chosen
+    const [unknownCode, setUnknownCode] = useState(null);
+    const navigate = useNavigate();
 
     const cart = useCartStore();
-    const { currentEmployee } = useAuthStore();
+    const { currentEmployee, hasPermission } = useAuthStore();
 
     useEffect(() => {
         loadData();
@@ -35,16 +41,11 @@ export default function POSPage() {
         searchRef.current?.focus();
     }, []);
 
-    useEffect(() => {
-        // Handle barcode scanner (quick typing in search)
-        const handleKeyDown = (e) => {
-            if (e.key === 'Enter' && searchQuery.length > 0) {
-                handleBarcodeSearch();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [searchQuery]);
+    // USB barcode/QR scanner: works wherever the focus is on this screen, as
+    // long as no dialog that has its own input is open.
+    useBarcodeScanner((code) => handleCode(code, { fromScanner: true }), {
+        isActive: () => !showPaymentModal && !showHeldModal && !showReceiptModal && !showOptionsModal && !unknownCode,
+    });
 
     const loadData = async () => {
         try {
@@ -74,18 +75,57 @@ export default function POSPage() {
         }
     };
 
-    const handleBarcodeSearch = async () => {
+    const addToCart = (product, variant = null) => {
+        const result = cart.addItem(product, 1, variant);
+        if (!result.success) {
+            toast.error(result.message);
+            return false;
+        }
+        const label = variant ? ` (${[variant.color, variant.size].filter(Boolean).join(' / ')})` : '';
+        toast.success(`${product.name}${label}${result.quantity > 1 ? ` × ${result.quantity}` : ''}`);
+        return true;
+    };
+
+    // Resolve a scanned or typed code (variant QR/SKU/barcode, product SKU/barcode)
+    const handleCode = async (rawCode, { fromScanner = false } = {}) => {
+        const code = String(rawCode || '').trim();
+        if (!code) return;
         try {
-            const product = await window.electronAPI.products.getByBarcode(searchQuery);
-            if (product) {
-                cart.addItem(product);
-                setSearchQuery('');
-                toast.success(`Added ${product.name}`);
+            const result = await window.electronAPI.catalog.lookupCode(code);
+            if (!result) {
+                if (fromScanner) {
+                    setUnknownCode(code);
+                } else if (filteredProducts.length === 1) {
+                    // Typed a name that matches exactly one product: take it
+                    setSearchQuery('');
+                    handleProductClick(filteredProducts[0]);
+                } else if (filteredProducts.length === 0) {
+                    toast.error(`No product matches "${code}"`);
+                }
+                return;
+            }
+            setSearchQuery('');
+            if (result.type === 'variant') {
+                setVariantProduct(null);
+                addToCart(result.product, result.variant);
+            } else if (result.needsVariant) {
+                setVariantProduct(result.product);
             } else {
-                toast.error('Product not found');
+                addToCart(result.product);
             }
         } catch (error) {
-            console.error('Barcode search failed:', error);
+            console.error('Code lookup failed:', error);
+            toast.error('Lookup failed');
+        }
+    };
+
+    const handleProductClick = (product) => {
+        if (product.is_bundle) {
+            addToCart(product);
+        } else if (product.variant_count > 0) {
+            setVariantProduct(product);
+        } else {
+            addToCart(product);
         }
     };
 
@@ -168,7 +208,14 @@ export default function POSPage() {
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search products or scan barcode..."
+                            onKeyDown={(e) => {
+                                // Enter on a typed code (SKU, barcode) adds it directly
+                                if (e.key === 'Enter' && searchQuery.trim()) {
+                                    e.preventDefault();
+                                    handleCode(searchQuery);
+                                }
+                            }}
+                            placeholder="Search by name, or type/scan a SKU, barcode or QR code…"
                             className="input pl-10"
                         />
                     </div>
@@ -222,12 +269,7 @@ export default function POSPage() {
                             {filteredProducts.map(product => (
                                 <button
                                     key={product.id}
-                                    onClick={() => {
-                                        const result = cart.addItem(product);
-                                        if (result && !result.success) {
-                                            toast.error(result.message);
-                                        }
-                                    }}
+                                    onClick={() => handleProductClick(product)}
                                     className="product-card text-left"
                                     disabled={product.stock_quantity <= 0}
                                 >
@@ -243,9 +285,14 @@ export default function POSPage() {
                                         )}
                                     </div>
                                     <p className="font-medium text-sm truncate">{product.name}</p>
+                                    {product.variant_count > 0 && (
+                                        <p className="text-[11px] text-zinc-500">{product.variant_count} colours/sizes</p>
+                                    )}
                                     <div className="flex items-center justify-between mt-1">
-                                        <p className="text-accent-primary font-semibold">
-                                            {formatCurrency(product.price)}
+                                        <p className="text-accent-primary font-semibold truncate">
+                                            {product.variant_count > 0 && product.min_variant_price !== product.max_variant_price
+                                                ? `${formatCurrency(product.min_variant_price)}+`
+                                                : formatCurrency(product.variant_count > 0 ? product.min_variant_price : product.price)}
                                         </p>
                                         <span className={`text-xs ${product.stock_quantity <= product.min_stock_level ? 'text-amber-400' : 'text-zinc-500'}`}>
                                             {product.stock_quantity} left
@@ -301,6 +348,11 @@ export default function POSPage() {
                             <div key={item.id} className="cart-item">
                                 <div className="flex-1 min-w-0">
                                     <p className="font-medium truncate">{item.product_name}</p>
+                                    {(item.variant_label || item.sku) && (
+                                        <p className="text-xs text-accent-primary truncate">
+                                            {item.variant_label}{item.variant_label && item.sku ? ' · ' : ''}<span className="font-mono text-zinc-500">{item.sku}</span>
+                                        </p>
+                                    )}
                                     <p className="text-sm text-zinc-400">
                                         {formatCurrency(item.unit_price)} × {item.quantity}
                                     </p>
@@ -418,7 +470,7 @@ export default function POSPage() {
                 total={cart.getTotal()}
                 onComplete={async (payments, creditCustomer = null, dueDate = null) => {
                     try {
-                        const sale = await cart.processPayment(payments, currentEmployee.id);
+                        const sale = await cart.processPayment(payments, currentEmployee.id, currentEmployee.name);
 
                         // If this is a credit sale, create the credit sale record
                         if (payments[0]?.method === 'credit' && creditCustomer) {
@@ -447,9 +499,16 @@ export default function POSPage() {
                         }
 
                         try {
-                            // Instead of auto-printing hook, open preview modal
-                            setReceiptData(sale);
-                            setShowReceiptModal(true);
+                            const printerSettings = await window.electronAPI.printers.getSettings();
+                            if (printerSettings?.receipt?.autoPrint) {
+                                // Print straight away on the configured receipt printer
+                                window.electronAPI.receipts.print(sale)
+                                    .then((ok) => ok && toast.success('Receipt sent to printer'))
+                                    .catch((printError) => toast.error(`Receipt not printed: ${printError.message}`));
+                            } else {
+                                setReceiptData(sale);
+                                setShowReceiptModal(true);
+                            }
                         } catch (printError) {
                             console.error('Receipt handling failed:', printError);
                         }
@@ -461,6 +520,38 @@ export default function POSPage() {
                     }
                 }}
             />
+
+            {/* Colour / size picker for clothing products */}
+            <VariantPickerModal
+                isOpen={!!variantProduct}
+                product={variantProduct}
+                onClose={() => setVariantProduct(null)}
+                formatCurrency={formatCurrency}
+                onSelect={(variant) => {
+                    if (addToCart(variantProduct, variant)) setVariantProduct(null);
+                }}
+            />
+
+            {/* Unknown scanned code */}
+            <Modal isOpen={!!unknownCode} onClose={() => setUnknownCode(null)} title="Code not found" size="sm">
+                <ModalBody>
+                    <p className="text-zinc-300">No product or variant uses this code:</p>
+                    <p className="font-mono text-lg mt-2 break-all text-amber-400">{unknownCode}</p>
+                    <p className="text-sm text-zinc-500 mt-3">
+                        Check that the label belongs to this shop. If it is a new item, create it and assign this code.
+                    </p>
+                </ModalBody>
+                <ModalFooter>
+                    <Button variant="secondary" onClick={() => { setSearchQuery(unknownCode); setUnknownCode(null); searchRef.current?.focus(); }}>
+                        Search instead
+                    </Button>
+                    {hasPermission('products.create') && (
+                        <Button onClick={() => { const code = unknownCode; setUnknownCode(null); navigate(`/products?newCode=${encodeURIComponent(code)}`); }}>
+                            Create product with this code
+                        </Button>
+                    )}
+                </ModalFooter>
+            </Modal>
 
             {/* Held Transactions Modal */}
             <Modal
@@ -812,6 +903,7 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                         onChange={(e) => setGiftCardCode(e.target.value)}
                                         placeholder="Scan or enter code..."
                                         className="flex-1"
+                                        data-scan-passthrough
                                         autoFocus
                                     />
                                     <Button onClick={checkGiftCardBalance} disabled={!giftCardCode || checkingGiftCard}>

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, Package, Grid, List, FileSpreadsheet } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Plus, Edit2, Trash2, Package, Grid, List, FileSpreadsheet, QrCode } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, SearchInput } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
-import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
+import { Modal, ModalBody } from '../components/ui/Modal';
 import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader, EmptyState } from '../components/ui/Table';
 import { Badge, StatusBadge } from '../components/ui/Badge';
 import { toast } from '../components/ui/Toast';
@@ -13,9 +14,8 @@ import { PERMISSIONS } from '../stores/authStore';
 import { ExcelImport } from '../components/ui/ExcelImport';
 
 
-// Real imports below
 import { useSettingsStore } from '../stores/settingsStore';
-import { checkLimit, getPlanLimits } from '../lib/planLimits';
+import { ProductFormModal } from '../components/products/ProductFormModal';
 
 export default function ProductsPage() {
     const [products, setProducts] = useState([]);
@@ -28,25 +28,28 @@ export default function ProductsPage() {
     const [editingProduct, setEditingProduct] = useState(null);
     const [editingCategory, setEditingCategory] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [activationData, setActivationData] = useState(null);
     const [showExcelImport, setShowExcelImport] = useState(false);
+    const [initialValues, setInitialValues] = useState(null);
+    const [searchParams, setSearchParams] = useSearchParams();
+    const navigate = useNavigate();
 
     const { settings, loadSettings } = useSettingsStore();
 
     useEffect(() => {
         loadData();
         loadSettings();
-        loadActivationData();
     }, []);
 
-    const loadActivationData = async () => {
-        try {
-            const data = await window.electronAPI.settings.get('activation_data');
-            setActivationData(data);
-        } catch (e) {
-            console.error(e);
+    // Opened from the POS after scanning an unknown code: start a new product with it
+    useEffect(() => {
+        const code = searchParams.get('newCode');
+        if (code) {
+            setEditingProduct(null);
+            setInitialValues({ barcode: code });
+            setShowProductModal(true);
+            setSearchParams({}, { replace: true });
         }
-    };
+    }, [searchParams]);
 
     const loadData = async () => {
         try {
@@ -67,12 +70,21 @@ export default function ProductsPage() {
         const matchesCategory = selectedCategory === 'all' || product.category_id === selectedCategory;
         const matchesSearch = !searchQuery ||
             product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            product.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+            product.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            product.brand?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            product.barcode?.includes(searchQuery);
         return matchesCategory && matchesSearch;
     });
 
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount);
+    };
+
+    const formatPrice = (product) => {
+        if (product.variant_count > 0 && product.min_variant_price !== product.max_variant_price) {
+            return `${formatCurrency(product.min_variant_price)} – ${formatCurrency(product.max_variant_price)}`;
+        }
+        return formatCurrency(product.variant_count > 0 ? product.min_variant_price : product.price);
     };
 
     const handleDeleteProduct = async (product) => {
@@ -106,19 +118,8 @@ export default function ProductsPage() {
     };
 
     const handleExcelImport = async (records) => {
-        // Check Limits
-        const limitCheck = checkLimit(activationData?.plan, 'products', products.length + records.length);
-        if (!limitCheck.allowed && activationData?.plan !== 'pro' && activationData?.plan !== 'enterprise') {
-            // Allow partial import? No, just block.
-            // Actually check if remaining space allows some.
-            const remaining = getPlanLimits(activationData?.plan).products - products.length;
-            if (records.length > remaining) {
-                toast.error(`Plan limit reached. You can only add ${remaining} more products. ${limitCheck.message}`);
-                return;
-            }
-        }
-
         let successCount = 0;
+        const failures = [];
         for (const record of records) {
             try {
                 // Find or create category
@@ -148,9 +149,11 @@ export default function ProductsPage() {
                 successCount++;
             } catch (error) {
                 console.error('Failed to import product:', record.name, error);
+                failures.push(record.name);
             }
         }
         toast.success(`Imported ${successCount} products`);
+        if (failures.length) toast.error(`${failures.length} rows were not imported (e.g. duplicate SKU/barcode): ${failures.slice(0, 3).join(', ')}`);
         loadData();
     };
 
@@ -174,11 +177,7 @@ export default function ProductsPage() {
                                     Manage Categories
                                 </Button>
                                 <Button onClick={() => {
-                                    const limitCheck = checkLimit(activationData?.plan, 'products', products.length);
-                                    if (!limitCheck.allowed) {
-                                        toast.error(limitCheck.message);
-                                        return;
-                                    }
+                                    setInitialValues(null);
                                     setEditingProduct(null);
                                     setShowProductModal(true);
                                 }}>
@@ -253,9 +252,11 @@ export default function ProductsPage() {
                                     </div>
                                     <div className="space-y-1">
                                         <h3 className="font-medium truncate">{product.name}</h3>
-                                        <p className="text-sm text-zinc-500">{product.sku || 'No SKU'}</p>
-                                        <div className="flex items-center justify-between">
-                                            <p className="font-semibold text-accent-primary">{formatCurrency(product.price)}</p>
+                                        <p className="text-sm text-zinc-500 truncate">
+                                            {product.variant_count > 0 ? `${product.variant_count} variants · ${product.stock_quantity} in stock` : (product.sku || 'No SKU')}
+                                        </p>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className="font-semibold text-accent-primary truncate">{formatPrice(product)}</p>
                                             <StatusBadge status={getStockStatus(product)} />
                                         </div>
                                     </div>
@@ -271,6 +272,14 @@ export default function ProductsPage() {
                                                 Edit
                                             </Button>
                                         </PermissionGate>
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            title="Print QR labels"
+                                            onClick={() => navigate(`/barcode-labels?product=${product.id}`)}
+                                        >
+                                            <QrCode className="w-3 h-3" />
+                                        </Button>
                                         <PermissionGate permission={PERMISSIONS.PRODUCTS_DELETE}>
                                             <Button
                                                 variant="danger"
@@ -310,6 +319,7 @@ export default function ProductsPage() {
                                                     )}
                                                 </div>
                                                 <span className="font-medium">{product.name}</span>
+                                                {product.variant_count > 0 && <Badge>{product.variant_count} variants</Badge>}
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-zinc-400">{product.sku || '-'}</TableCell>
@@ -320,7 +330,7 @@ export default function ProductsPage() {
                                                 </Badge>
                                             ) : '-'}
                                         </TableCell>
-                                        <TableCell className="font-medium">{formatCurrency(product.price)}</TableCell>
+                                        <TableCell className="font-medium">{formatPrice(product)}</TableCell>
                                         <TableCell>{product.stock_quantity}</TableCell>
                                         <TableCell><StatusBadge status={getStockStatus(product)} /></TableCell>
                                         <TableCell>
@@ -331,6 +341,14 @@ export default function ProductsPage() {
                                                     onClick={() => { setEditingProduct(product); setShowProductModal(true); }}
                                                 >
                                                     <Edit2 className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    title="Print QR labels"
+                                                    onClick={() => navigate(`/barcode-labels?product=${product.id}`)}
+                                                >
+                                                    <QrCode className="w-4 h-4" />
                                                 </Button>
                                                 <Button
                                                     variant="ghost"
@@ -354,6 +372,7 @@ export default function ProductsPage() {
                     onClose={() => setShowProductModal(false)}
                     product={editingProduct}
                     categories={categories}
+                    initialValues={initialValues}
                     onSave={() => { loadData(); setShowProductModal(false); }}
                 />
 
@@ -375,277 +394,6 @@ export default function ProductsPage() {
                 />
             </div>
         </>
-    );
-}
-
-function ProductFormModal({ isOpen, onClose, product, categories, onSave }) {
-    const [formData, setFormData] = useState({
-        name: '',
-        sku: '',
-        barcode: '',
-        description: '',
-        category_id: '',
-        price: '',
-        cost: '',
-        stock_quantity: '',
-        min_stock_level: '5',
-        tax_rate: '0',
-        is_active: true,
-        image_path: '',
-    });
-    const [loading, setLoading] = useState(false);
-    const [imagePreview, setImagePreview] = useState(null);
-
-    useEffect(() => {
-        if (product) {
-            setFormData({
-                name: product.name,
-                sku: product.sku || '',
-                barcode: product.barcode || '',
-                description: product.description || '',
-                category_id: product.category_id || '',
-                price: (product.price ?? 0).toString(),
-                cost: (product.cost ?? 0).toString(),
-                stock_quantity: (product.stock_quantity ?? 0).toString(),
-                min_stock_level: (product.min_stock_level ?? 5).toString(),
-                tax_rate: (product.tax_rate ?? 0).toString(),
-                is_active: product.is_active ?? true,
-                image_path: product.image_path || '',
-            });
-            // Load image if exists
-            if (product.image_path) {
-                loadExistingImage(product.image_path);
-            } else {
-                setImagePreview(null);
-            }
-        } else {
-            setFormData({
-                name: '',
-                sku: '',
-                barcode: '',
-                description: '',
-                category_id: '',
-                price: '',
-                cost: '',
-                stock_quantity: '0',
-                min_stock_level: '5',
-                tax_rate: '0',
-                is_active: true,
-                image_path: '',
-            });
-            setImagePreview(null);
-        }
-    }, [product, isOpen]);
-
-    const loadExistingImage = async (imagePath) => {
-        try {
-            const base64 = await window.electronAPI.images.get(imagePath);
-            if (base64) {
-                setImagePreview(base64);
-            }
-        } catch (error) {
-            console.error('Failed to load image:', error);
-        }
-    };
-
-    const handleImageSelect = async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        // Read file as base64
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            const base64Data = event.target.result;
-            setImagePreview(base64Data);
-
-            // Save image and get filename
-            try {
-                const result = await window.electronAPI.images.save({
-                    base64Data,
-                    originalName: file.name,
-                });
-                if (result.success) {
-                    setFormData(prev => ({ ...prev, image_path: result.fileName }));
-                }
-            } catch (error) {
-                console.error('Failed to save image:', error);
-            }
-        };
-        reader.readAsDataURL(file);
-    };
-
-    const handleRemoveImage = async () => {
-        if (formData.image_path) {
-            try {
-                await window.electronAPI.images.delete(formData.image_path);
-            } catch (error) {
-                console.error('Failed to delete image:', error);
-            }
-        }
-        setImagePreview(null);
-        setFormData(prev => ({ ...prev, image_path: '' }));
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-
-        if (!formData.name || !formData.price) {
-            toast.error('Name and price are required');
-            return;
-        }
-
-        setLoading(true);
-        try {
-            const data = {
-                ...formData,
-                id: product?.id || uuid(),
-                price: parseFloat(formData.price),
-                cost: formData.cost ? parseFloat(formData.cost) : 0,
-                stock_quantity: parseInt(formData.stock_quantity) || 0,
-                min_stock_level: parseInt(formData.min_stock_level) || 5,
-                tax_rate: parseFloat(formData.tax_rate) || 0,
-                category_id: formData.category_id || null,
-                image_path: formData.image_path || null,
-                sku: formData.sku || null,
-                barcode: formData.barcode || null,
-            };
-
-            if (product) {
-                await window.electronAPI.products.update(data);
-                toast.success('Product updated');
-            } else {
-                await window.electronAPI.products.create(data);
-                toast.success('Product created');
-            }
-            onSave();
-        } catch (error) {
-            toast.error(error.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title={product ? 'Edit Product' : 'Add Product'} size="lg">
-            <form onSubmit={handleSubmit}>
-                <ModalBody>
-                    <div className="grid grid-cols-3 gap-4">
-                        {/* Image Upload Section */}
-                        <div className="col-span-1">
-                            <label className="form-label mb-2 block">Product Image</label>
-                            <div className="aspect-square bg-dark-tertiary rounded-lg flex flex-col items-center justify-center overflow-hidden relative border-2 border-dashed border-zinc-600 hover:border-zinc-500 transition-colors">
-                                {imagePreview ? (
-                                    <>
-                                        <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                                        <button
-                                            type="button"
-                                            onClick={handleRemoveImage}
-                                            className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600"
-                                        >
-                                            <Trash2 className="w-4 h-4 text-white" />
-                                        </button>
-                                    </>
-                                ) : (
-                                    <label className="cursor-pointer flex flex-col items-center p-4 text-center">
-                                        <Package className="w-10 h-10 text-zinc-500 mb-2" />
-                                        <span className="text-sm text-zinc-400">Click to upload</span>
-                                        <span className="text-xs text-zinc-500 mt-1">JPG, PNG up to 5MB</span>
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            onChange={handleImageSelect}
-                                            className="hidden"
-                                        />
-                                    </label>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Form Fields */}
-                        <div className="col-span-2 grid grid-cols-2 gap-4">
-                            <Input
-                                label="Product Name *"
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                placeholder="Enter product name"
-                            />
-                            <Input
-                                label="SKU"
-                                value={formData.sku}
-                                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                                placeholder="Enter SKU"
-                            />
-                            <Input
-                                label="Barcode"
-                                value={formData.barcode}
-                                onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                                placeholder="Enter barcode"
-                            />
-                            <Select
-                                label="Category"
-                                value={formData.category_id}
-                                onChange={(value) => setFormData({ ...formData, category_id: value })}
-                                options={[
-                                    { value: '', label: 'No Category' },
-                                    ...categories.map(c => ({ value: c.id, label: c.name }))
-                                ]}
-                            />
-                            <Input
-                                label="Price *"
-                                type="number"
-                                step="0.01"
-                                value={formData.price}
-                                onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                                placeholder="0.00"
-                            />
-                            <Input
-                                label="Cost"
-                                type="number"
-                                step="0.01"
-                                value={formData.cost}
-                                onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
-                                placeholder="0.00"
-                            />
-                            <Input
-                                label="Stock Quantity"
-                                type="number"
-                                value={formData.stock_quantity}
-                                onChange={(e) => setFormData({ ...formData, stock_quantity: e.target.value })}
-                            />
-                            <Input
-                                label="Min Stock Level"
-                                type="number"
-                                value={formData.min_stock_level}
-                                onChange={(e) => setFormData({ ...formData, min_stock_level: e.target.value })}
-                            />
-                            <Input
-                                label="Tax Rate (%)"
-                                type="number"
-                                step="0.1"
-                                value={formData.tax_rate}
-                                onChange={(e) => setFormData({ ...formData, tax_rate: e.target.value })}
-                            />
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="checkbox"
-                                    id="is_active"
-                                    checked={formData.is_active}
-                                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                                    className="w-4 h-4 rounded bg-dark-tertiary border-dark-border"
-                                />
-                                <label htmlFor="is_active" className="text-sm">Active</label>
-                            </div>
-                        </div>
-                    </div>
-                </ModalBody>
-                <ModalFooter>
-                    <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button type="submit" loading={loading}>
-                        {product ? 'Update Product' : 'Add Product'}
-                    </Button>
-                </ModalFooter>
-            </form>
-        </Modal>
     );
 }
 

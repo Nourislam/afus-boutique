@@ -3,7 +3,9 @@ import { PinPad } from '../ui/NumPad';
 import { useAuthStore } from '../../stores/authStore';
 import { toast } from '../ui/Toast';
 import { TitleBar } from '../layout/TitleBar';
-import { Terminal } from 'lucide-react';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { ShopLogo } from '../shop/ShopLogo';
+import { APP_NAME } from '../../lib/appInfo';
 import OpeningCashDialog from '../shifts/OpeningCashDialog';
 
 export default function LoginScreen() {
@@ -13,6 +15,7 @@ export default function LoginScreen() {
     const [loading, setLoading] = useState(false);
     const [showOpeningCash, setShowOpeningCash] = useState(false);
     const { login } = useAuthStore();
+    const { settings } = useSettingsStore();
 
     useEffect(() => {
         loadEmployees();
@@ -142,10 +145,10 @@ export default function LoginScreen() {
             <TitleBar />
             <div className="flex-1 flex flex-col items-center justify-center p-8">
                 <div className="mb-12 text-center">
-                    <div className="w-20 h-20 rounded-2xl bg-white mx-auto mb-4 flex items-center justify-center shadow-lg shadow-white/10">
-                        <Terminal size={40} className="text-black" />
+                    <div className="mx-auto mb-4 w-fit">
+                        <ShopLogo fileName={settings.shopLogo} size={80} rounded="rounded-2xl" />
                     </div>
-                    <h1 className="text-3xl font-bold mb-2">POSbyCirvex</h1>
+                    <h1 className="text-3xl font-bold mb-2">{settings.businessName || APP_NAME}</h1>
                     <p className="text-zinc-500">Select your profile to login</p>
                 </div>
 
@@ -155,7 +158,7 @@ export default function LoginScreen() {
                         <div className="text-center py-12">
                             <p className="text-zinc-400 mb-2">No employees found</p>
                             <p className="text-zinc-500 text-sm">
-                                Default admin PIN: 1234
+                                Restore a backup or reset the shop setup to create an administrator.
                             </p>
                         </div>
                     ) : (

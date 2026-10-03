@@ -14,11 +14,13 @@ const PLATFORMS = {
         bgColor: 'bg-green-500/20',
         borderColor: 'border-green-500/30',
         description: 'Connect your Shopify store for real-time inventory sync',
+        // Connects directly with a Shopify custom-app Admin API access token;
+        // no third-party relay server is involved.
         fields: [
             { key: 'storeUrl', label: 'Store URL', placeholder: 'your-store.myshopify.com', type: 'text', required: true },
+            { key: 'accessToken', label: 'Admin API access token', placeholder: 'shpat_xxxxxxxx', type: 'password', required: true },
         ],
-        helpUrl: 'https://help.shopify.com/en/manual/apps/custom-apps',
-        usesOAuth: true
+        helpUrl: 'https://help.shopify.com/en/manual/apps/custom-apps'
     },
     woocommerce: {
         name: 'WooCommerce',
@@ -51,34 +53,6 @@ export function EcommerceSettings() {
 
     useEffect(() => {
         loadConnections();
-        
-        // Listen for Shopify OAuth callback
-        const unsubscribe = window.electronAPI.ecommerce.onShopifyOAuthComplete?.(async (data) => {
-            console.log('Shopify OAuth complete:', data);
-            try {
-                const result = await window.electronAPI.ecommerce.addConnection({
-                    platform: 'shopify',
-                    storeUrl: data.storeUrl,
-                    storeName: data.storeName,
-                    accessToken: data.accessToken,
-                });
-                
-                if (result.success) {
-                    toast.success(`Connected to ${data.storeName}!`);
-                    await loadConnections();
-                    setShowAddModal(false);
-                    setFormData({});
-                    setSelectedPlatform(null);
-                } else {
-                    toast.error('Failed to save connection');
-                }
-            } catch (error) {
-                console.error('Failed to save Shopify connection:', error);
-                toast.error('Failed to complete Shopify connection');
-            }
-        });
-        
-        return () => unsubscribe?.();
     }, []);
 
     const loadConnections = async () => {
@@ -98,21 +72,7 @@ export function EcommerceSettings() {
 
         const platform = PLATFORMS[selectedPlatform];
         
-        // For OAuth platforms (Shopify), redirect to OAuth flow
-        if (platform.usesOAuth && selectedPlatform === 'shopify') {
-            if (!formData.storeUrl) {
-                toast.error('Store URL is required');
-                return;
-            }
-            
-            // Open OAuth URL in browser
-            const oauthUrl = `https://posbycirvex.web.app/api/oauth/shopify?shop=${encodeURIComponent(formData.storeUrl)}`;
-            window.electronAPI.shell.openExternal(oauthUrl);
-            toast.info('Opening Shopify authorization page...');
-            return;
-        }
-        
-        // Validate required fields for non-OAuth platforms
+        // Validate required fields
         for (const field of platform.fields) {
             if (field.required && !formData[field.key]) {
                 toast.error(`${field.label} is required`);
@@ -305,7 +265,7 @@ export function EcommerceSettings() {
                 <div className="text-center py-12 text-zinc-500">
                     <Store className="w-12 h-12 mx-auto mb-4 opacity-50" />
                     <p>No e-commerce stores connected yet.</p>
-                    <p className="text-sm mt-1">Click "Add Connection" to get started.</p>
+                    <p className="text-sm mt-1">Click &ldquo;Add Connection&rdquo; to get started.</p>
                 </div>
             ) : (
                 <div className="grid gap-4">
@@ -449,11 +409,6 @@ export function EcommerceSettings() {
                                 />
                             ))}
 
-                            {PLATFORMS[selectedPlatform].usesOAuth && (
-                                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-200 text-sm">
-                                    <p>After clicking Connect, you'll be redirected to {PLATFORMS[selectedPlatform].name} to authorize the connection. Close this window after authorization.</p>
-                                </div>
-                            )}
                         </div>
                     )}
                 </ModalBody>

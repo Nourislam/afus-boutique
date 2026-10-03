@@ -15,7 +15,7 @@ export default function AIInsightsWidget({ salesData }) {
     const fetchInsights = async (force = false) => {
         // Check cache first
         const today = new Date().toDateString();
-        const cached = localStorage.getItem('cirvex_one_daily_insights');
+        const cached = localStorage.getItem('ai_daily_insights');
         
         if (!force && cached) {
             try {
@@ -40,7 +40,7 @@ export default function AIInsightsWidget({ salesData }) {
             setInsights(result);
             
             // Save to cache
-            localStorage.setItem('cirvex_one_daily_insights', JSON.stringify({
+            localStorage.setItem('ai_daily_insights', JSON.stringify({
                 date: today,
                 content: result
             }));
@@ -67,7 +67,7 @@ export default function AIInsightsWidget({ salesData }) {
                         <Sparkles size={20} />
                     </div>
                     <div>
-                        <h3 className="font-bold text-white">Cirvex One Insights</h3>
+                        <h3 className="font-bold text-white">AI Insights</h3>
                         <p className="text-xs text-indigo-300">Powered by Gemini AI</p>
                     </div>
                 </div>

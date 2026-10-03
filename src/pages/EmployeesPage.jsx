@@ -12,7 +12,6 @@ import { v4 as uuid } from 'uuid';
 import { format } from 'date-fns';
 import { ExcelImport } from '../components/ui/ExcelImport';
 import { FileSpreadsheet } from 'lucide-react';
-import { checkLimit } from '../lib/planLimits';
 
 const roleIcons = {
     admin: ShieldCheck,
@@ -36,21 +35,9 @@ export default function EmployeesPage() {
 
     const { currentEmployee, isAdmin } = useAuthStore();
 
-    const [activationData, setActivationData] = useState(null);
-
     useEffect(() => {
         loadData();
-        loadActivationData();
     }, []);
-
-    const loadActivationData = async () => {
-        try {
-            const data = await window.electronAPI.settings.get('activation_data');
-            setActivationData(data);
-        } catch (e) {
-            console.error(e);
-        }
-    };
 
     const loadData = async () => {
         try {
@@ -127,11 +114,6 @@ export default function EmployeesPage() {
                                 Import Excel
                             </Button>
                             <Button onClick={() => {
-                                const limitCheck = checkLimit(activationData?.plan, 'employees', employees.length);
-                                if (!limitCheck.allowed) {
-                                    toast.error(limitCheck.message);
-                                    return;
-                                }
                                 setEditingEmployee(null);
                                 setShowModal(true);
                             }}>
@@ -235,7 +217,6 @@ export default function EmployeesPage() {
                 onClose={() => setShowModal(false)}
                 employee={editingEmployee}
                 onSave={() => { loadData(); setShowModal(false); }}
-                activationData={activationData}
                 currentUser={currentEmployee}
             />
 
@@ -251,7 +232,7 @@ export default function EmployeesPage() {
     );
 }
 
-function EmployeeFormModal({ isOpen, onClose, employee, onSave, activationData, currentUser }) {
+function EmployeeFormModal({ isOpen, onClose, employee, onSave, currentUser }) {
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -262,8 +243,8 @@ function EmployeeFormModal({ isOpen, onClose, employee, onSave, activationData, 
     });
     const [loading, setLoading] = useState(false);
 
-    // Check if current user is the license owner
-    const isLicenseOwner = activationData?.email && currentUser?.email === activationData.email;
+    // Only administrators can create other administrators
+    const canCreateAdmin = currentUser?.role === 'admin';
 
     useEffect(() => {
         if (employee) {
@@ -364,11 +345,11 @@ function EmployeeFormModal({ isOpen, onClose, employee, onSave, activationData, 
                             options={[
                                 { value: 'cashier', label: 'Cashier' },
                                 { value: 'manager', label: 'Manager' },
-                                { value: 'admin', label: 'Admin', disabled: !isLicenseOwner },
+                                { value: 'admin', label: 'Admin', disabled: !canCreateAdmin },
                             ]}
                         />
-                        {!isLicenseOwner && (
-                            <p className="text-xs text-zinc-500 mt-1">Only the License Owner can create new Admins.</p>
+                        {!canCreateAdmin && (
+                            <p className="text-xs text-zinc-500 mt-1">Only an administrator can create new administrators.</p>
                         )}
                         <div className="grid grid-cols-2 gap-4">
                             <Input
