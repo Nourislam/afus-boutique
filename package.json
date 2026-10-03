@@ -11,9 +11,7 @@
     "test": "vitest run",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "vite build && electron-builder",
-    "electron:start": "electron .",
-    "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "rebuild": "electron-rebuild -f -w better-sqlite3"
+    "electron:start": "electron ."
   },
   "keywords": [
     "pos",
