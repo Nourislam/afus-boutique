@@ -2,6 +2,7 @@ console.log('=== MAIN.JS LOADED ===');
 const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { BRAND, dataDirectory, databasePath } = require('./brand');
 const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener } = require('./database/init');
 const dbApi = require('./database/api');
 const catalog = require('./services/catalogService');
@@ -123,13 +124,15 @@ function createWindow() {
 // ------------------------------------------------------------------
 // Data folder
 // ------------------------------------------------------------------
-// The database and images live in a fixed folder under %APPDATA%, one folder
-// per afus application: %APPDATA%\afus\boutique (macOS: ~/Library/Application
-// Support/afus/boutique). Fixed, so it never depends on the installer name.
-const DATA_DIR = ['afus', 'boutique'];
-
+// Afus Boutique has its own folder (database, images, settings, browser
+// storage and cache): %APPDATA%\AfusBoutique, ~/Library/Application
+// Support/AfusBoutique on macOS. Each Afus product has its own folder and
+// data is never taken from another application.
 function configureDataDirectory() {
-  app.setPath('userData', path.join(app.getPath('appData'), ...DATA_DIR));
+  app.setName(BRAND.productName);
+  app.setPath('userData', dataDirectory(app.getPath('appData')));
+  // Same id as the installer's shortcuts: taskbar grouping and notifications
+  if (process.platform === 'win32') app.setAppUserModelId(BRAND.appId);
 }
 
 configureDataDirectory();
@@ -165,7 +168,7 @@ if (!gotTheLock) {
       console.error('Database initialization failed:', error);
       // The shop's language is not known yet: show the message in the three languages
       const lines = ['ar', 'fr', 'en'].map(l => `${i18n.translate(l, 'dialog.dbFailed')}\n${i18n.translate(l, 'dialog.dataFolder')}: ${app.getPath('userData')}`);
-      dialog.showErrorBox(i18n.translate('fr', 'dialog.startFailed', { app: 'afus boutique' }),
+      dialog.showErrorBox(i18n.translate('fr', 'dialog.startFailed', { app: BRAND.productName }),
         `${lines.join('\n\n')}\n\n${error.message}`);
       app.quit();
       return;
@@ -398,12 +401,12 @@ ipcMain.handle('db:categories:getAll', () => {
 // BACKUP & RESTORE
 // ==========================================
 ipcMain.handle('backup:create', async () => {
-  const dbPath = path.join(app.getPath('userData'), 'pos-database.sqlite');
+  const dbPath = databasePath(app.getPath('userData'));
 
   const { filePath } = await dialog.showSaveDialog({
     title: shopT('dialog.exportBackup'),
-    defaultPath: `afus-boutique-backup-${new Date().toISOString().split('T')[0]}.sqlite`,
-    filters: [{ name: shopT('dialog.backupFiles'), extensions: ['sqlite'] }]
+    defaultPath: `${BRAND.fileSlug}-backup-${new Date().toISOString().split('T')[0]}.db`,
+    filters: [{ name: shopT('dialog.backupFiles'), extensions: ['db'] }]
   });
 
   if (filePath) {
@@ -421,13 +424,14 @@ ipcMain.handle('backup:create', async () => {
 ipcMain.handle('backup:restore', async () => {
   const { filePaths } = await dialog.showOpenDialog({
     title: shopT('dialog.importBackup'),
-    filters: [{ name: shopT('dialog.backupFiles'), extensions: ['sqlite'] }],
+    // .sqlite: backups saved by earlier versions of this application
+    filters: [{ name: shopT('dialog.backupFiles'), extensions: ['db', 'sqlite'] }],
     properties: ['openFile']
   });
 
   if (filePaths && filePaths.length > 0) {
     const backupPath = filePaths[0];
-    const dbPath = path.join(app.getPath('userData'), 'pos-database.sqlite');
+    const dbPath = databasePath(app.getPath('userData'));
 
     try {
       fs.copyFileSync(backupPath, dbPath);
@@ -442,7 +446,7 @@ ipcMain.handle('backup:restore', async () => {
 });
 
 ipcMain.handle('backup:reset', async () => {
-  const dbPath = path.join(app.getPath('userData'), 'pos-database.sqlite');
+  const dbPath = databasePath(app.getPath('userData'));
   try {
     if (fs.existsSync(dbPath)) {
       // Keep a copy so an accidental reset can still be recovered
@@ -477,7 +481,7 @@ ipcMain.handle('app:setTheme', (_, { theme, preference } = {}) => {
 ipcMain.handle('app:getInfo', () => ({
   version: app.getVersion(),
   dataPath: app.getPath('userData'),
-  databasePath: path.join(app.getPath('userData'), 'pos-database.sqlite'),
+  databasePath: databasePath(app.getPath('userData')),
   platform: process.platform,
   electron: process.versions.electron,
 }));
@@ -3563,7 +3567,7 @@ ipcMain.handle('creditInvoice:sendEmail', async (_, { creditSaleId, email }) => 
       to: email || creditSale.customer_email,
       creditSale,
       businessInfo: {
-        businessName: settings.businessName || 'afus boutique',
+        businessName: settings.businessName || BRAND.productName,
         businessAddress: settings.businessAddress,
         businessPhone: settings.businessPhone,
         businessEmail: settings.businessEmail
@@ -3611,7 +3615,7 @@ ipcMain.handle('creditInvoice:sendReminder', async (_, { creditSaleId, email }) 
     to: email || creditSale.customer_email,
     creditSale,
     businessInfo: {
-      businessName: settings.businessName || 'afus boutique',
+      businessName: settings.businessName || BRAND.productName,
       businessPhone: settings.businessPhone,
       businessEmail: settings.businessEmail
     }
@@ -3700,7 +3704,7 @@ ipcMain.handle('email:sendGiftCard', async (_, { giftCard, email }) => {
     if (emailService.initEmailService(emailConfig)) {
       await emailService.sendEmail({
         to: email,
-        subject: `Your Gift Card from ${settings.businessName || 'afus boutique'}`,
+        subject: `Your Gift Card from ${settings.businessName || BRAND.productName}`,
         html: `
                 <h2>Here is your Gift Card!</h2>
                 <p>Enjoy your gift card of <strong>${receiptService.formatCurrency(giftCard.current_balance)}</strong>.</p>

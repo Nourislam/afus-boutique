@@ -6,6 +6,7 @@
  * The language is the shop's language (store_config.defaultLanguage).
  */
 const CLOTHING = require('../shared/clothing.json');
+const BRAND = require('../shared/brand.json');
 
 const LANG_INDEX = { en: 0, fr: 1, ar: 2 };
 const LOCALES = { en: 'en-GB', fr: 'fr-DZ', ar: 'ar-DZ-u-nu-latn' };
@@ -101,7 +102,8 @@ const MESSAGES = {
     'dialog.backupFiles': ['Backup (SQLite)', 'Sauvegarde (SQLite)', 'نسخة احتياطية (SQLite)'],
     'dialog.imageFiles': ['Images', 'Images', 'الصور'],
     'dialog.dataFolder': ['Data folder', 'Dossier des données', 'مجلد البيانات'],
-    'app.name': ['afus boutique', 'afus boutique', 'afus boutique'],
+    // Product name: the same in every language (electron/shared/brand.json)
+    'app.name': [BRAND.productName, BRAND.productName, BRAND.productName],
     'labels.sampleName': ['Classic T-shirt', 'T-shirt classique', 'تيشيرت كلاسيك'],
 };
 

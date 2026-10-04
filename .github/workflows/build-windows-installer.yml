@@ -47,7 +47,7 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: afus-boutique-Setup-1.1.2-win-x64
-          path: release/afus boutique Setup 1.1.2.exe
+          name: Afus-Boutique-Setup-1.1.2-win-x64
+          path: release/Afus Boutique Setup 1.1.2.exe
           if-no-files-found: error
           retention-days: 90

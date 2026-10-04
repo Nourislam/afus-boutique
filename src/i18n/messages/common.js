@@ -1,7 +1,10 @@
 // [English, French, Arabic]
+import { PRODUCT_NAME } from '../../config/brand';
+
 export default {
     // Application identity (the shop's own name/logo is shown where available)
-    'app.name': ['afus boutique', 'afus boutique', 'afus boutique'],
+    // Product name: the same in every language (electron/shared/brand.json)
+    'app.name': [PRODUCT_NAME, PRODUCT_NAME, PRODUCT_NAME],
     'app.tagline': ['Software for Algerian clothing & fashion shops', 'Logiciel pour boutiques de vêtements et accessoires en Algérie', 'برنامج محلات الملابس والإكسسوارات في الجزائر'],
     'app.loading': ['Loading…', 'Chargement…', 'جارٍ التحميل…'],
 

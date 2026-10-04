@@ -1,4 +1,4 @@
--- afus boutique database schema (base tables; later changes are in init.js and migrations.js)
+-- Afus Boutique database schema (base tables; later changes are in init.js and migrations.js)
 
 -- Categories
 CREATE TABLE IF NOT EXISTS categories (

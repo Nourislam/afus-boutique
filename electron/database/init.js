@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
 const { applyMigrations } = require('./migrations');
+const { databasePath } = require('../brand');
 
 let db = null;
 let SQL = null;
@@ -13,8 +14,7 @@ const changeListeners = [];
 let transactionDepth = 0;
 
 function getDbPath() {
-    const userDataPath = app.getPath('userData');
-    return path.join(userDataPath, 'pos-database.sqlite');
+    return databasePath(app.getPath('userData'));
 }
 
 function timestampSuffix() {

@@ -1,6 +1,6 @@
-# afus boutique
+# Afus Boutique
 
-afus boutique is the afus application for clothing and accessory shops: an offline point of sale
+Afus Boutique is the Afus application for clothing and accessory shops: an offline point of sale
 and stock manager, built as a Windows desktop application
 (Electron + React + SQLite). It works without an account, without activation and without
 internet: all data lives in a local database on the shop's computer.
@@ -40,20 +40,29 @@ npm run electron:build # production build + installer for the current OS
 node scripts/generate-icons.js   # rebuild icon.png / icon-512.png / icon.ico from public/icon.svg
 ```
 
-The Windows installer (NSIS, `afus boutique Setup <version>.exe`) is produced by
-`npm run electron:build:win` on Windows, or by the `Build Windows Installer` GitHub workflow
-(artifact `afus-boutique-Setup-<version>-win-x64`, nothing published). Building the
+The Windows installer (NSIS, `Afus Boutique Setup <version>.exe`, program `AfusBoutique.exe`)
+is produced by `npm run electron:build:win -- --publish never` on Windows, or by the
+`Build Windows Installer` GitHub workflow (artifact `Afus-Boutique-Setup-<version>-win-x64`,
+nothing published). macOS: `Afus Boutique.app` in `Afus-Boutique-<version>-<arch>.dmg`. Building the
 Windows installer on Linux requires Wine. Customers only need the installer – no Node.js or
 other tools.
 
 ## Data
 
-- Database: `%APPDATA%\afus\boutique\pos-database.sqlite` (product images and the logo are in
-  `%APPDATA%\afus\boutique\images`). On macOS: `~/Library/Application Support/afus/boutique`.
-  Each afus application has its own folder under `afus`.
+- Database: `%APPDATA%\AfusBoutique\afus-boutique.db` (product images and the logo are in
+  `%APPDATA%\AfusBoutique\images`). On macOS: `~/Library/Application Support/AfusBoutique`.
+  The folder also holds the window settings, browser storage and cache. It is independent of
+  any other application: nothing is imported automatically.
 - Schema changes are versioned in `electron/database/migrations.js`; a backup copy of the
   database file is written before an existing database is upgraded.
-- Settings › Backup exports/imports the database.
+- Settings › Backup exports (`afus-boutique-backup-<date>.db`) and imports the database.
+
+## Identity
+
+The product identity (company, product name, app id, data folder, database file) is defined once
+in `electron/shared/brand.json`, read by the main process (`electron/brand.js`) and the interface
+(`src/config/brand.js`). `package.json` repeats what electron-builder needs; `tests/brand.test.js`
+checks they match. Naming rules for the other Afus products: [docs/NAMING.md](docs/NAMING.md).
 
 ## Project structure
 

@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 const { BrowserWindow } = require('electron');
 const { loadHtml } = require('./printDocument');
+const { BRAND } = require('../brand');
 const emailService = require('./emailService');
 
 class InvoiceService {
@@ -446,7 +447,7 @@ class InvoiceService {
 
         return await emailService.sendEmail({
             to,
-            subject: `Invoice ${creditSale.invoice_number} from ${businessInfo.businessName || 'afus boutique'}`,
+            subject: `Invoice ${creditSale.invoice_number} from ${businessInfo.businessName || BRAND.productName}`,
             html,
             attachments: pdfPath ? [{
                 filename: `Invoice_${creditSale.invoice_number}.pdf`,

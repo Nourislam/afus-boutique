@@ -1,4 +1,4 @@
-// The afus mark (afus boutique app icon). Blue square with a white "a" on the
+// The Afus mark (Afus Boutique app icon). Blue square with a white "a" on the
 // dark theme; white square with a blue "a" on the light theme. Inline SVG, so
 // it is sharp at any size and works offline.
 export function AfusLogo({ size = 24, className = '', title }) {

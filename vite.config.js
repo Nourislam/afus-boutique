@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { readFileSync } from 'fs'
+
+// Product identity (electron/shared/brand.json), written into index.html
+const BRAND = JSON.parse(readFileSync(new URL('./electron/shared/brand.json', import.meta.url), 'utf8'))
 
 // Content-Security-Policy for the renderer.
 // - img-src: product/logo images are served by the custom app:// protocol or as data: URIs
@@ -36,7 +40,9 @@ function contentSecurityPolicy() {
       isBuild = config.command === 'build'
     },
     transformIndexHtml(html) {
-      return html.replace('content="%APP_CSP%"', `content="${isBuild ? PRODUCTION_CSP : DEV_CSP}"`)
+      return html
+        .replace('content="%APP_CSP%"', `content="${isBuild ? PRODUCTION_CSP : DEV_CSP}"`)
+        .replaceAll('%APP_NAME%', BRAND.productName)
     },
   }
 }

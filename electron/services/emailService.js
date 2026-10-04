@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const fs = require('fs');
+const { BRAND } = require('../brand');
 
 /**
  * Properly strip HTML tags from a string.
@@ -167,7 +168,7 @@ async function sendTestEmail(settings, toEmail) {
         await testTransporter.sendMail({
             from: settings.smtp_user,
             to: toEmail,
-            subject: 'afus boutique - Test e-mail',
+            subject: `${BRAND.productName} - Test e-mail`,
             html: `
         <h2>Email Configuration Test</h2>
         <p>This is a test email from your point of sale system.</p>
