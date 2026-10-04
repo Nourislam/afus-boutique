@@ -6,23 +6,20 @@ import SetupWizard from './components/SetupWizard';
 import POSPage from './pages/POSPage';
 import ProductsPage from './pages/ProductsPage';
 import InventoryPage from './pages/InventoryPage';
-import CustomersPage from './pages/CustomersPage';
 import EmployeesPage from './pages/EmployeesPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import AIChatPage from './pages/AIChatPage';
 import DashboardPage from './pages/DashboardPage';
 import GiftCardsPage from './pages/GiftCardsPage';
-import BundlesPage from './pages/BundlesPage';
-import PromotionsPage from './pages/PromotionsPage';
-import BarcodeLabelPage from './pages/BarcodeLabelPage';
-import QrLabelsPage from './pages/QrLabelsPage';
-import BrandsPage from './pages/BrandsPage';
 import TransactionsPage from './pages/TransactionsPage';
 
-import SuppliersPage from './pages/SuppliersPage';
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
 import CreditSalesPage from './pages/CreditSalesPage';
+import CatalogPage from './pages/CatalogPage';
+import OffersPage from './pages/OffersPage';
+import LabelsPage from './pages/LabelsPage';
+import { TitleBar } from './components/layout/TitleBar';
 import { useAuthStore, PERMISSIONS } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
@@ -73,10 +70,13 @@ function App() {
 
     if (isLoading) {
         return (
-            <div className="h-screen w-screen flex items-center justify-center bg-dark-primary">
+            <div className="h-screen w-screen flex flex-col bg-dark-primary">
+                <TitleBar bare />
+                <div className="flex-1 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <div className="w-12 h-12 border-4 border-accent-primary border-t-transparent rounded-full animate-spin" />
                     <p className="text-zinc-400">{t('app.loading')}</p>
+                </div>
                 </div>
             </div>
         );
@@ -119,26 +119,14 @@ function App() {
                             <ProductsPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/brands" element={
-                        <ProtectedRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
-                            <BrandsPage />
-                        </ProtectedRoute>
-                    } />
+                    <Route path="/brands" element={<Navigate to="/catalog?tab=brands" replace />} />
                     <Route path="/inventory" element={
                         <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
                             <InventoryPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/customers" element={
-                        <ProtectedRoute permission={PERMISSIONS.CUSTOMERS_VIEW}>
-                            <CustomersPage />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/suppliers" element={
-                        <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
-                            <SuppliersPage />
-                        </ProtectedRoute>
-                    } />
+                    <Route path="/customers" element={<Navigate to="/catalog?tab=customers" replace />} />
+                    <Route path="/suppliers" element={<Navigate to="/catalog?tab=suppliers" replace />} />
                     <Route path="/purchase-orders" element={
                         <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
                             <PurchaseOrdersPage />
@@ -149,11 +137,7 @@ function App() {
                             <GiftCardsPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/bundles" element={
-                        <ProtectedRoute permission={PERMISSIONS.BUNDLES_VIEW}>
-                            <BundlesPage />
-                        </ProtectedRoute>
-                    } />
+                    <Route path="/bundles" element={<Navigate to="/offers?tab=packs" replace />} />
                     <Route path="/transactions" element={
                         <ProtectedRoute permission={PERMISSIONS.POS_VIEW}>
                             <TransactionsPage />
@@ -164,11 +148,7 @@ function App() {
                             <CreditSalesPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/promotions" element={
-                        <ProtectedRoute permission={PERMISSIONS.PROMOTIONS_VIEW}>
-                            <PromotionsPage />
-                        </ProtectedRoute>
-                    } />
+                    <Route path="/promotions" element={<Navigate to="/offers?tab=promotions" replace />} />
                     <Route path="/employees" element={
                         <ProtectedRoute permission={PERMISSIONS.EMPLOYEES_VIEW}>
                             <EmployeesPage />
@@ -185,14 +165,21 @@ function App() {
                             <SettingsPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/barcode-labels" element={
+                    <Route path="/barcode-labels" element={<Navigate to="/labels" replace />} />
+                    <Route path="/barcode-generator" element={<Navigate to="/labels?tab=barcodes" replace />} />
+                    <Route path="/catalog" element={
                         <ProtectedRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
-                            <QrLabelsPage />
+                            <CatalogPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/barcode-generator" element={
+                    <Route path="/offers" element={
+                        <ProtectedRoute permission={PERMISSIONS.PROMOTIONS_VIEW}>
+                            <OffersPage />
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/labels" element={
                         <ProtectedRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
-                            <BarcodeLabelPage />
+                            <LabelsPage />
                         </ProtectedRoute>
                     } />
                     <Route path="*" element={<Navigate to="/" replace />} />

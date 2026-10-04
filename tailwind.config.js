@@ -7,11 +7,12 @@ export default {
     theme: {
         extend: {
             colors: {
+                // One set of surfaces for the whole app (darkest to lightest)
                 dark: {
-                    primary: '#0f0f0f',
-                    secondary: '#1a1a1a',
-                    tertiary: '#252525',
-                    border: '#27272a',
+                    primary: '#0b0b0d',   // app background
+                    secondary: '#131316', // sidebar, cards, panels
+                    tertiary: '#1c1c21',  // inputs, hover, raised items
+                    border: '#26262c',
                 },
                 accent: {
                     primary: '#6366f1',
@@ -22,7 +23,9 @@ export default {
                 }
             },
             fontFamily: {
-                sans: ['Inter', 'system-ui', 'sans-serif'],
+                // Bundled with the app (works offline): Inter for Latin, Cairo for Arabic
+                sans: ['"Inter Variable"', '"Cairo Variable"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
+                arabic: ['"Cairo Variable"', '"Inter Variable"', 'system-ui', 'sans-serif'],
             },
             animation: {
                 'fade-in': 'fadeIn 0.2s ease-out',

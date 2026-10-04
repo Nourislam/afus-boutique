@@ -60,11 +60,15 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    minWidth: 1200,
-    minHeight: 700,
-    frame: false,
-    titleBarStyle: 'hidden',
-    backgroundColor: '#0f0f0f',
+    minWidth: 1024,
+    minHeight: 680,
+    // Native window buttons on every system, drawn over our own title bar:
+    // macOS keeps its traffic lights, Windows/Linux get the standard
+    // minimise / maximise / close buttons. No duplicated buttons.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 13 } }
+      : { titleBarStyle: 'hidden', titleBarOverlay: { color: '#111113', symbolColor: '#a1a1aa', height: 40 } }),
+    backgroundColor: '#0b0b0d',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -381,9 +385,11 @@ ipcMain.handle('db:shifts:getHistory', (_, { startDate, endDate }) => shiftServi
 
 // Categories
 ipcMain.handle('db:categories:getAll', () => {
-
-
-  return runQuery('SELECT * FROM categories ORDER BY name');
+  return runQuery(`
+    SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.is_active = 1 AND p.category_id = c.id) AS product_count
+    FROM categories c
+    ORDER BY c.name
+  `);
 });
 
 // ==========================================
@@ -535,7 +541,11 @@ const PRODUCT_LIST_COLUMNS = `
     p.*, c.name as category_name, c.color as category_color,
     (SELECT COUNT(*) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) AS variant_count,
     (SELECT MIN(COALESCE(v.price, p.price)) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) AS min_variant_price,
-    (SELECT MAX(COALESCE(v.price, p.price)) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) AS max_variant_price
+    (SELECT MAX(COALESCE(v.price, p.price)) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) AS max_variant_price,
+    (SELECT GROUP_CONCAT(DISTINCT COALESCE(NULLIF(v.color_code, ''), v.color)) FROM product_variants v
+       WHERE v.product_id = p.id AND v.is_active = 1 AND v.color IS NOT NULL AND v.color <> '') AS variant_colors,
+    (SELECT GROUP_CONCAT(DISTINCT v.size) FROM product_variants v
+       WHERE v.product_id = p.id AND v.is_active = 1 AND v.stock_quantity > 0 AND v.size IS NOT NULL AND v.size <> '') AS sizes_in_stock
 `;
 
 ipcMain.handle('db:products:getAll', () => {
@@ -909,6 +919,21 @@ ipcMain.handle('db:sales:create', (_, sale) => {
         `, [uuid(), card.id, sale.id, amount, 'redeem', card.current_balance, newBalance]);
       }
     }
+
+    // Loyalty: 1 point per 100 DA, and the customer's total spent. Done here,
+    // in the same transaction, so the customer record is never overwritten.
+    if (sale.customer_id) {
+      runInsert(`
+        UPDATE customers SET loyalty_points = COALESCE(loyalty_points, 0) + ?, total_spent = COALESCE(total_spent, 0) + ?,
+          updated_at = CURRENT_TIMESTAMP, is_synced = 0
+        WHERE id = ?
+      `, [Math.floor((Number(sale.total) || 0) / 100), Number(sale.total) || 0, sale.customer_id]);
+    }
+
+    // Promotion used by this sale
+    if (sale.promotion_id) {
+      runInsert('UPDATE promotions SET current_uses = COALESCE(current_uses, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [sale.promotion_id]);
+    }
   });
 
   logSystemAction('create', `New Sale #${sale.receipt_number}`, { id: sale.id, total: sale.total }, sale.employee_id);
@@ -967,14 +992,14 @@ ipcMain.handle('db:sales:getById', (_, id) => {
 });
 
 ipcMain.handle('db:sales:getToday', (_, params = {}) => {
-  const today = new Date().toISOString().split('T')[0];
+  // "Today" in the shop's local time (timestamps are stored in UTC)
   let query = `
     SELECT s.*, e.name as employee_name
     FROM sales s
     LEFT JOIN employees e ON s.employee_id = e.id
-    WHERE date(s.created_at) = date(?)
+    WHERE date(s.created_at, 'localtime') = date('now', 'localtime')
   `;
-  const queryParams = [today];
+  const queryParams = [];
 
   if (params?.employeeId) {
     query += ' AND s.employee_id = ?';

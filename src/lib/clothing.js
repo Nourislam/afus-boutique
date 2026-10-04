@@ -71,3 +71,24 @@ export function sizeSetForCategory(categoryNameText) {
     const cat = CATEGORY_SUGGESTIONS.find(c => [c.en, c.fr, c.ar].some(n => n.toLowerCase() === key));
     return cat ? SIZE_SETS.find(s => s.code === cat.sizeSet) || null : null;
 }
+
+// Order of sizes as they are hung in the shop (XS, S, M… then 36, 38…)
+const SIZE_ORDER = new Map();
+SIZE_SETS.forEach((set, si) => set.sizes.forEach((size, i) => {
+    if (!SIZE_ORDER.has(size)) SIZE_ORDER.set(size, si * 1000 + i);
+}));
+
+/** Sort sizes in their natural order; unknown sizes go last, numbers numerically. */
+export function sortSizes(sizes) {
+    return [...sizes].sort((a, b) => {
+        const oa = SIZE_ORDER.get(a);
+        const ob = SIZE_ORDER.get(b);
+        if (oa !== undefined && ob !== undefined) return oa - ob;
+        if (oa !== undefined) return -1;
+        if (ob !== undefined) return 1;
+        const na = parseFloat(a);
+        const nb = parseFloat(b);
+        if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+        return String(a).localeCompare(String(b));
+    });
+}

@@ -8,7 +8,7 @@ import { useT } from '../../i18n';
 
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
-import { NAV_PERMISSIONS } from '../../lib/permissions';
+import { NAV_PERMISSIONS, PERMISSIONS } from '../../lib/permissions';
 import { ShieldAlert } from 'lucide-react';
 
 /**
@@ -35,13 +35,22 @@ export function ProtectedRoute({
     const requiredPermission = permission || NAV_PERMISSIONS[location.pathname];
 
     if (requiredPermission && !hasPermission(requiredPermission)) {
-        if (showAccessDenied) {
-            return <AccessDenied role={currentEmployee?.role} />;
-        }
+        // e.g. a cashier logging in where an administrator left off: go to
+        // the user's own home screen instead of showing an error page
+        const home = homePathFor(hasPermission);
+        if (home !== location.pathname) return <Navigate to={home} replace />;
+        if (showAccessDenied) return <AccessDenied role={currentEmployee?.role} />;
         return <Navigate to={redirectTo} replace />;
     }
 
     return children;
+}
+
+/** First screen a user may open: the dashboard, else the sales screen. */
+export function homePathFor(hasPermission) {
+    if (hasPermission(PERMISSIONS.DASHBOARD_VIEW)) return '/';
+    if (hasPermission(PERMISSIONS.POS_VIEW)) return '/pos';
+    return '/';
 }
 
 /**

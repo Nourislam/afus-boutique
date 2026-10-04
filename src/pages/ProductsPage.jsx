@@ -280,7 +280,7 @@ export default function ProductsPage() {
                                             variant="secondary"
                                             size="sm"
                                             title={t('products.printLabels')}
-                                            onClick={() => navigate(`/barcode-labels?product=${product.id}`)}
+                                            onClick={() => navigate(`/labels?tab=articles&product=${product.id}`)}
                                         >
                                             <QrCode className="w-3 h-3" />
                                         </Button>
@@ -350,7 +350,7 @@ export default function ProductsPage() {
                                                     variant="ghost"
                                                     size="icon"
                                                     title={t('products.printLabels')}
-                                                    onClick={() => navigate(`/barcode-labels?product=${product.id}`)}
+                                                    onClick={() => navigate(`/labels?tab=articles&product=${product.id}`)}
                                                 >
                                                     <QrCode className="w-4 h-4" />
                                                 </Button>

@@ -15,6 +15,13 @@ import AIInsightsWidget from '../components/dashboard/AIInsightsWidget';
 
 const toDbDate = (date) => date.toISOString().replace('T', ' ').slice(0, 19);
 
+/** "3 h 25 min" since the given time */
+function workedHours(start) {
+    const value = typeof start === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(start) ? `${start.replace(' ', 'T')}Z` : start;
+    const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
+    return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
+}
+
 function RankList({ rows, empty, render }) {
     if (!rows.length) return <p className="py-6 text-center text-sm text-zinc-500">{empty}</p>;
     const max = Math.max(...rows.map(r => r.quantity || 0), 1);
@@ -47,6 +54,7 @@ export default function DashboardPage() {
     const [topProducts, setTopProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [viewScope, setViewScope] = useState('store'); // 'store' or 'personal'
+    const [shift, setShift] = useState(null); // open cash drawer of the current user (personal view)
 
     const { currentEmployee: user } = useAuthStore();
 
@@ -91,6 +99,14 @@ export default function DashboardPage() {
             setTopProducts(top);
             setSalesTrend(trend.map(row => ({ date: row.date, revenue: row.revenue })));
             setPaymentMethods(methods);
+
+            // "My sales": also the cash drawer opened by this user
+            if (viewScope === 'personal' && user?.id) {
+                const current = await safe(api.shifts.getCurrent(user.id), null);
+                setShift(current ? { ...current, stats: await safe(api.shifts.getStats(current.id), null) } : null);
+            } else {
+                setShift(null);
+            }
         } catch (error) {
             console.error('Failed to load dashboard data:', error);
         } finally {
@@ -117,15 +133,21 @@ export default function DashboardPage() {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
                         <h1 className="text-2xl font-bold">{t('nav.dashboard')}</h1>
-                        <p className="text-zinc-500">{formatLocalDate(new Date(), 'long')}</p>
+                        <p className="text-zinc-500">
+                            {formatLocalDate(new Date(), 'long')}
+                            {' · '}
+                            {viewScope === 'personal' ? t('dashboard.scopeMine', { name: user?.name || '' }) : t('dashboard.scopeShop')}
+                        </p>
                     </div>
-                    <div className="bg-dark-tertiary p-1 rounded-lg flex gap-1">
-                        <Button size="sm" variant={viewScope === 'store' ? 'primary' : 'ghost'} onClick={() => setViewScope('store')}>
+                    <div className="segmented" role="tablist">
+                        <button type="button" role="tab" aria-selected={viewScope === 'store'} className={viewScope === 'store' ? 'active' : ''}
+                            onClick={() => setViewScope('store')}>
                             {t('dashboard.shop')}
-                        </Button>
-                        <Button size="sm" variant={viewScope === 'personal' ? 'primary' : 'ghost'} onClick={() => setViewScope('personal')}>
+                        </button>
+                        <button type="button" role="tab" aria-selected={viewScope === 'personal'} className={viewScope === 'personal' ? 'active' : ''}
+                            onClick={() => setViewScope('personal')}>
                             {t('dashboard.mine')}
-                        </Button>
+                        </button>
                     </div>
                 </div>
 
@@ -140,7 +162,22 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    {/* Stock value */}
+                    {viewScope === 'personal' ? (
+                        <div className="card">
+                            <h3 className="font-semibold mb-4 flex items-center gap-2"><Wallet className="w-5 h-5 text-accent-primary" /> {t('dashboard.myDrawer')}</h3>
+                            {shift ? (
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex justify-between"><span className="text-zinc-400">{t('dashboard.drawerOpened')}</span><span className="tabular">{formatLocalDate(shift.start_time, 'datetime')}</span></div>
+                                    <div className="flex justify-between"><span className="text-zinc-400">{t('dashboard.drawerHours')}</span><span className="tabular">{workedHours(shift.start_time)}</span></div>
+                                    <div className="flex justify-between"><span className="text-zinc-400">{t('shift.openingCash')}</span><span className="tabular">{money(shift.opening_cash)}</span></div>
+                                    <div className="flex justify-between"><span className="text-zinc-400">{t('reports.totalSales')}</span><span className="tabular">{money(shift.stats?.total_sales || 0)}</span></div>
+                                    <div className="flex justify-between font-semibold pt-2 border-t border-dark-border"><span>{t('reports.expectedCash')}</span><span className="tabular text-emerald-400">{money(shift.stats?.expected_cash || 0)}</span></div>
+                                </div>
+                            ) : (
+                                <p className="py-6 text-center text-sm text-zinc-500">{t('dashboard.noDrawer')}</p>
+                            )}
+                        </div>
+                    ) : (
                     <div className="card">
                         <h3 className="font-semibold mb-4 flex items-center gap-2"><Warehouse className="w-5 h-5 text-accent-primary" /> {t('dashboard.stockValue')}</h3>
                         <p className="text-3xl font-bold">{money(clothing.stockValue.retail)}</p>
@@ -156,6 +193,8 @@ export default function DashboardPage() {
                             </div>
                         </div>
                     </div>
+
+                    )}
 
                     {/* Sales trend */}
                     <div className="card lg:col-span-2">

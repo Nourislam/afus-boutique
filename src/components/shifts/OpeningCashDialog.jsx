@@ -53,10 +53,15 @@ export default function OpeningCashDialog({ employee, onSuccess, onCancel }) {
                         <span className="text-zinc-400 text-xl font-medium whitespace-nowrap">{currencySymbolFor(currentLanguage(), settings?.currency)}</span>
                         <input
                             type="number"
+                            inputMode="decimal"
+                            min="0"
+                            autoFocus
                             value={amount}
-                            readOnly
+                            onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, '').slice(0, 9))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
+                            data-scan-passthrough
                             className="input-transparent no-spinners w-full text-3xl font-bold text-center p-0 placeholder:text-zinc-600 focus:ring-0 text-white"
-                            placeholder="0.00"
+                            placeholder="0"
                         />
                     </div>
                 </div>

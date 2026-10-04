@@ -1,12 +1,15 @@
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/cairo';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* Root Variables */
 :root {
-  --bg-primary: #0f0f0f;
-  --bg-secondary: #1a1a1a;
-  --bg-tertiary: #252525;
+  --bg-primary: #0b0b0d;
+  --bg-secondary: #131316;
+  --bg-tertiary: #1c1c21;
   --accent-primary: #6366f1;
   --accent-secondary: #8b5cf6;
   --accent-success: #22c55e;
@@ -14,7 +17,9 @@
   --accent-danger: #ef4444;
   --text-primary: #ffffff;
   --text-secondary: #a1a1aa;
-  --border-color: #27272a;
+  --border-color: #26262c;
+  /* Space kept free for the native window buttons (set by TitleBar) */
+  --titlebar-height: 40px;
 }
 
 /* Base Styles */
@@ -33,16 +38,25 @@ body,
 }
 
 body {
-  /* System fonts only (works offline). Segoe UI and Tahoma include Arabic on Windows. */
-  font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, Tahoma, 'Noto Sans Arabic', sans-serif;
-  background-color: #0f0f0f;
-  color: #ffffff;
+  /* Fonts are bundled with the app (no internet needed) and look the same on
+     Windows and macOS: Inter for Latin text, Cairo for Arabic. */
+  font-family: 'Inter Variable', 'Cairo Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  background-color: #0b0b0d;
+  color: #f4f4f5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 html.lang-ar body {
-  font-family: 'Segoe UI', Tahoma, 'Noto Sans Arabic', 'Noto Naskh Arabic', 'Arial', sans-serif;
+  font-family: 'Cairo Variable', 'Inter Variable', system-ui, sans-serif;
+  font-feature-settings: normal;
+}
+
+/* Numbers line up in tables and totals */
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Codes, phone numbers and amounts stay left-to-right inside Arabic text */
@@ -68,13 +82,17 @@ textarea.ltr {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1a1a1a;
-  border-radius: 4px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #252525;
+  background: #2a2a31;
   border-radius: 4px;
+}
+
+/* Horizontal strips (tabs, category chips) scroll without a visible bar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -100,67 +118,79 @@ textarea.ltr {
 /* Custom Components */
 @layer components {
   .btn {
-    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-150 inline-flex items-center justify-center gap-2 whitespace-nowrap select-none disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-primary {
-    @apply bg-indigo-500 hover:bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30;
+    @apply bg-indigo-500 hover:bg-indigo-600 text-white;
   }
 
   .btn-secondary {
-    @apply bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700;
+    @apply bg-dark-tertiary hover:bg-zinc-700/70 text-zinc-100 border border-dark-border;
   }
 
   .btn-success {
-    @apply bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/20;
+    @apply bg-emerald-600 hover:bg-emerald-500 text-white;
   }
 
   .btn-danger {
-    @apply bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20;
+    @apply bg-red-500/90 hover:bg-red-500 text-white;
   }
 
   .btn-warning {
-    @apply bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20;
+    @apply bg-amber-500 hover:bg-amber-600 text-white;
   }
 
   .btn-ghost {
-    @apply bg-transparent hover:bg-zinc-800 text-zinc-400 hover:text-white;
+    @apply bg-transparent hover:bg-dark-tertiary text-zinc-400 hover:text-white;
   }
 
   .input {
-    @apply w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200;
+    @apply w-full h-10 px-3 bg-dark-primary border border-dark-border rounded-lg text-zinc-100 placeholder-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors duration-150;
+  }
+
+  textarea.input {
+    @apply h-auto py-2;
   }
 
   .input-sm {
-    @apply px-3 py-2 text-sm;
+    @apply h-8 px-2.5 text-sm;
   }
 
   .card {
-    @apply bg-zinc-900 border border-zinc-800 rounded-xl p-4 shadow-lg shadow-black/10;
+    @apply bg-dark-secondary border border-dark-border rounded-xl p-4;
+  }
+
+  .panel-title {
+    @apply text-sm font-semibold text-zinc-200;
+  }
+
+  .muted {
+    @apply text-zinc-500;
   }
 
   .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap;
   }
 
   .badge-primary {
-    @apply bg-indigo-500/20 text-indigo-400;
+    @apply bg-indigo-500/15 text-indigo-300;
   }
 
   .badge-success {
-    @apply bg-green-500/20 text-green-400;
+    @apply bg-emerald-500/15 text-emerald-300;
   }
 
   .badge-warning {
-    @apply bg-amber-500/20 text-amber-400;
+    @apply bg-amber-500/15 text-amber-300;
   }
 
   .badge-danger {
-    @apply bg-red-500/20 text-red-400;
+    @apply bg-red-500/15 text-red-300;
   }
 
   .table-container {
-    @apply overflow-x-auto rounded-xl border border-zinc-800;
+    @apply overflow-x-auto rounded-xl border border-dark-border bg-dark-secondary;
   }
 
   .table {
@@ -168,11 +198,11 @@ textarea.ltr {
   }
 
   .table th {
-    @apply px-4 py-3 text-start font-medium text-zinc-400 bg-zinc-800 border-b border-zinc-700;
+    @apply px-4 py-3 text-start text-xs font-semibold uppercase tracking-wide text-zinc-500 bg-dark-secondary border-b border-dark-border whitespace-nowrap;
   }
 
   .table td {
-    @apply px-4 py-3 border-b border-zinc-800;
+    @apply px-4 py-3 border-b border-dark-border/70;
   }
 
   .table tr:last-child td {
@@ -180,15 +210,19 @@ textarea.ltr {
   }
 
   .table tbody tr {
-    @apply hover:bg-zinc-800/50 transition-colors;
+    @apply hover:bg-dark-tertiary/60 transition-colors;
   }
 
   .sidebar-item {
-    @apply flex items-center gap-3 px-4 py-3 rounded-lg font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all duration-200 cursor-pointer;
+    @apply flex items-center gap-3 px-3 h-10 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-dark-tertiary transition-colors duration-150 cursor-pointer;
   }
 
   .sidebar-item.active {
-    @apply bg-indigo-500 text-white shadow-lg shadow-indigo-500/20;
+    @apply bg-indigo-500/15 text-indigo-200;
+  }
+
+  .sidebar-item.active svg {
+    @apply text-indigo-400;
   }
 
   .stat-card {
@@ -208,27 +242,31 @@ textarea.ltr {
   }
 
   .modal-content {
-    @apply bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/50 w-full animate-scale-in flex flex-col max-h-[90vh];
+    @apply bg-dark-secondary border border-dark-border rounded-2xl shadow-2xl shadow-black/50 w-full animate-scale-in flex flex-col max-h-[90vh];
   }
 
   .modal-header {
-    @apply flex items-center justify-between px-6 py-4 border-b border-zinc-800 flex-none;
+    @apply flex items-center justify-between gap-4 px-6 py-4 border-b border-dark-border flex-none;
   }
 
   .modal-body {
-    @apply px-6 py-4 overflow-y-auto flex-1 min-h-0;
+    @apply px-6 py-5 overflow-y-auto flex-1 min-h-0;
   }
 
   .modal-footer {
-    @apply flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-800 flex-none;
+    @apply flex items-center justify-end gap-3 px-6 py-4 border-t border-dark-border flex-none;
   }
 
   .form-group {
-    @apply flex flex-col gap-2;
+    @apply flex flex-col gap-1.5 min-w-0;
   }
 
   .form-label {
     @apply text-sm font-medium text-zinc-300;
+  }
+
+  .form-hint {
+    @apply text-xs text-zinc-500;
   }
 
   .form-error {
@@ -240,7 +278,7 @@ textarea.ltr {
   }
 
   .numpad-btn {
-    @apply flex items-center justify-center text-2xl font-semibold bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all duration-150 active:scale-95 h-16 select-none;
+    @apply flex items-center justify-center text-xl font-semibold bg-dark-tertiary hover:bg-zinc-700/70 rounded-xl transition-colors duration-100 active:scale-95 h-14 select-none;
   }
 
   .numpad-btn-action {
@@ -248,15 +286,11 @@ textarea.ltr {
   }
 
   .numpad-btn-danger {
-    @apply bg-red-500 hover:bg-red-600;
+    @apply bg-red-500/90 hover:bg-red-500;
   }
 
   .product-card {
-    @apply bg-zinc-900 border border-zinc-800 rounded-xl p-3 cursor-pointer transition-all duration-200 hover:border-indigo-500 hover:shadow-lg hover:shadow-indigo-500/10 select-none;
-  }
-
-  .product-card:hover {
-    transform: translateY(-2px);
+    @apply bg-dark-secondary border border-dark-border rounded-xl p-2.5 cursor-pointer transition-colors duration-150 hover:border-indigo-500/70 select-none;
   }
 
   .product-card:active {
@@ -264,7 +298,28 @@ textarea.ltr {
   }
 
   .cart-item {
-    @apply flex items-center gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 transition-all duration-200;
+    @apply flex items-center gap-3 p-3 rounded-lg bg-dark-tertiary/60 hover:bg-dark-tertiary transition-colors duration-150;
+  }
+
+  /* Page layout used by every screen */
+  .page {
+    @apply h-full flex flex-col overflow-hidden;
+  }
+
+  .page-body {
+    @apply flex-1 overflow-y-auto p-6;
+  }
+
+  .segmented {
+    @apply inline-flex items-center gap-1 p-1 rounded-lg bg-dark-tertiary border border-dark-border;
+  }
+
+  .segmented > button {
+    @apply px-3 h-8 rounded-md text-sm font-medium text-zinc-400 hover:text-white transition-colors whitespace-nowrap;
+  }
+
+  .segmented > button.active {
+    @apply bg-dark-secondary text-white shadow-sm shadow-black/40;
   }
 }
 

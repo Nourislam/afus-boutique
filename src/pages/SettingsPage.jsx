@@ -507,7 +507,7 @@ export default function SettingsPage() {
                                         <Button variant="secondary" onClick={() => setShowCategories(true)}>
                                             <Shirt className="w-4 h-4" /> {t('products.manageCategories')} ({categories.length})
                                         </Button>
-                                        <Button variant="secondary" onClick={() => navigate('/brands')}>
+                                        <Button variant="secondary" onClick={() => navigate('/catalog?tab=brands')}>
                                             <Tags className="w-4 h-4" /> {t('brands.title')}
                                         </Button>
                                         <Button variant="secondary" onClick={() => navigate('/employees')}>

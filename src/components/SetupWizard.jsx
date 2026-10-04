@@ -8,6 +8,7 @@ import { v4 as uuid } from 'uuid';
 import { ShopInfoForm } from './settings/ShopInfoForm';
 import { PrinterSettingsForm } from './settings/PrinterSettingsForm';
 import { ShopLogo } from './shop/ShopLogo';
+import { TitleBar } from './layout/TitleBar';
 import { LANGUAGES, setLanguage, useT } from '../i18n';
 import { CATEGORY_SUGGESTIONS, DEFAULT_CATEGORY_CODES, categoryName } from '../lib/clothing';
 import {
@@ -327,7 +328,9 @@ export default function SetupWizard({ onComplete }) {
     const isLast = currentStep === STEPS.length - 1;
 
     return (
-        <div className="h-screen overflow-y-auto bg-dark-bg flex items-start justify-center p-6">
+        <div className="h-screen flex flex-col bg-dark-primary">
+            <TitleBar bare />
+            <div className="flex-1 overflow-y-auto flex items-start justify-center p-6">
             <div className="w-full max-w-3xl my-auto">
                 {/* Progress Steps */}
                 <div className="flex items-center justify-between mb-8">
@@ -379,6 +382,7 @@ export default function SetupWizard({ onComplete }) {
                         )}
                     </div>
                 </div>
+            </div>
             </div>
         </div>
     );

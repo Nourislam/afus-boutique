@@ -13,6 +13,17 @@ import { CATEGORY_SUGGESTIONS, categoryName } from '../../lib/clothing';
  * add suggested categories in one click, create their own, rename or delete.
  */
 export function CategoryManagerModal({ isOpen, onClose, categories, onSave }) {
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={t('categories.title')} size="lg">
+            <ModalBody>
+                <CategoryManager categories={categories} onSave={onSave} />
+            </ModalBody>
+        </Modal>
+    );
+}
+
+/** The category list itself, used in the modal and in Catalogue > Categories. */
+export function CategoryManager({ categories, onSave, layout = 'list' }) {
     const [newCategory, setNewCategory] = useState({ name: '', color: '#6366f1' });
     const [editing, setEditing] = useState(null); // { id, name, color }
     const [loading, setLoading] = useState(false);
@@ -84,8 +95,6 @@ export function CategoryManagerModal({ isOpen, onClose, categories, onSave }) {
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={t('categories.title')} size="lg">
-            <ModalBody>
                 <div className="space-y-5">
                     <div className="flex items-end gap-2">
                         <Input
@@ -127,7 +136,7 @@ export function CategoryManagerModal({ isOpen, onClose, categories, onSave }) {
                         </div>
                     )}
 
-                    <div className="space-y-2 max-h-80 overflow-y-auto">
+                    <div className={layout === 'grid' ? 'grid gap-2 sm:grid-cols-2 xl:grid-cols-3' : 'space-y-2 max-h-80 overflow-y-auto'}>
                         {categories.length === 0 && <p className="text-sm text-zinc-500">{t('categories.empty')}</p>}
                         {categories.map(category => (
                             <div key={category.id} className="flex items-center justify-between gap-2 p-3 rounded-lg bg-dark-tertiary">
@@ -146,6 +155,7 @@ export function CategoryManagerModal({ isOpen, onClose, categories, onSave }) {
                                         <div className="flex items-center gap-3 min-w-0">
                                             <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: category.color }} />
                                             <span className="font-medium truncate">{category.name}</span>
+                                            {category.product_count !== undefined && <span className="text-xs text-zinc-500 shrink-0">{t('brands.productCount', { n: category.product_count })}</span>}
                                         </div>
                                         <div className="flex items-center">
                                             <Button variant="ghost" size="icon" title={t('common.edit')}
@@ -163,8 +173,6 @@ export function CategoryManagerModal({ isOpen, onClose, categories, onSave }) {
                     </div>
                     <p className="text-xs text-zinc-500">{t('categories.deleteHint')}</p>
                 </div>
-            </ModalBody>
-        </Modal>
     );
 }
 

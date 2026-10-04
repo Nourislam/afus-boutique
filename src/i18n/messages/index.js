@@ -1,5 +1,6 @@
 // Merges every message module. Each entry is [English, French, Arabic].
 import common from './common';
+import round2 from './round2';
 import misc from './misc';
 import ecommerce from './ecommerce';
 import excel from './excel';
@@ -21,7 +22,7 @@ import errors from './errors';
 import catalog from './catalog';
 import login from './login';
 
-const MODULES = { common, misc, ecommerce, excel, barcode, modals, purchases, gift, promos, reports, credit, customers, inventory, dashboard, pos, settings, setup, products, errors, catalog, login };
+const MODULES = { common, round2, misc, ecommerce, excel, barcode, modals, purchases, gift, promos, reports, credit, customers, inventory, dashboard, pos, settings, setup, products, errors, catalog, login };
 
 function merge(modules) {
     const all = {};

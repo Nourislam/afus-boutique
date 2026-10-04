@@ -2,6 +2,13 @@ import { t } from '../i18n';
 import { create } from 'zustand';
 import { hasPermission as checkPermission, PERMISSIONS } from '../lib/permissions';
 
+// Each new session starts on the user's home screen, not on the page the
+// previous user left open (which they may not be allowed to see).
+function openHomeScreen(role) {
+    if (typeof window === 'undefined') return;
+    window.location.hash = role === 'cashier' ? '#/pos' : '#/';
+}
+
 export const useAuthStore = create((set, get) => ({
     currentEmployee: null,
     isAuthenticated: false,
@@ -29,6 +36,7 @@ export const useAuthStore = create((set, get) => ({
                     role: employee.role
                 };
                 sessionStorage.setItem('pos_auth', JSON.stringify(sessionData));
+                openHomeScreen(employee.role);
                 set({ currentEmployee: employee, isAuthenticated: true });
                 return { success: true };
             }
@@ -43,6 +51,7 @@ export const useAuthStore = create((set, get) => ({
     startSession: (employee) => {
         const sessionData = { id: employee.id, name: employee.name, role: employee.role };
         sessionStorage.setItem('pos_auth', JSON.stringify(sessionData));
+        openHomeScreen(employee.role);
         set({ currentEmployee: sessionData, isAuthenticated: true });
     },
 

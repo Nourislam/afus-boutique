@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose protected methods to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
+    // Operating system: 'darwin' (macOS), 'win32', 'linux'
+    platform: process.platform,
+
     // Window controls
     minimize: () => ipcRenderer.invoke('window:minimize'),
     maximize: () => ipcRenderer.invoke('window:maximize'),
@@ -83,7 +86,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         create: (sale) => ipcRenderer.invoke('db:sales:create', sale),
         getAll: (params) => ipcRenderer.invoke('db:sales:getAll', params),
         getById: (id) => ipcRenderer.invoke('db:sales:getById', id),
-        getToday: () => ipcRenderer.invoke('db:sales:getToday'),
+        getToday: (params) => ipcRenderer.invoke('db:sales:getToday', params),
         getStats: (params) => ipcRenderer.invoke('db:sales:getStats', params),
     },
 

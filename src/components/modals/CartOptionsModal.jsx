@@ -15,6 +15,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
     const [discountType, setDiscountType] = useState(cart.discountType); // 'fixed' or 'percent'
     const [serviceCharge, setServiceCharge] = useState(cart.serviceCharge);
     const [isTaxExempt, setIsTaxExempt] = useState(cart.taxExempt);
+    const [coupon, setCoupon] = useState(cart.coupon);
 
     // Reset local state when modal opens
     useEffect(() => {
@@ -23,6 +24,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
             setDiscountType(cart.discountType);
             setServiceCharge(cart.serviceCharge);
             setIsTaxExempt(cart.taxExempt);
+            setCoupon(cart.coupon);
         }
     }, [isOpen, cart]);
 
@@ -30,6 +32,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
         cart.setDiscount(parseFloat(discountValue) || 0, discountType);
         cart.setServiceCharge(parseFloat(serviceCharge) || 0);
         cart.setTaxExempt(isTaxExempt);
+        cart.setCoupon(coupon);
         onClose();
     };
 
@@ -50,7 +53,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                 <div className="mb-4">
                     <Tabs
                         tabs={tabs}
-                        activeTab={activeTab}
+                        value={activeTab}
                         onChange={setActiveTab}
                     />
                 </div>
@@ -84,9 +87,20 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                                 min="0"
                                 value={discountValue}
                                 onChange={(e) => setDiscountValue(e.target.value)}
-                                placeholder="0.00"
+                                placeholder="0"
                                 autoFocus
                             />
+                            <div className="pt-3 border-t border-dark-border">
+                                <Input
+                                    label={t('cartOptions.coupon')}
+                                    value={coupon}
+                                    onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+                                    placeholder="AID2025"
+                                    className="ltr font-mono"
+                                    data-scan-passthrough
+                                />
+                                <p className="form-hint mt-1">{t('cartOptions.couponHint')}</p>
+                            </div>
                         </div>
                     )}
 

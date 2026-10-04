@@ -31,7 +31,7 @@ export default {
     'pos.holdFailed': ["Failed to hold transaction", "Impossible de mettre en attente", "تعذّر تعليق البيع"],
     'pos.recalled': ["Transaction recalled", "Vente reprise", "تم استرجاع البيع"],
     'pos.cart': ["Cart", "Panier", "السلة"],
-    'pos.searchPlaceholder': ["Search by name, or type/scan a SKU, barcode or QR code…", "Rechercher par nom, ou saisir/scanner un SKU, code-barres ou QR…", "ابحث بالاسم، أو اكتب/امسح رمز SKU أو باركود أو QR…"],
+    'pos.searchPlaceholder': ["Search or scan a code…", "Rechercher ou scanner un code…", "ابحث أو امسح الرمز…"],
     'pos.allProducts': ["All Products", "Tous", "الكل"],
     'pos.noProducts': ["No products found", "Aucun article trouvé", "لا توجد سلع"],
     'pos.cartEmpty': ["Cart is empty", "Le panier est vide", "السلة فارغة"],
