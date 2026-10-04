@@ -60,7 +60,8 @@ export function LabelPreview({ items, layout, maxWidth = 340, maxHeight = 300, c
                         title={t('qr.preview')}
                         sandbox=""
                         scrolling="no"
-                        src={`data:text/html;charset=utf-8,${encodeURIComponent(preview.html)}`}
+                        // srcDoc, not a data: URL (limited to about 2 MB: many labels with a logo)
+                        srcDoc={preview.html}
                         style={{ width: pageW, height: pageH * preview.pages, transform: `scale(${scale})`, transformOrigin: 'top left', background: 'white', border: 0, borderRadius: 4 }}
                     />
                 </div>

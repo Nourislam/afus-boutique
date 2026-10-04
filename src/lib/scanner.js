@@ -206,7 +206,10 @@ export class ScanDetector {
             return false;
         }
 
-        const t = this.now();
+        // When the screen is busy (a sale being added), key events wait in a
+        // queue: the time the key was pressed is then the one to compare, or a
+        // scan would be split in two and typed into the search field.
+        const t = Number.isFinite(event.timeStamp) && event.timeStamp > 0 ? event.timeStamp : this.now();
 
         if (isSuffixKey(event, this.suffix)) {
             if (this.buffer && t - this.lastTime <= this.maxKeyIntervalMs * 2) {
@@ -223,6 +226,8 @@ export class ScanDetector {
             this.flush();
             return false;
         }
+        // Codes never start with a space: leave Space to buttons and checkboxes
+        if (ch === ' ' && !this.buffer) return false;
 
         if (this.buffer && t - this.lastTime > this.maxKeyIntervalMs) {
             // Too slow to be the same scan: return what we held, start again

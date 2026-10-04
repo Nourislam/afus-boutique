@@ -52,12 +52,15 @@ describe('label settings are honoured', () => {
             const html = (patch) => labelService.buildLabelsHtml([label(symbology)], { template: 'roll-40x30', ...all, ...patch }, shop);
             const full = html({});
             expect(full).toContain('Boutique Amina');
-            expect(full).toContain('<img src="data:image/png');
+            expect(full).toContain('<img class="logo"');
+            // Written once in the style sheet, not in each label
+            expect(full.split('data:image/png').length - 1).toBe(1);
             expect(full).toContain('T-shirt');
             expect(full).toContain('Noir / M');
             expect(full).toMatch(/2\u00a0500/);
             expect(html({ showShopName: false })).not.toContain('Boutique Amina');
-            expect(html({ showLogo: false })).not.toContain('<img src="data:image/png');
+            expect(html({ showLogo: false })).not.toContain('<img class="logo"');
+            expect(html({ showLogo: false })).not.toContain('data:image/png');
             expect(html({ showProductName: false })).not.toContain('class="name');
             expect(html({ showVariant: false })).not.toContain('Noir / M');
             expect(html({ showPrice: false })).not.toMatch(/2\u00a0500/);

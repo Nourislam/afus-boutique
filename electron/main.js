@@ -11,6 +11,7 @@ const { v4: uuid } = require('uuid');
 const { getImagesDir } = require('./services/imageService');
 const ReceiptService = require('./services/receiptService');
 const ShiftService = require('./services/shiftService');
+const printDocument = require('./services/printDocument');
 const SyncManager = require('./sync/SyncManager');
 const EcommerceSyncManager = require('./ecommerce/EcommerceSyncManager');
 const GeminiManager = require('./ai/GeminiManager');
@@ -179,6 +180,7 @@ if (!gotTheLock) {
 
   // App lifecycle
   app.whenReady().then(async () => {
+    printDocument.cleanTempFiles();
     // Initialize database. If it cannot be opened, tell the user instead of
     // hanging without a window.
     try {
@@ -1766,10 +1768,34 @@ function printerError(error, printerName) {
   return error;
 }
 
+/**
+ * The installed printer to send a job to: the saved name is checked against
+ * the printers Windows/macOS report, so a printer that was removed gives a
+ * clear message instead of a silent failure. Without a selected printer the
+ * system print dialog is shown.
+ */
+async function resolvePrinterOptions(options) {
+  const printer = { ...options };
+  if (!printer.printerName) {
+    printer.silent = false;
+    return printer;
+  }
+  let installed = [];
+  try {
+    installed = mainWindow ? await mainWindow.webContents.getPrintersAsync() : [];
+  } catch {
+    return printer;
+  }
+  // The list can be empty when the print spooler is not answering: try anyway
+  if (!installed.length) return printer;
+  const name = printDocument.matchPrinter(installed, printer.printerName);
+  if (name === null) throw catalog.codedError('PRINTER_NOT_FOUND', { name: printer.printerName });
+  printer.printerName = name;
+  return printer;
+}
+
 ipcMain.handle('receipts:print', async (_, sale, overrides = {}) => {
-  const printer = { ...getPrinterSettings().receipt, ...overrides };
-  // Without a selected printer the system print dialog is shown
-  if (!printer.printerName) printer.silent = false;
+  const printer = await resolvePrinterOptions({ ...getPrinterSettings().receipt, ...overrides });
   try {
     return await receiptService.print(enrichSaleForPrint(sale), getShopSettingsForPrint(), printer);
   } catch (error) {
@@ -1948,9 +1974,9 @@ ipcMain.handle('labels:preview', (_, { items, layout }) => {
 });
 
 ipcMain.handle('labels:print', async (_, { items, layout, printer }) => {
+  // Printer first: no codes are created for a job that cannot print
+  const options = await resolvePrinterOptions({ ...getPrinterSettings().label, ...(printer || {}) });
   const doc = buildLabelsDocument(items, layout);
-  const options = { ...getPrinterSettings().label, ...(printer || {}) };
-  if (!options.printerName) options.silent = false;
   const result = await labelService.printLabels(BrowserWindow, doc.html, doc.layout, options)
     .catch((error) => { throw printerError(error, options.printerName); });
   return { ...result, created: doc.created };
@@ -1974,19 +2000,11 @@ ipcMain.handle('labels:savePdf', async (_, { items, layout }) => {
 // print dialog is always shown.
 ipcMain.handle('print:html', async (_, { html }) => {
   if (typeof html !== 'string' || html.length > 20 * 1024 * 1024) throw new Error('Invalid document');
-  const win = new BrowserWindow({
-    show: false,
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, javascript: false },
-  });
+  const win = printDocument.hiddenWindow(BrowserWindow, { javascript: false });
   try {
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-    return await new Promise((resolve, reject) => {
-      win.webContents.print({ silent: false, printBackground: true }, (success, reason) => {
-        if (success) resolve(true);
-        else if (reason === 'cancelled') resolve(false);
-        else reject(new Error(reason || 'Printing failed'));
-      });
-    });
+    await printDocument.loadHtml(win, html);
+    const result = await printDocument.printContents(win.webContents, { silent: false, printBackground: true });
+    return result.success;
   } finally {
     if (!win.isDestroyed()) win.destroy();
   }

@@ -4,7 +4,7 @@ import path from 'path'
 
 // Content-Security-Policy for the renderer.
 // - img-src: product/logo images are served by the custom app:// protocol or as data: URIs
-// - frame-src data:: receipt/label previews are rendered in data: iframes
+// - frame-src data:: previews are rendered in srcdoc iframes (they inherit this policy)
 // - style-src 'unsafe-inline': React style attributes
 // Nothing is loaded from the internet: the POS must work offline.
 const BASE_CSP = [

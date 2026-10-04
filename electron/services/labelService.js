@@ -16,6 +16,7 @@
 
 const bwipjs = require('bwip-js');
 const { formatMoney } = require('../i18n');
+const { loadHtml, hiddenWindow, printContents } = require('./printDocument');
 
 const PAPER_SIZES_MM = {
     A4: { width: 210, height: 297 },
@@ -182,9 +183,9 @@ function renderLabel(label, layout, shop) {
 
     const lines = [];
     if (layout.showShopName && shop.name) {
-        lines.push(`<div class="shop">${layout.showLogo && shop.logo ? `<img src="${shop.logo}" alt="">` : ''}<span>${escapeHtml(shop.name)}</span></div>`);
+        lines.push(`<div class="shop">${layout.showLogo && shop.logo ? LOGO_TAG : ''}<span>${escapeHtml(shop.name)}</span></div>`);
     } else if (layout.showLogo && shop.logo) {
-        lines.push(`<div class="shop"><img src="${shop.logo}" alt=""></div>`);
+        lines.push(`<div class="shop">${LOGO_TAG}</div>`);
     }
     if (layout.showProductName) lines.push(`<div class="name">${escapeHtml(label.productName)}</div>`);
     if (layout.showVariant && label.variantLabel) lines.push(`<div class="variant">${escapeHtml(label.variantLabel)}</div>`);
@@ -229,7 +230,7 @@ function renderCodeLabel(label, layout, shop) {
     const spec = SYMBOLOGIES[label.symbology] || SYMBOLOGIES.code128;
 
     const top = [];
-    const logo = layout.showLogo && shop.logo ? `<img src="${shop.logo}" alt="">` : '';
+    const logo = layout.showLogo && shop.logo ? LOGO_TAG : '';
     if ((layout.showShopName && shop.name) || logo) {
         top.push(`<div class="shop c">${logo}${layout.showShopName && shop.name ? `<span>${escapeHtml(shop.name)}</span>` : ''}</div>`);
     }
@@ -256,6 +257,11 @@ function renderCodeLabel(label, layout, shop) {
             ${bottom.join('')}
         </div>`;
 }
+
+// The logo is written once in the style sheet, not in every label: with a
+// photo as logo, hundreds of copies made documents of tens of megabytes.
+const LOGO_TAG = '<img class="logo" alt="">';
+const cssUrl = (uri) => `url("${String(uri).replace(/["\\\n\r]/g, '')}")`;
 
 function renderAny(label, layout, shop) {
     return label.symbology && label.symbology !== 'qr-side' ? renderCodeLabel(label, layout, shop) : renderLabel(label, layout, shop);
@@ -310,6 +316,7 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
     .text { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.25em; line-height: 1.1; }
     .shop { display: flex; align-items: center; gap: 0.3em; font-size: 0.7em; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
     .shop span { overflow: hidden; text-overflow: ellipsis; }
+    ${layout.showLogo && shop.logo ? `.shop img.logo { content: ${cssUrl(shop.logo)}; }` : ''}
     .shop img { height: 1.6em; max-width: 6em; object-fit: contain; }
     .name { font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
     .variant { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -339,12 +346,9 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
  * always destroyed afterwards.
  */
 async function withHiddenWindow(BrowserWindow, html, fn) {
-    const win = new BrowserWindow({
-        show: false,
-        webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, javascript: false },
-    });
+    const win = hiddenWindow(BrowserWindow, { javascript: false });
     try {
-        await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+        await loadHtml(win, html);
         return await fn(win.webContents);
     } finally {
         if (!win.isDestroyed()) win.destroy();
@@ -358,7 +362,7 @@ async function withHiddenWindow(BrowserWindow, html, fn) {
 async function printLabels(BrowserWindow, html, settings, options = {}) {
     const layout = resolveLayout(settings);
     const page = getPageSize(layout);
-    return withHiddenWindow(BrowserWindow, html, (webContents) => new Promise((resolve, reject) => {
+    return withHiddenWindow(BrowserWindow, html, (webContents) => {
         const printOptions = {
             silent: !!options.silent,
             printBackground: true,
@@ -372,12 +376,8 @@ async function printLabels(BrowserWindow, html, settings, options = {}) {
         const dpi = parseInt(options.dpi, 10);
         if (dpi > 0) printOptions.dpi = { horizontal: dpi, vertical: dpi };
 
-        webContents.print(printOptions, (success, failureReason) => {
-            if (success) resolve({ success: true });
-            else if (failureReason === 'cancelled' || failureReason === 'Print job canceled') resolve({ success: false, cancelled: true });
-            else reject(new Error(failureReason || 'Printing failed'));
-        });
-    }));
+        return printContents(webContents, printOptions);
+    });
 }
 
 /** Render the labels to a PDF buffer with exact physical page size. */

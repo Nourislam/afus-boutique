@@ -164,4 +164,23 @@ describe('ScanDetector', () => {
         expect(d.handleKeyDown({ code: 'Backspace', key: 'Backspace' })).toBe(false);
         expect(d.handleKeyDown({ code: 'BracketLeft', key: 'Dead' })).toBe(false);
     });
+    it('leaves Space to buttons when no scan is in progress', () => {
+        const d = make();
+        clock += 500;
+        expect(d.handleKeyDown({ code: 'Space', key: ' ' })).toBe(false);
+    });
+
+    it('uses the time the key was pressed when events were queued', () => {
+        const d = make();
+        // The screen was busy: events are handled 200 ms late, but were pressed 8 ms apart
+        let pressed = 1000;
+        for (const stroke of usKeystrokes('SKU-123')) {
+            clock += 200;
+            pressed += 8;
+            d.handleKeyDown({ ...stroke, key: producedKey(stroke, 'us'), timeStamp: pressed });
+        }
+        pressed += 8;
+        expect(d.handleKeyDown({ code: 'Enter', key: 'Enter', timeStamp: pressed })).toBe(true);
+        expect(scans).toEqual(['SKU-123']);
+    });
 });

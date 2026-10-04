@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 const { BrowserWindow } = require('electron');
 const { translator, formatMoney, formatDate, variantLabel, paymentLabel } = require('../i18n');
+const { loadHtml, hiddenWindow, printContents } = require('./printDocument');
 
 class ReceiptService {
     constructor() {
@@ -33,7 +34,7 @@ class ReceiptService {
             });
 
             const html = this.generateHtml(sale, settings);
-            await this.printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+            await loadHtml(this.printWindow, html);
 
             // Get content dimensions
             // Wait a moment for rendering
@@ -682,12 +683,9 @@ class ReceiptService {
         const paperWidthMm = parseInt(printer.paperWidthMm || storeSettings.receiptPaperWidthMm, 10) === 58 ? 58 : 80;
         const html = this.generateHtml(sale, { ...storeSettings, receiptPaperWidthMm: paperWidthMm });
 
-        const win = new BrowserWindow({
-            show: false,
-            webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
-        });
+        const win = hiddenWindow(BrowserWindow);
         try {
-            await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+            await loadHtml(win, html);
 
             // Roll paper: page height = content height (CSS px -> mm)
             const heightPx = await win.webContents.executeJavaScript(
@@ -705,13 +703,8 @@ class ReceiptService {
                 copies: Math.max(1, parseInt(printer.copies, 10) || 1),
             };
 
-            return await new Promise((resolve, reject) => {
-                win.webContents.print(printOptions, (success, failureReason) => {
-                    if (success) resolve(true);
-                    else if (failureReason === 'cancelled') resolve(false);
-                    else reject(new Error(failureReason || 'Printing failed'));
-                });
-            });
+            const result = await printContents(win.webContents, printOptions);
+            return result.success;
         } finally {
             if (!win.isDestroyed()) win.destroy();
         }

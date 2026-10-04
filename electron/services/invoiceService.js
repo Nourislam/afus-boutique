@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { BrowserWindow } = require('electron');
+const { loadHtml } = require('./printDocument');
 const emailService = require('./emailService');
 
 class InvoiceService {
@@ -326,9 +327,12 @@ class InvoiceService {
                 }
             });
 
-            win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+            loadHtml(win, html).catch((error) => {
+                if (!win.isDestroyed()) win.close();
+                reject(error);
+            });
 
-            win.webContents.on('did-finish-load', () => {
+            win.webContents.once('did-finish-load', () => {
                 win.webContents.printToPDF({
                     printBackground: true,
                     pageSize: 'A4',

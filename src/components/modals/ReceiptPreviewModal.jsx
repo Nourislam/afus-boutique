@@ -94,7 +94,8 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
                         ) : html ? (
                             <iframe
                                 title={t('receipt.title')}
-                                src={`data:text/html;charset=utf-8,${encodeURIComponent(html)}`}
+                                sandbox=""
+                                srcDoc={html}
                                 className="w-full h-full border-0"
                             />
                         ) : (
