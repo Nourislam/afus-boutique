@@ -2869,7 +2869,7 @@ ipcMain.handle('db:promotions:create', (_, promo) => {
     promo.end_date || null,
     promo.is_active ? 1 : 0,
     promo.applies_to || 'all',
-    promo.applies_to_ids ? JSON.stringify(promo.applies_to_ids) : null,
+    promo.applies_to_ids ? (typeof promo.applies_to_ids === 'string' ? promo.applies_to_ids : JSON.stringify(promo.applies_to_ids)) : null,
     promo.coupon_code || null,
     promo.auto_apply ? 1 : 0
   ]);
@@ -2895,7 +2895,7 @@ ipcMain.handle('db:promotions:update', (_, promo) => {
     promo.end_date || null,
     promo.is_active ? 1 : 0,
     promo.applies_to || 'all',
-    promo.applies_to_ids ? JSON.stringify(promo.applies_to_ids) : null,
+    promo.applies_to_ids ? (typeof promo.applies_to_ids === 'string' ? promo.applies_to_ids : JSON.stringify(promo.applies_to_ids)) : null,
     promo.coupon_code || null,
     promo.auto_apply ? 1 : 0,
     promo.id

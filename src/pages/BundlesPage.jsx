@@ -1,12 +1,13 @@
 import { t } from '../i18n';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { PackageOpen, Plus, Search, Edit2, Trash2, Package, Banknote, Tag, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { PackageOpen, Plus, Search, Edit2, Trash2, Package, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal, ModalBody } from '../components/ui/Modal';
 import { Select } from '../components/ui/Select';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/ui/Toast';
 import { v4 as uuid } from 'uuid';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -246,155 +247,87 @@ export default function BundlesPage() {
     }
 
     return (
-        <div className="h-full flex flex-col p-6 gap-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold flex items-center gap-3">
-                        <PackageOpen className="w-7 h-7 text-purple-500" />
-                        {t('bundles.title')}
-                    </h1>
-                    <p className="text-zinc-400 mt-1">{t('bundles.subtitle')}</p>
+        <div className="page">
+            <PageHeader
+                icon={PackageOpen}
+                title={t('bundles.title')}
+                subtitle={t('bundles.subtitle')}
+                actions={<Button onClick={handleOpenCreate}><Plus className="w-4 h-4" /> {t('bundles.create')}</Button>}
+            >
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative w-72 max-w-full">
+                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                        <input className="input ps-9" placeholder={t('bundles.search')} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                    </div>
+                    <span className="text-sm text-zinc-500">
+                        {t('bundles.statsLine', { n: bundles.length, active: bundles.filter(b => b.is_active).length })}
+                    </span>
                 </div>
-                <Button onClick={handleOpenCreate}>
-                    <Plus className="w-4 h-4" />
-                    {t('bundles.create')}
-                </Button>
-            </div>
+            </PageHeader>
 
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-4">
-                <div className="card flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                        <PackageOpen className="w-6 h-6 text-purple-400" />
-                    </div>
-                    <div>
-                        <p className="text-2xl font-bold">{bundles.length}</p>
-                        <p className="text-zinc-400 text-sm">{t('bundles.total')}</p>
-                    </div>
-                </div>
-                <div className="card flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center">
-                        <Tag className="w-6 h-6 text-green-400" />
-                    </div>
-                    <div>
-                        <p className="text-2xl font-bold">{bundles.filter(b => b.is_active).length}</p>
-                        <p className="text-zinc-400 text-sm">{t('bundles.active')}</p>
-                    </div>
-                </div>
-                <div className="card flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                        <Banknote className="w-6 h-6 text-amber-400" />
-                    </div>
-                    <div>
-                        <p className="text-2xl font-bold">
-                            {formatCurrency(bundles.reduce((sum, b) => sum + (b.savings || 0), 0))}
-                        </p>
-                        <p className="text-zinc-400 text-sm">{t('bundles.savings')}</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Search */}
-            <div className="max-w-md">
-                <Input
-                    icon={Search}
-                    placeholder={t('bundles.search')}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                />
-            </div>
-
-            {/* Bundles Grid */}
-            <div className="flex-1 overflow-auto">
+            <div className="page-body">
                 {filteredBundles.length === 0 ? (
-                    <div className="text-center py-12 text-zinc-400">
-                        <PackageOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                        <p>{t('bundles.none')}</p>
+                    <div className="text-center py-16 text-zinc-500">
+                        <PackageOpen className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                        <p className="mb-4">{t('bundles.none')}</p>
+                        <Button onClick={handleOpenCreate}><Plus className="w-4 h-4" /> {t('bundles.create')}</Button>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {filteredBundles.map(bundle => (
-                            <div key={bundle.id} className={`card p-5 ${!bundle.is_active ? 'opacity-60' : ''}`}>
-                                <div className="flex items-start justify-between mb-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${bundle.is_active ? 'bg-gradient-to-br from-purple-500 to-pink-500' : 'bg-zinc-700'}`}>
-                                            <PackageOpen className="w-6 h-6 text-white" />
+                    <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+                        {filteredBundles.map(bundle => {
+                            const savingPct = bundle.original_price > 0 ? Math.round((bundle.savings / bundle.original_price) * 100) : 0;
+                            return (
+                                <div key={bundle.id} className={`card p-0 overflow-hidden flex flex-col ${bundle.is_active ? '' : 'opacity-60'}`}>
+                                    <div className="px-4 pt-4 pb-3 bg-gradient-to-b from-fuchsia-500/20 to-fuchsia-500/0 flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <h3 className="font-semibold truncate">{bundle.name}</h3>
+                                            <div className="flex items-baseline gap-2 mt-1">
+                                                <span className="text-2xl font-bold tabular">{formatCurrency(bundle.bundle_price)}</span>
+                                                {bundle.original_price > bundle.bundle_price && (
+                                                    <span className="text-sm line-through text-zinc-500 tabular">{formatCurrency(bundle.original_price)}</span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div>
-                                            <h3 className="font-semibold">{bundle.name}</h3>
-                                            <span className={`text-xs px-2 py-0.5 rounded-full ${bundle.is_active ? 'bg-green-500/20 text-green-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
+                                        <div className="flex flex-col items-end gap-1">
+                                            {savingPct > 0 && <span className="badge bg-emerald-500/15 text-emerald-300">-{savingPct}%</span>}
+                                            <span className={`badge ${bundle.is_active ? 'bg-emerald-500/10 text-emerald-300' : 'bg-zinc-500/20 text-zinc-400'}`}>
                                                 {bundle.is_active ? t('status.active') : t('status.inactive')}
                                             </span>
                                         </div>
                                     </div>
-                                    <div className="flex gap-1">
-                                        <button
-                                            onClick={() => handleOpenEdit(bundle)}
-                                            className="p-2 hover:bg-zinc-700 rounded-lg transition-colors"
-                                        >
-                                            <Edit2 className="w-4 h-4 text-zinc-400" />
+                                    <div className="px-4 py-2 flex-1 space-y-1.5">
+                                        {bundle.description && <p className="text-sm text-zinc-400">{bundle.description}</p>}
+                                        {bundle.items?.map(item => (
+                                            <div key={item.product_id} className="flex items-center justify-between gap-2 text-sm">
+                                                <span className="truncate"><span className="text-zinc-500 tabular">{item.quantity}×</span> {item.product_name}</span>
+                                                <span className="text-zinc-500 tabular whitespace-nowrap">{formatCurrency(item.product_price * item.quantity)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="px-4 py-2 border-t border-dark-border flex items-center gap-1">
+                                        {!bundle.deduct_component_stock && (
+                                            <>
+                                                <button type="button" onClick={() => handleOpenAssembly(bundle, 'assemble')}
+                                                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-emerald-300 hover:bg-emerald-500/10">
+                                                    <ArrowDownCircle className="w-3.5 h-3.5" /> {t('bundles.assemble')}
+                                                </button>
+                                                <button type="button" onClick={() => handleOpenAssembly(bundle, 'disassemble')}
+                                                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-amber-300 hover:bg-amber-500/10">
+                                                    <ArrowUpCircle className="w-3.5 h-3.5" /> {t('bundles.break')}
+                                                </button>
+                                            </>
+                                        )}
+                                        <div className="flex-1" />
+                                        <button type="button" title={t('common.edit')} onClick={() => handleOpenEdit(bundle)} className="p-2 rounded-lg hover:bg-dark-tertiary text-zinc-400 hover:text-white">
+                                            <Edit2 className="w-4 h-4" />
                                         </button>
-                                        <button
-                                            onClick={() => handleDelete(bundle.id)}
-                                            className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
-                                        >
-                                            <Trash2 className="w-4 h-4 text-red-400" />
+                                        <button type="button" title={t('common.delete')} onClick={() => handleDelete(bundle.id)} className="p-2 rounded-lg hover:bg-red-500/15 text-red-300">
+                                            <Trash2 className="w-4 h-4" />
                                         </button>
                                     </div>
                                 </div>
-
-                                {/* Assembly Actions (New Row) */}
-                                {!bundle.deduct_component_stock && (
-                                    <div className="flex gap-2 mb-3">
-                                        <button
-                                            onClick={() => handleOpenAssembly(bundle, 'assemble')}
-                                            className="flex-1 flex items-center justify-center gap-2 py-1.5 px-3 bg-green-500/10 hover:bg-green-500/20 text-green-400 rounded-lg transition-colors text-xs font-medium"
-                                        >
-                                            <ArrowDownCircle className="w-3.5 h-3.5" />
-                                            {t('bundles.assemble')}
-                                        </button>
-                                        <button
-                                            onClick={() => handleOpenAssembly(bundle, 'disassemble')}
-                                            className="flex-1 flex items-center justify-center gap-2 py-1.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-lg transition-colors text-xs font-medium"
-                                        >
-                                            <ArrowUpCircle className="w-3.5 h-3.5" />
-                                            {t('bundles.break')}
-                                        </button>
-                                    </div>
-                                )}
-
-                                {bundle.description && (
-                                    <p className="text-sm text-zinc-400 mb-3">{bundle.description}</p>
-                                )}
-
-                                {/* Bundle Items */}
-                                <div className="space-y-2 mb-4">
-                                    {bundle.items?.map(item => (
-                                        <div key={item.product_id} className="flex items-center justify-between text-sm bg-zinc-800/50 px-3 py-2 rounded-lg">
-                                            <span>{item.quantity}x {item.product_name}</span>
-                                            <span className="text-zinc-400">{formatCurrency(item.product_price * item.quantity)}</span>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* Pricing */}
-                                <div className="pt-3 border-t border-zinc-700 space-y-1">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-zinc-400">{t('bundles.original')}</span>
-                                        <span className="line-through text-zinc-500">{formatCurrency(bundle.original_price)}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="font-medium">{t('bundles.price')}</span>
-                                        <span className="text-xl font-bold text-purple-400">{formatCurrency(bundle.bundle_price)}</span>
-                                    </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-green-400">{t('bundles.saving')}</span>
-                                        <span className="text-green-400 font-medium">{formatCurrency(bundle.savings)}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>
