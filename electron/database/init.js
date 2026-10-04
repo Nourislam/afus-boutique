@@ -2,7 +2,6 @@ const initSqlJs = require('sql.js');
 const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
-const { v4: uuid } = require('uuid');
 const { applyMigrations } = require('./migrations');
 
 let db = null;
@@ -132,7 +131,7 @@ function runMigrations() {
         try {
             db.run('ALTER TABLE customers ADD COLUMN credit_limit REAL DEFAULT 0');
             console.log('Added credit_limit column to customers');
-        } catch (e) {
+        } catch {
             console.log('credit_limit column may already exist');
         }
     }
@@ -141,7 +140,7 @@ function runMigrations() {
         try {
             db.run('ALTER TABLE customers ADD COLUMN credit_balance REAL DEFAULT 0');
             console.log('Added credit_balance column to customers');
-        } catch (e) {
+        } catch {
             console.log('credit_balance column may already exist');
         }
     }
@@ -428,13 +427,6 @@ function runMigrations() {
         // ==========================================
         // MIGRATION: Cloud Sync Infrastructure
         // ==========================================
-        const SYNC_TABLES = [
-            'products', 'customers', 'sales', 'inventory_logs',
-            'categories', 'suppliers', 'purchase_orders',
-            'receivings', 'supplier_invoices', 'users' // 'users' are actually employees table in our schema? No, 'employees'.
-        ];
-        // Note: 'employees' table might need sync too. Adding 'employees' manual check.
-
         const tablesToSync = [
             'products', 'customers', 'sales', 'inventory_logs',
             'categories', 'suppliers', 'purchase_orders',
@@ -553,7 +545,7 @@ function runMigrations() {
     }
 }
 
-function setupSyncTriggers(db, tables) {
+function setupSyncTriggers(_db, _tables) {
     console.log('Skipping SQLite Sync Triggers (Handled manually to avoid loops)...');
     return; // DISABLED: Triggers cause infinite loops with SyncManager
     
@@ -594,7 +586,7 @@ function getTableColumns(tableName) {
             return result[0].values.map(row => row[nameIndex]);
         }
         return [];
-    } catch (e) {
+    } catch {
         return [];
     }
 }

@@ -122,7 +122,7 @@ export function EcommerceSettings() {
             await window.electronAPI.ecommerce.removeConnection(connectionId);
             toast.success(t('ecommerce.removed'));
             await loadConnections();
-        } catch (error) {
+        } catch {
             toast.error(t('ecommerce.removeFailed'));
         }
     };
@@ -137,7 +137,7 @@ export function EcommerceSettings() {
                 toast.error(result.message || t('ecommerce.syncFailed'));
             }
             await loadConnections();
-        } catch (error) {
+        } catch {
             toast.error(t('ecommerce.syncFailed'));
         } finally {
             setSyncing(prev => ({ ...prev, [connectionId]: false }));
@@ -153,7 +153,7 @@ export function EcommerceSettings() {
             } else {
                 toast.error(t('ecommerce.testFailed', { message: result.message }));
             }
-        } catch (error) {
+        } catch {
             toast.error(t('ecommerce.testError'));
         } finally {
             setSyncing(prev => ({ ...prev, [connectionId]: false }));
@@ -171,7 +171,7 @@ export function EcommerceSettings() {
             ]);
             setMappings(mappingsData || []);
             setUnmappedProducts(unmappedData || []);
-        } catch (error) {
+        } catch {
             toast.error(t('ecommerce.mappingsFailed'));
         }
     };
@@ -194,7 +194,7 @@ export function EcommerceSettings() {
             } else {
                 toast.error(t('ecommerce.autoMapFailed'));
             }
-        } catch (error) {
+        } catch {
             toast.error(t('ecommerce.autoMapFailed'));
         } finally {
             setAutoMapping(false);
@@ -206,7 +206,7 @@ export function EcommerceSettings() {
             await window.electronAPI.ecommerce.deleteMapping(mappingId);
             toast.success(t('ecommerce.mappingRemoved'));
             setMappings(prev => prev.filter(m => m.id !== mappingId));
-        } catch (error) {
+        } catch {
             toast.error(t('ecommerce.mappingRemoveFailed'));
         }
     };
@@ -302,7 +302,7 @@ export function EcommerceSettings() {
 
                                     <div className="flex items-center justify-between mt-4 pt-4 border-t border-dark-border">
                                         <div className="flex items-center gap-4 text-sm text-zinc-500">
-                                            <span>Last sync: {formatLastSync(conn.last_sync_at)}</span>
+                                            <span>{t('ecom.lastSyncN', { time: formatLastSync(conn.last_sync_at) })}</span>
                                             {conn.last_sync_status === 'error' && (
                                                 <span className="flex items-center gap-1 text-red-400">
                                                     <AlertTriangle className="w-4 h-4" />
@@ -466,12 +466,12 @@ export function EcommerceSettings() {
                                             <div>
                                                 <div className="font-medium">{mapping.product_name}</div>
                                                 <div className="text-sm text-zinc-500">
-                                                    SKU: {mapping.local_sku} → Remote: {mapping.remote_sku || mapping.remote_product_id}
+                                                    SKU: {mapping.local_sku} → {t('ecom.remote')}: {mapping.remote_sku || mapping.remote_product_id}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-3">
                                                 <span className="text-sm">
-                                                    Local: {mapping.local_quantity} | Remote: {mapping.last_remote_quantity ?? '?'}
+                                                    {t('ecom.local')}: {mapping.local_quantity} | {t('ecom.remote')}: {mapping.last_remote_quantity ?? '?'}
                                                 </span>
                                                 <Button 
                                                     size="sm" 
@@ -485,7 +485,7 @@ export function EcommerceSettings() {
                                     ))}
                                     {mappings.length > 10 && (
                                         <p className="text-sm text-zinc-500 text-center">
-                                            And {mappings.length - 10} more...
+                                            {t('ecom.andMore', { n: mappings.length - 10 })}
                                         </p>
                                     )}
                                 </div>
@@ -519,7 +519,7 @@ export function EcommerceSettings() {
                                     ))}
                                     {unmappedProducts.length > 10 && (
                                         <p className="text-sm text-zinc-500 text-center">
-                                            And {unmappedProducts.length - 10} more...
+                                            {t('ecom.andMore', { n: unmappedProducts.length - 10 })}
                                         </p>
                                     )}
                                 </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { translateError } from '../../i18n/errors';
 import { ImagePlus, Trash2 } from 'lucide-react';
 import { Input, TextArea } from '../ui/Input';
 import { toast } from '../ui/Toast';
@@ -47,7 +48,7 @@ export function ShopInfoForm({ value, onChange, requireLogo = false }) {
                 if (!result.success) throw new Error(result.error || t('shop.logoSaveFailed'));
                 onChange({ ...value, shopLogo: result.fileName });
             } catch (error) {
-                toast.error(error.message);
+                toast.error(translateError(error));
             } finally {
                 setUploading(false);
             }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { translateError } from '../../i18n/errors';
 import { Search, UserPlus, Star, CreditCard } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 import { Modal, ModalBody } from '../ui/Modal';
@@ -42,7 +43,7 @@ export default function CustomerPickerModal({ isOpen, onClose, onSelect }) {
             toast.success(t('customers.created'));
             onSelect(customer);
         } catch (error) {
-            toast.error(error.message || t('common.saveFailed'));
+            toast.error(translateError(error) || t('common.saveFailed'));
         }
     };
 

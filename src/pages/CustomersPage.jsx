@@ -1,17 +1,16 @@
 import { t } from '../i18n';
+import { translateError } from '../i18n/errors';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, Users, Star, ShoppingBag, Phone, Mail } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, Star, ShoppingBag, Phone, Mail } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Input, SearchInput, TextArea } from '../components/ui/Input';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader, EmptyState } from '../components/ui/Table';
-import { Card, StatCard } from '../components/ui/Card';
 import { toast } from '../components/ui/Toast';
 import { v4 as uuid } from 'uuid';
-import { format } from 'date-fns';
 import { ExcelImport } from '../components/ui/ExcelImport';
 import { FileSpreadsheet } from 'lucide-react';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -24,9 +23,8 @@ export default function CustomersPage() {
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
-    const [customerSales, setCustomerSales] = useState([]);
     const [loading, setLoading] = useState(true);
-    const { settings, loadSettings } = useSettingsStore();
+    const { loadSettings } = useSettingsStore();
 
     useEffect(() => {
         loadData();
@@ -37,7 +35,7 @@ export default function CustomersPage() {
         try {
             const data = await window.electronAPI.customers.getAll();
             setCustomers(data);
-        } catch (error) {
+        } catch {
             toast.error(t('customers.loadFailed'));
         } finally {
             setLoading(false);
@@ -64,7 +62,7 @@ export default function CustomersPage() {
                 await window.electronAPI.customers.delete(customer.id);
                 toast.success(t('customers.deleted'));
                 loadData();
-            } catch (error) {
+            } catch {
                 toast.error(t('customers.deleteFailed'));
             }
         }
@@ -350,7 +348,6 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
         credit_limit: 0,
     });
     const [loading, setLoading] = useState(false);
-    const { settings } = useSettingsStore();
 
     useEffect(() => {
         if (customer) {
@@ -405,7 +402,7 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
             }
             onSave();
         } catch (error) {
-            toast.error(error.message);
+            toast.error(translateError(error));
         } finally {
             setLoading(false);
         }
@@ -477,7 +474,7 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
                                 {customer && customer.credit_balance > 0 && (
                                     <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
                                         <p className="text-sm text-amber-400">
-                                            Current Credit Balance: <span className="font-bold">{settings.currencySymbol || '$'}{parseFloat(customer.credit_balance || 0).toFixed(2)}</span>
+                                            {t('customers.currentCredit')} <span className="font-bold">{formatMoney(customer.credit_balance || 0)}</span>
                                         </p>
                                     </div>
                                 )}

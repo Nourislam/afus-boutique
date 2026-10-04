@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { translateError } from '../i18n/errors';
 import { formatDate as formatLocalDate, formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, UserCog, Shield, ShieldCheck, User, Clock, Receipt, ShoppingBag, Banknote } from 'lucide-react';
@@ -8,12 +9,11 @@ import { Button } from '../components/ui/Button';
 import { Input, SearchInput } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
-import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader, EmptyState } from '../components/ui/Table';
+import { EmptyState } from '../components/ui/Table';
 import { Badge } from '../components/ui/Badge';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
 import { v4 as uuid } from 'uuid';
-import { format } from 'date-fns';
 import { ExcelImport } from '../components/ui/ExcelImport';
 import { FileSpreadsheet } from 'lucide-react';
 
@@ -146,7 +146,7 @@ export default function EmployeesPage() {
                 await window.electronAPI.employees.delete(employee.id);
                 toast.success(t('employees.deleted'));
                 loadData();
-            } catch (error) {
+            } catch {
                 toast.error(t('employees.deleteFailed'));
             }
         }
@@ -412,7 +412,7 @@ function EmployeeFormModal({ isOpen, onClose, employee, onSave, currentUser }) {
             }
             onSave();
         } catch (error) {
-            toast.error(error.message);
+            toast.error(translateError(error));
         } finally {
             setLoading(false);
         }

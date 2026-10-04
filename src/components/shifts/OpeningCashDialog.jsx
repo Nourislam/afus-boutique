@@ -1,4 +1,5 @@
 import { t } from '../../i18n';
+import { translateError } from '../../i18n/errors';
 import { currentLanguage } from '../../i18n';
 import { currencySymbolFor } from '../../i18n/format';
 import { useState, useEffect } from 'react';
@@ -56,7 +57,7 @@ export default function OpeningCashDialog({ employee, onSuccess, onCancel }) {
             }
         } catch (error) {
             console.error('Failed to start shift:', error);
-            toast.error(error.message || t('shift.startFailed'));
+            toast.error(translateError(error) || t('shift.startFailed'));
         } finally {
             setLoading(false);
         }

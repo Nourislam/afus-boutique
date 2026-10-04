@@ -1,11 +1,12 @@
 import { t } from '../../i18n';
+import { formatMoney } from '../../i18n/format';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { toast } from '../ui/Toast';
-import { AlertTriangle, PackagePlus, ArrowRight } from 'lucide-react';
+import { AlertTriangle, PackagePlus } from 'lucide-react';
 
 export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
     const [lowStockItems, setLowStockItems] = useState([]);
@@ -152,7 +153,7 @@ export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
                             <AlertTriangle className="w-5 h-5 shrink-0" />
                             <div>
                                 <p className="font-bold">{t('reorder.engine')}</p>
-                                <p>Found {lowStockItems.length} items below minimum stock level. Review quantities below and generate Purchase Orders automatically.</p>
+                                <p>{t('reorder.found', { n: lowStockItems.length })}</p>
                             </div>
                         </div>
 
@@ -219,7 +220,7 @@ export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
                                                 />
                                             </td>
                                             <td className="p-3 text-end text-zinc-400">
-                                                ${((item.cost || 0) * item.reorder_qty).toFixed(2)}
+                                                {formatMoney(((item.cost || 0) * item.reorder_qty))}
                                             </td>
                                         </tr>
                                     ))}
@@ -231,7 +232,7 @@ export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
             </ModalBody>
             <ModalFooter>
                 <div className="flex-1 text-xs text-zinc-500">
-                    Selected: {selectedItems.size} items
+                    {t('reorder.selectedN', { n: selectedItems.size })}
                 </div>
                 <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
                 <Button onClick={handleGenerate} loading={generating} disabled={selectedItems.size === 0}>

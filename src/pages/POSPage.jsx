@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { translateError } from '../i18n/errors';
 import { useNavigate } from 'react-router-dom';
 import {
     Search, ShoppingBag, Pause, Trash2, Plus, Minus, SlidersHorizontal, Shirt, ScanLine, UserRound, X,
@@ -304,7 +305,7 @@ export default function POSPage() {
             loadData();
             cart.loadPromotions();
         } catch (error) {
-            toast.error(error.message);
+            toast.error(translateError(error));
         }
     };
 

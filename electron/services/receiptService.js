@@ -111,8 +111,6 @@ class ReceiptService {
             return this.generateGiftCardHtml(data, storeSettings);
         }
 
-        const isA4 = type === 'purchase_order' || type === 'quotation';
-
         // Use thermal receipt style for regular receipts
         if (type === 'receipt') {
             return this.generateThermalReceiptHtml(data, storeSettings);

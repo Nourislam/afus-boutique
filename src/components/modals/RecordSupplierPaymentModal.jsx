@@ -1,4 +1,5 @@
 import { t } from '../../i18n';
+import { formatMoney } from '../../i18n/format';
 import React, { useState, useEffect } from 'react';
 import { Banknote, CreditCard, FileText } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
@@ -59,17 +60,17 @@ export default function RecordSupplierPaymentModal({ isOpen, onClose, onComplete
     const remaining = total - paid;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Record Payment for PO #${purchaseOrder.po_number || t('supplierPay.draft')}`}>
+        <Modal isOpen={isOpen} onClose={onClose} title={t('supplierPay.titleFor', { po: purchaseOrder.po_number || t('supplierPay.draft') })}>
             <ModalBody>
                 <div className="space-y-4">
                     <div className="bg-dark-tertiary p-4 rounded-lg flex justify-between items-center mb-4">
                         <div>
                             <p className="text-zinc-400 text-sm">{t('pos.amountDue')}</p>
-                            <p className="text-xl font-bold text-white">${remaining.toFixed(2)}</p>
+                            <p className="text-xl font-bold text-white">{formatMoney(remaining)}</p>
                         </div>
                         <div className="text-end">
                             <p className="text-zinc-400 text-sm">{t('supplierPay.poValue')}</p>
-                            <p className="font-medium text-white">${total.toFixed(2)}</p>
+                            <p className="font-medium text-white">{formatMoney(total)}</p>
                         </div>
                     </div>
 

@@ -5,8 +5,6 @@
  */
 
 const XLSX = require('xlsx');
-const path = require('path');
-const fs = require('fs');
 
 // Row problems are sent as "CODE|{json}" and shown in the shop's language
 const coded = (code, params = {}) => `${code}|${JSON.stringify(params)}`;
@@ -296,7 +294,7 @@ class ExcelService {
     /**
      * Transform value based on field type
      */
-    transformValue(field, value, dataType) {
+    transformValue(field, value, _dataType) {
         // Convert to string first
         value = String(value).trim();
 

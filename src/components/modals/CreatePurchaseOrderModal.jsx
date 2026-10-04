@@ -1,21 +1,27 @@
-import { t } from '../../i18n';
-import { useState, useEffect, useRef } from 'react';
+import { t, currentLanguage } from '../../i18n';
+import { formatMoney, currencySymbolFor } from '../../i18n/format';
+import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
-import { Search, Plus, Trash2, Trash } from 'lucide-react';
+import { Search, Trash2 } from 'lucide-react';
 import { toast } from '../ui/Toast';
 import { variantLabel } from '../../lib/clothing';
 
 export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }) {
     const [suppliers, setSuppliers] = useState([]);
     const [products, setProducts] = useState([]);
+    // Every field starts with a value so the inputs stay controlled
     const [formData, setFormData] = useState({
         supplier_id: '',
         expected_date: '',
         notes: '',
-        items: []
+        items: [],
+        tax_rate: 0,
+        discount_type: 'fixed',
+        discount_value: 0,
+        shipping_cost: 0,
     });
     const [searchQuery, setSearchQuery] = useState('');
     const [variantResults, setVariantResults] = useState([]);
@@ -54,15 +60,12 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
 
     const loadData = async () => {
         try {
-            const [suppliersData, productsData, settings] = await Promise.all([
+            const [suppliersData, productsData] = await Promise.all([
                 window.electronAPI.suppliers.getAll(),
                 window.electronAPI.products.getAll(),
-                window.electronAPI.settings.getAll()
             ]);
             setSuppliers(suppliersData);
             setProducts(productsData.filter(p => p.is_active));
-            // Set default tax rate from settings if available
-            /* if (settings.taxRate) ... setFormData tax_rate */
         } catch (error) {
             console.error('Failed to load data:', error);
             toast.error(t('po.loadDataFailed'));
@@ -183,8 +186,6 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
         p.sku?.toLowerCase().includes(searchQuery.toLowerCase())
     )).slice(0, 5);
 
-    const selectedSupplier = suppliers.find(s => s.id === formData.supplier_id);
-
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={t('po.newTitle')} size="xl">
             <ModalBody>
@@ -232,10 +233,10 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                     >
                                         <div>
                                             <p className="font-medium">{product.name}</p>
-                                            <p className="text-xs text-zinc-500">Stock: {product.stock_quantity}</p>
+                                            <p className="text-xs text-zinc-500">{t('po.stockN', { n: product.stock_quantity })}</p>
                                         </div>
                                         <div className="text-end">
-                                            <p className="text-sm text-accent-primary font-medium">Cost: {product.cost || 0}</p>
+                                            <p className="text-sm text-accent-primary font-medium">{t('po.costN', { amount: formatMoney(product.cost || 0) })}</p>
                                         </div>
                                     </button>
                                 ))}
@@ -247,10 +248,10 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                     >
                                         <div>
                                             <p className="font-medium">{variant.product_name} <span className="text-accent-primary">{variantLabel(variant)}</span></p>
-                                            <p className="text-xs text-zinc-500"><span className="font-mono">{variant.sku}</span> · Stock: {variant.stock_quantity}</p>
+                                            <p className="text-xs text-zinc-500"><span className="font-mono">{variant.sku}</span> · {t('po.stockN', { n: variant.stock_quantity })}</p>
                                         </div>
                                         <div className="text-end">
-                                            <p className="text-sm text-accent-primary font-medium">Cost: {variant.cost ?? '-'}</p>
+                                            <p className="text-sm text-accent-primary font-medium">{t('po.costN', { amount: variant.cost === null || variant.cost === undefined ? '—' : formatMoney(variant.cost) })}</p>
                                         </div>
                                     </button>
                                 ))}
@@ -295,19 +296,19 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                             </td>
                                             <td className="p-3">
                                                 <div className="relative">
-                                                    <span className="absolute start-2 top-1/2 -translate-y-1/2 text-zinc-500">$</span>
+                                                    <span className="absolute end-2 top-1/2 -translate-y-1/2 text-zinc-500 text-xs pointer-events-none">{currencySymbolFor(currentLanguage())}</span>
                                                     <Input
                                                         type="number"
                                                         min="0"
                                                         step="0.01"
                                                         value={item.unit_cost}
                                                         onChange={e => updateItem(item.key, 'unit_cost', e.target.value)}
-                                                        className="h-8 w-full ps-6"
+                                                        className="h-8 w-full pe-10"
                                                     />
                                                 </div>
                                             </td>
                                             <td className="p-3 text-end font-medium text-white">
-                                                ${item.total_cost.toFixed(2)}
+                                                {formatMoney(item.total_cost)}
                                             </td>
                                             <td className="p-3">
                                                 <button
@@ -325,7 +326,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                 <tr>
                                     <td colSpan="3" className="p-3 text-end">{t('pos.totalAmount')}</td>
                                     <td className="p-3 text-end text-accent-primary text-lg">
-                                        ${formData.items.reduce((sum, i) => sum + i.total_cost, 0).toFixed(2)}
+                                        {formatMoney(formData.items.reduce((sum, i) => sum + i.total_cost, 0))}
                                     </td>
                                     <td></td>
                                 </tr>
@@ -352,7 +353,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
 
                             <div className="flex justify-between items-center text-sm">
                                 <span className="text-zinc-400">{t('pos.subtotal')}</span>
-                                <span>${formData.items.reduce((sum, i) => sum + i.total_cost, 0).toFixed(2)}</span>
+                                <span>{formatMoney(formData.items.reduce((sum, i) => sum + i.total_cost, 0))}</span>
                             </div>
 
                             <div className="flex justify-between items-center text-sm">
@@ -401,7 +402,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
 
                             <div className="border-t border-dark-border pt-3 flex justify-between items-center font-bold text-lg text-accent-primary">
                                 <span>{t('pos.total')}</span>
-                                <span>${(() => {
+                                <span>{formatMoney((() => {
                                     const subtotal = formData.items.reduce((sum, i) => sum + i.total_cost, 0);
                                     let discount = 0;
                                     if (formData.discount_type === 'percentage') {
@@ -411,8 +412,8 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                     }
                                     const taxable = Math.max(0, subtotal - discount);
                                     const tax = taxable * (formData.tax_rate / 100);
-                                    return (taxable + tax + formData.shipping_cost).toFixed(2);
-                                })()}</span>
+                                    return taxable + tax + formData.shipping_cost;
+                                })())}</span>
                             </div>
                         </div>
                     </div>

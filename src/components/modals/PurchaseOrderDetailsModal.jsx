@@ -4,7 +4,7 @@ import { formatMoney } from '../../i18n/format';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
-import { Printer, FileText, Mail } from 'lucide-react';
+import { FileText, Mail } from 'lucide-react';
 import { toast } from '../ui/Toast';
 
 export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrder }) {

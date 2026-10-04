@@ -1,6 +1,6 @@
 import { t } from '../../i18n';
+import { formatMoney } from '../../i18n/format';
 import React, { useState, useEffect } from 'react';
-import { Package, X, Trash2 } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -84,7 +84,7 @@ export default function CreatePurchaseReturnModal({ isOpen, onClose, onComplete,
     const totalReturnAmount = returnItems.reduce((sum, item) => sum + (item.returnQuantity * item.unit_cost), 0);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Create Return for PO #${purchaseOrder.po_number || t('supplierPay.draft')}`}>
+        <Modal isOpen={isOpen} onClose={onClose} title={t('poReturn.titleFor', { po: purchaseOrder.po_number || t('supplierPay.draft') })}>
             <ModalBody>
                 <div className="flex flex-col h-full">
                     {/* Item List Header */}
@@ -106,7 +106,7 @@ export default function CreatePurchaseReturnModal({ isOpen, onClose, onComplete,
                                         {item.product_name || item.name}
                                     </p>
                                     <p className="text-xs text-zinc-500 mt-0.5">
-                                        Purchased: <span className="text-zinc-300">{item.quantity}</span> @ ${item.unit_cost?.toFixed(2)}
+                                        {t('poReturn.purchased')} <span className="text-zinc-300">{item.quantity}</span> × {formatMoney(item.unit_cost || 0)}
                                     </p>
                                 </div>
 
@@ -141,7 +141,7 @@ export default function CreatePurchaseReturnModal({ isOpen, onClose, onComplete,
                                 {/* Line Total */}
                                 <div className="col-span-2 text-end">
                                     <p className={`font-semibold text-sm ${item.returnQuantity > 0 ? 'text-red-400' : 'text-zinc-600'}`}>
-                                        ${(item.returnQuantity * item.unit_cost).toFixed(2)}
+                                        {formatMoney((item.returnQuantity * item.unit_cost))}
                                     </p>
                                 </div>
                             </div>
@@ -163,7 +163,7 @@ export default function CreatePurchaseReturnModal({ isOpen, onClose, onComplete,
                             
                             <div className="w-48 flex flex-col items-end pt-7">
                                 <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">{t('return.total')}</p>
-                                <p className="text-3xl font-bold text-red-400">${totalReturnAmount.toFixed(2)}</p>
+                                <p className="text-3xl font-bold text-red-400">{formatMoney(totalReturnAmount)}</p>
                             </div>
                         </div>
                     </div>

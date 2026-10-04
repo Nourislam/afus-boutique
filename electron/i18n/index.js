@@ -149,7 +149,7 @@ function parseDate(value) {
     return new Date(value);
 }
 
-function formatDate(value, lang = DEFAULT_LANGUAGE, withTime = true) {
+function formatDate(value, _lang = DEFAULT_LANGUAGE, withTime = true) {
     const d = parseDate(value);
     if (Number.isNaN(d.getTime())) return String(value || '');
     const options = withTime

@@ -86,7 +86,7 @@ export function SystemLogs() {
                     </span>
                 </div>
                 <div className="mt-2 text-xs text-zinc-400 flex flex-col sm:flex-row justify-between gap-1">
-                    <span>User: {log.employee_name || t('logs.system')}</span>
+                    <span>{t('logs.userN', { name: log.employee_name || t('logs.system') })}</span>
                     {log.details && <span className="font-mono opacity-50 truncate max-w-full sm:max-w-xs">{log.details.substring(0, 100)}...</span>}
                 </div>
             </Card>

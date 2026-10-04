@@ -1,10 +1,11 @@
 import { t } from '../../i18n';
+import { formatMoney } from '../../i18n/format';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { toast } from '../ui/Toast';
-import { AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { CheckCircle, XCircle } from 'lucide-react';
 
 export default function AddSupplierInvoiceModal({ isOpen, onClose, onComplete, purchaseOrder }) {
     const [formData, setFormData] = useState({
@@ -100,7 +101,7 @@ export default function AddSupplierInvoiceModal({ isOpen, onClose, onComplete, p
                                 {matchStatus === 'match' ? (
                                     <><CheckCircle className="w-4 h-4" /> {t('invoice.ok')}</>
                                 ) : (
-                                    <><XCircle className="w-4 h-4" /> Mismatch with PO ${purchaseOrder?.total?.toFixed(2)}</>
+                                    <><XCircle className="w-4 h-4" /> {t('invoice.mismatch')} {formatMoney(purchaseOrder?.total || 0)}</>
                                 )}
                             </div>
                         </div>
@@ -153,7 +154,7 @@ export default function AddSupplierInvoiceModal({ isOpen, onClose, onComplete, p
             </ModalBody>
             <ModalFooter>
                 <div className="flex-1 text-xs text-zinc-500">
-                    Expected PO Total: ${purchaseOrder?.total?.toFixed(2)}
+                    {t('invoice.expectedTotal')} {formatMoney(purchaseOrder?.total || 0)}
                 </div>
                 <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
                 <Button onClick={handleSubmit} loading={loading}>{t('invoice.save')}</Button>

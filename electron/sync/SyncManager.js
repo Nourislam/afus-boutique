@@ -1,5 +1,4 @@
 const { getDatabase, runQuery, runInsert, getTableColumns, saveDatabase } = require('../database/init');
-const { app, ipcMain } = require('electron');
 
 /**
  * SyncManager - optional cloud synchronization boundary.
@@ -74,7 +73,7 @@ class SyncManager {
                     this.lastSyncTimestamp = config.lastSyncTimestamp;
                 }
             }
-        } catch (e) {
+        } catch {
             console.log('[SyncManager] No sync config found, defaulting to disabled');
             this.enabled = false;
         }
@@ -401,7 +400,7 @@ class SyncManager {
                 this.offlineQueue = JSON.parse(result[0].values[0][0]);
                 console.log(`[SyncManager] Loaded ${this.offlineQueue.length} offline items`);
             }
-        } catch (e) {
+        } catch {
             this.offlineQueue = [];
         }
     }

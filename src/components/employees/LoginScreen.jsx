@@ -36,13 +36,14 @@ export default function LoginScreen() {
             if (!result.success) {
                 toast.error(result.error || t('login.invalidPin'));
             }
-         } catch (error) {
+         } catch {
              toast.error(t('login.failed'));
          }
     };
 
     const handleLogin = async (enteredPin) => {
-        if (!selectedEmployee) return;
+        // Ignore a second Enter while the first PIN is being checked
+        if (!selectedEmployee || loading) return;
 
         setLoading(true);
         try {
@@ -79,7 +80,7 @@ export default function LoginScreen() {
         }
     };
 
-    const handleOpeningCashSuccess = async (shift) => {
+    const handleOpeningCashSuccess = async () => {
         setShowOpeningCash(false);
         // Login with stored pin
         await performLogin(selectedEmployee.id, pin);

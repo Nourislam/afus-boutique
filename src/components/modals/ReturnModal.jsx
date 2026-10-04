@@ -110,7 +110,7 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
     const formatCurrency = (val) => formatMoney(val);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Return for Receipt #${sale?.receipt_number}`} size="lg">
+        <Modal isOpen={isOpen} onClose={onClose} title={t('return.titleFor', { receipt: sale?.receipt_number || '' })} size="lg">
             <ModalBody>
                 <div className="space-y-4">
                     <div className="border border-dark-border rounded-lg">

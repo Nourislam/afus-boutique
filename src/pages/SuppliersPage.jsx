@@ -2,13 +2,11 @@ import { t } from '../i18n';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import {
-    Search,
     Plus,
     Truck,
     Phone,
     Mail,
     Globe,
-    MoreVertical,
     Edit,
     Trash
 } from 'lucide-react';
@@ -39,7 +37,7 @@ export default function SuppliersPage() {
         website: '',
         notes: ''
     });
-    const { settings, loadSettings } = useSettingsStore();
+    const { loadSettings } = useSettingsStore();
 
     useEffect(() => {
         fetchSuppliers();
@@ -87,7 +85,7 @@ export default function SuppliersPage() {
             await window.electronAPI.suppliers.delete(id);
             toast.success(t('suppliers.deleted'));
             fetchSuppliers();
-        } catch (error) {
+        } catch {
             toast.error(t('suppliers.deleteFailed'));
         }
     };
@@ -139,6 +137,12 @@ export default function SuppliersPage() {
             </PageHeader>
 
             <div className="page-body">
+                {isLoading && suppliers.length === 0 && (
+                    <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>
+                )}
+                {!isLoading && filteredSuppliers.length === 0 && (
+                    <p className="text-center text-zinc-500 py-16">{t('common.noResults')}</p>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {filteredSuppliers.map(supplier => (
                         <Card key={supplier.id} className="p-4 hover:border-accent-primary transition-colors group">

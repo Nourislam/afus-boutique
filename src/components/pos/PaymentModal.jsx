@@ -107,7 +107,7 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
                 setGiftCardError(t('pos.giftInvalid'));
                 setGiftCardBalance(null);
             }
-        } catch (err) {
+        } catch {
             setGiftCardError(t('pos.giftCheckFailed'));
         } finally {
             setCheckingGiftCard(false);

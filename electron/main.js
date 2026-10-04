@@ -275,7 +275,7 @@ ipcMain.handle('sync:get-status', async () => {
   return SyncManager.getStatus();
 });
 
-ipcMain.handle('sync:set-token', async (_, token) => {
+ipcMain.handle('sync:set-token', async () => {
   // No-op in Realtime mode
   return true;
 });
@@ -1457,7 +1457,7 @@ ipcMain.handle('db:returns:create', (_, returnData) => {
 // ================================================
 
 const { saveImage, saveImageFromPath, deleteImage, getImageBase64 } = require('./services/imageService');
-const { testEmailConnection, sendTestEmail, sendReceiptEmail, initEmailService } = require('./services/emailService');
+const { testEmailConnection, sendTestEmail, initEmailService } = require('./services/emailService');
 
 // Image Service
 ipcMain.handle('images:save', async (_, { base64Data, originalName }) => {
@@ -1523,7 +1523,7 @@ ipcMain.handle('email:sendPurchaseOrder', async (_, { to, po }) => {
   settingsRows.forEach(row => {
     try {
       settings[row.key] = JSON.parse(row.value);
-    } catch (e) {
+    } catch {
       settings[row.key] = row.value;
     }
   });
@@ -1957,7 +1957,7 @@ ipcMain.handle('email:sendReceipt', async (_, sale, toEmail) => {
   const settingsRows = runQuery('SELECT key, value FROM settings');
   const settings = {};
   settingsRows.forEach(row => {
-    try { settings[row.key] = JSON.parse(row.value); } catch (e) { settings[row.key] = row.value; }
+    try { settings[row.key] = JSON.parse(row.value); } catch { settings[row.key] = row.value; }
   });
 
   // Merge store_config if it exists
@@ -2060,7 +2060,7 @@ ipcMain.handle('purchaseOrders:savePdf', async (_, po) => {
     const settingsRows = runQuery('SELECT key, value FROM settings');
     const storeSettings = {};
     settingsRows.forEach(row => {
-      try { storeSettings[row.key] = JSON.parse(row.value); } catch (e) { storeSettings[row.key] = row.value; }
+      try { storeSettings[row.key] = JSON.parse(row.value); } catch { storeSettings[row.key] = row.value; }
     });
     storeSettings.type = 'purchase_order';
 
@@ -2454,13 +2454,11 @@ ipcMain.handle('db:supplierInvoices:create', (_, data) => {
     `, [purchase_order_id]);
 
     const poTotal = po ? po.total : 0;
-    const receivedValue = grnValue ? grnValue.total_received_value : 0;
+    const receivedValue = grnValue ? grnValue.total_received_value || 0 : 0;
 
-    // Simple Match Logic: Does Invoice Total match PO Total (or Received Value)? 
-    // Usually Invoice should match Received Value for partials, or PO total for full.
-    // Let's match against PO Total for now as per requirement "PO vs Invoice".
-    // Allowing small floating point difference.
-    const difference = Math.abs(total_amount - poTotal);
+    // The invoice matches when it equals the order total, or the value of what
+    // was actually received (partial deliveries). Small rounding allowed.
+    const difference = Math.min(Math.abs(total_amount - poTotal), receivedValue > 0 ? Math.abs(total_amount - receivedValue) : Infinity);
     const match_status = difference < 0.05 ? 'matched' : 'mismatched';
 
     runInsert(`
@@ -3172,16 +3170,24 @@ ipcMain.handle('db:purchaseOrders:receiveStock', (_, { poId, receivedItems }) =>
   // 1. Update PO status
   runInsert("UPDATE purchase_orders SET status = 'received', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [poId]);
 
-  // 2. Update Product/Variant Stock and Log
+  // 2. Update Product/Variant Stock and Log. Quantities actually received
+  // (receivedItems: [{ id | product_id, variant_id?, quantity }]) win over the ordered ones.
   const items = runQuery('SELECT * FROM purchase_order_items WHERE purchase_order_id = ?', [poId]);
+  const receivedQty = (item) => {
+    if (!Array.isArray(receivedItems) || receivedItems.length === 0) return item.quantity;
+    const match = receivedItems.find(r => (r.id && r.id === item.id)
+      || (r.product_id === item.product_id && (r.variant_id || null) === (item.variant_id || null)));
+    return match ? Math.max(0, parseInt(match.quantity, 10) || 0) : 0;
+  };
 
   runTransaction(() => {
     for (const item of items) {
-      if (item.product_id && getOne('SELECT id FROM products WHERE id = ?', [item.product_id])) {
+      const quantity = receivedQty(item);
+      if (quantity > 0 && item.product_id && getOne('SELECT id FROM products WHERE id = ?', [item.product_id])) {
         catalog.adjustStock(dbApi, {
           productId: item.product_id,
           variantId: item.variant_id || null,
-          delta: item.quantity,
+          delta: quantity,
           type: 'receive_po',
           reason: `Received PO #${poId}`,
         });
@@ -3490,7 +3496,7 @@ ipcMain.handle('creditInvoice:sendEmail', async (_, { creditSaleId, email }) => 
   const settings = {};
   rows.forEach(row => {
     try { settings[row.key] = JSON.parse(row.value); }
-    catch (e) { settings[row.key] = row.value; }
+    catch { settings[row.key] = row.value; }
   });
 
   // Initialize email service
@@ -3614,7 +3620,7 @@ ipcMain.handle('email:sendGiftCard', async (_, { giftCard, email }) => {
     const settings = {};
     rows.forEach(row => {
       try { settings[row.key] = JSON.parse(row.value); }
-      catch (e) { settings[row.key] = row.value; }
+      catch { settings[row.key] = row.value; }
     });
 
     // Merge structured settings if they exist (compatibility with new SettingsPage structure)

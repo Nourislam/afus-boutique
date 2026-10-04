@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { translateError } from '../i18n/errors';
 import { useNavigate } from 'react-router-dom';
 import {
     Building, Receipt, Percent, Database, Save, Download, Upload, Mail, Lock, CheckCircle, Printer, ScanLine, Hash,
@@ -215,7 +216,7 @@ export default function SettingsPage() {
             if (result.success) toast.success(t('settings.backup.exported'));
             else if (!result.canceled) toast.error(t('settings.backup.exportFailed', { error: result.error }));
         } catch (error) {
-            toast.error(t('settings.backup.exportFailed', { error: error.message }));
+            toast.error(t('settings.backup.exportFailed', { error: translateError(error) }));
         }
     };
 
@@ -229,7 +230,7 @@ export default function SettingsPage() {
                 toast.error(t('settings.backup.restoreFailed', { error: result.error }));
             }
         } catch (error) {
-            toast.error(t('settings.backup.restoreFailed', { error: error.message }));
+            toast.error(t('settings.backup.restoreFailed', { error: translateError(error) }));
         }
     };
 
@@ -243,7 +244,7 @@ export default function SettingsPage() {
                 toast.error(t('settings.backup.resetFailed', { error: result.error }));
             }
         } catch (error) {
-            toast.error(t('settings.backup.resetFailed', { error: error.message }));
+            toast.error(t('settings.backup.resetFailed', { error: translateError(error) }));
         }
     };
 

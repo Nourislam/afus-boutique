@@ -1,4 +1,5 @@
 import { t } from '../../i18n';
+import { formatMoney } from '../../i18n/format';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -55,13 +56,13 @@ export default function SupplierReportsModal({ isOpen, onClose }) {
                             />
                             <StatCard
                                 title={t('supplierReports.spend')}
-                                value={`$${(stats.summary.total_purchased || 0).toFixed(2)}`}
+                                value={formatMoney(stats.summary.total_purchased || 0)}
                                 icon={Banknote}
                                 color="green"
                             />
                             <StatCard
                                 title={t('supplierReports.paid')}
-                                value={`$${(stats.summary.total_paid || 0).toFixed(2)}`}
+                                value={formatMoney(stats.summary.total_paid || 0)}
                                 icon={TrendingUp}
                                 color="purple"
                             />
@@ -90,7 +91,7 @@ export default function SupplierReportsModal({ isOpen, onClose }) {
                                                 <td className="p-3 font-medium text-white">{s.name}</td>
                                                 <td className="p-3 text-center text-zinc-400">{s.order_count}</td>
                                                 <td className="p-3 text-end font-mono text-green-400">
-                                                    ${s.total_spend.toFixed(2)}
+                                                    {formatMoney(s.total_spend)}
                                                 </td>
                                             </tr>
                                         ))}

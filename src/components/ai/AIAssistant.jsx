@@ -1,6 +1,6 @@
 import { t } from '../../i18n';
 import { useState, useEffect, useRef } from 'react';
-import { MessageSquare, X, Send, Sparkles, Loader2 } from 'lucide-react';
+import { X, Send, Sparkles, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';

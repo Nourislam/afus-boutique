@@ -111,8 +111,6 @@ class BarcodeService {
     async generateBarcode(options) {
         let { type = 'ean13', data } = options;
         const {
-            width = 200,
-            height = 100,
             includeText = true,
             scale = 3,
             backgroundColor = '#ffffff',
@@ -358,7 +356,6 @@ class BarcodeService {
      */
     generateRandomBarcode(type = 'ean13') {
         let data = '';
-        const specs = BARCODE_TYPES[type];
 
         if (type === 'ean13') {
             // Generate 12 random digits, then add check digit

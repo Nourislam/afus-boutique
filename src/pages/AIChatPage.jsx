@@ -1,8 +1,8 @@
 import { t } from '../i18n';
 import { useState, useEffect, useRef } from 'react';
 import { 
-    Send, Sparkles, Loader2, Bot, Upload, X, 
-    Image as ImageIcon, FileText, Eraser, Minimize2, Maximize2 
+    Send, Loader2, Bot, X, 
+    Image as ImageIcon,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
@@ -11,7 +11,6 @@ import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
 import { toast } from '../components/ui/Toast';
 
 const AVAILABLE_MODELS = [

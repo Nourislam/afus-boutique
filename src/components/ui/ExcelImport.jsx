@@ -9,7 +9,7 @@ import { t } from '../../i18n';
 import { useState, useCallback, useRef } from 'react';
 import {
     Upload, FileSpreadsheet, Download, Check, X, AlertTriangle,
-    ChevronRight, RefreshCw, Trash2, ArrowRight
+    ChevronRight, RefreshCw, ArrowRight
 } from 'lucide-react';
 import { Button } from './Button';
 import { Select } from './Select';
@@ -25,7 +25,6 @@ export function ExcelImport({
     title = 'Import from Excel'
 }) {
     const [step, setStep] = useState(1); // 1: Upload, 2: Map, 3: Preview
-    const [file, setFile] = useState(null);
     const [sheetData, setSheetData] = useState(null);
     const [selectedSheet, setSelectedSheet] = useState('');
     const [columnMappings, setColumnMappings] = useState({});
@@ -61,7 +60,6 @@ export function ExcelImport({
             return;
         }
 
-        setFile(selectedFile);
 
         try {
             const buffer = await selectedFile.arrayBuffer();
@@ -156,7 +154,6 @@ export function ExcelImport({
 
     const handleClose = () => {
         setStep(1);
-        setFile(null);
         setSheetData(null);
         setSelectedSheet('');
         setColumnMappings({});
@@ -176,7 +173,7 @@ export function ExcelImport({
             a.click();
             URL.revokeObjectURL(url);
             toast.success(t('excel.templateDone'));
-        } catch (error) {
+        } catch {
             toast.error(t('excel.templateFailed'));
         }
     };
@@ -245,7 +242,7 @@ export function ExcelImport({
                                 className="text-indigo-400 hover:text-indigo-300 text-sm flex items-center gap-2 mx-auto"
                             >
                                 <Download className="w-4 h-4" />
-                                Download {dataType} template
+                                {t('excel.downloadTemplate')}
                             </button>
                         </div>
                     </div>
@@ -407,7 +404,7 @@ export function ExcelImport({
                         ) : (
                             <Upload className="w-4 h-4" />
                         )}
-                        Import {validationResult?.valid.length} Records
+                        {t('excel.importN', { n: validationResult?.valid.length || 0 })}
                     </Button>
                 )}
             </ModalFooter>

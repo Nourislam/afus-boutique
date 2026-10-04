@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { translateError } from '../i18n/errors';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
@@ -7,7 +8,6 @@ import {
     FileText,
     Calendar,
     CheckCircle,
-    User,
     Package,
     Mail
 } from 'lucide-react';
@@ -43,7 +43,7 @@ export default function PurchaseOrdersPage() {
     const [selectedPO, setSelectedPO] = useState(null);
     const [emailPO, setEmailPO] = useState(null);
     const [emailAddress, setEmailAddress] = useState('');
-    const { settings, loadSettings } = useSettingsStore();
+    const { loadSettings } = useSettingsStore();
 
     useEffect(() => {
         fetchOrders();
@@ -75,7 +75,7 @@ export default function PurchaseOrdersPage() {
             fetchOrders();
         } catch (error) {
             console.error(error);
-            toast.error(error.message || t('po.deleteFailed'));
+            toast.error(translateError(error) || t('po.deleteFailed'));
         }
     };
 
@@ -191,7 +191,7 @@ export default function PurchaseOrdersPage() {
                                         <p className="text-xs text-zinc-500 uppercase tracking-wide">{t('pos.totalAmount')}</p>
                                         <p className="font-bold text-lg">{formatCurrency(po.total)}</p>
                                         {po.amount_paid > 0 && (
-                                            <p className="text-xs text-green-400">Paid: {formatCurrency(po.amount_paid)}</p>
+                                            <p className="text-xs text-green-400">{t('po.paidN', { amount: formatCurrency(po.amount_paid) })}</p>
                                         )}
                                     </div>
                                     <div className="flex flex-col gap-1 items-center min-w-[80px]">

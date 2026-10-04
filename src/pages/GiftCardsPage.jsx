@@ -1,18 +1,18 @@
 import { t } from '../i18n';
+import { translateError } from '../i18n/errors';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { Gift, Plus, Search, CreditCard, RefreshCw, History, Trash2, X, Calendar, User, Banknote, Printer as PrinterIcon } from 'lucide-react';
+import { Gift, Plus, Search, CreditCard, RefreshCw, History, Trash2, Calendar, User, Banknote, Printer as PrinterIcon } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
+import { Modal, ModalBody } from '../components/ui/Modal';
 import { Select } from '../components/ui/Select';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore, PERMISSIONS } from '../stores/authStore';
 import { v4 as uuid } from 'uuid';
 import { PermissionGate } from '../components/auth/PermissionGate';
 import GiftCardPrintModal from '../components/modals/GiftCardPrintModal';
-import { Printer } from 'lucide-react';
 import { useSettingsStore } from '../stores/settingsStore';
 
 export default function GiftCardsPage() {
@@ -26,7 +26,7 @@ export default function GiftCardsPage() {
     const [transactions, setTransactions] = useState([]);
     const [printCard, setPrintCard] = useState(null);
     const { currentEmployee } = useAuthStore();
-    const { settings, loadSettings } = useSettingsStore();
+    const { loadSettings } = useSettingsStore();
 
     const [formData, setFormData] = useState({
         initial_balance: '',
@@ -124,7 +124,7 @@ export default function GiftCardsPage() {
             setSelectedCard(null);
             loadGiftCards();
         } catch (error) {
-            toast.error(error.message || t('gift.reloadFailed'));
+            toast.error(translateError(error) || t('gift.reloadFailed'));
             console.error(error);
         }
     };
@@ -272,7 +272,7 @@ export default function GiftCardsPage() {
                                         {formatCurrency(card.current_balance)}
                                     </p>
                                     <p className="text-xs text-zinc-500 mt-1">
-                                        Initial: {formatCurrency(card.initial_balance)}
+                                        {t('gift.initialN', { amount: formatCurrency(card.initial_balance) })}
                                     </p>
                                 </div>
 
@@ -286,7 +286,7 @@ export default function GiftCardsPage() {
                                     )}
                                     <div className="flex items-center gap-2">
                                         <Calendar className="w-4 h-4" />
-                                        <span>Expires: {formatDate(card.expires_at)}</span>
+                                        <span>{t('gift.expiresN', { date: formatDate(card.expires_at) })}</span>
                                     </div>
                                 </div>
 

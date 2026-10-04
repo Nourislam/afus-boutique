@@ -1,4 +1,5 @@
 import { t } from '../../i18n';
+import { translateError } from '../../i18n/errors';
 import { useEffect, useState } from 'react';
 import { RefreshCw, Printer, Tag, FlaskConical } from 'lucide-react';
 import { toast } from '../ui/Toast';
@@ -77,7 +78,7 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
             const result = await window.electronAPI.receipts.print(sale, printers.receipt);
             if (result?.success !== false) toast.success(t('printers.testSent'));
         } catch (error) {
-            toast.error(t('barcode.printFailed', { error: error.message }));
+            toast.error(t('barcode.printFailed', { error: translateError(error) }));
         } finally {
             setTesting(null);
         }
@@ -91,7 +92,7 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
             );
             if (result?.success) toast.success(t('printers.testSent'));
         } catch (error) {
-            toast.error(t('barcode.printFailed', { error: error.message }));
+            toast.error(t('barcode.printFailed', { error: translateError(error) }));
         } finally {
             setTesting(null);
         }

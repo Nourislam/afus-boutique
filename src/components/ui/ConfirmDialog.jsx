@@ -1,5 +1,5 @@
 import { useT } from '../../i18n';
-import { AlertTriangle, Info, HelpCircle, X } from 'lucide-react';
+import { AlertTriangle, Info } from 'lucide-react';
 import { Button } from './Button';
 
 export function ConfirmDialog({

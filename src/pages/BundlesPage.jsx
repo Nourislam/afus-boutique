@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { translateError } from '../i18n/errors';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { PackageOpen, Plus, Search, Edit2, Trash2, Package, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
@@ -39,7 +40,7 @@ export default function BundlesPage() {
     const [bundleItems, setBundleItems] = useState([]);
     const [selectedProduct, setSelectedProduct] = useState('');
     const [selectedQuantity, setSelectedQuantity] = useState(1);
-    const { settings, loadSettings } = useSettingsStore();
+    const { loadSettings } = useSettingsStore();
 
     useEffect(() => {
         loadBundles();
@@ -226,7 +227,7 @@ export default function BundlesPage() {
             setShowAssemblyModal(false);
             loadBundles();
         } catch (error) {
-            toast.error(error.message);
+            toast.error(translateError(error));
         }
     };
 

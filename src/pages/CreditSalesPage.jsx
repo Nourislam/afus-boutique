@@ -1,20 +1,19 @@
 import { t } from '../i18n';
+import { translateError } from '../i18n/errors';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { Search, FileText, Banknote, Mail, Bell, Eye, Filter, Calendar, User, CreditCard, X, Check, Smartphone } from 'lucide-react';
+import { Search, FileText, Banknote, Mail, Bell, Eye, CreditCard, Check, Smartphone } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import ReceiptPreviewModal from '../components/modals/ReceiptPreviewModal';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
-import { format } from 'date-fns';
 import { paymentLabel } from '../lib/payments';
 
 export default function CreditSalesPage() {
     const [creditSales, setCreditSales] = useState([]);
-    const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
@@ -37,12 +36,7 @@ export default function CreditSalesPage() {
             if (statusFilter !== 'all') {
                 params.status = statusFilter;
             }
-            const [salesData, customersData] = await Promise.all([
-                window.electronAPI.creditSales.getAll(params),
-                window.electronAPI.customers.getAll()
-            ]);
-            setCreditSales(salesData);
-            setCustomers(customersData);
+            setCreditSales(await window.electronAPI.creditSales.getAll(params));
         } catch (error) {
             console.error('Failed to load credit sales:', error);
             toast.error(t('credit.loadFailed'));
@@ -50,25 +44,6 @@ export default function CreditSalesPage() {
             setLoading(false);
         }
     };
-
-    const [currency, setCurrency] = useState('USD');
-
-    useEffect(() => {
-        const fetchSettings = async () => {
-            try {
-                const settings = await window.electronAPI.settings.getAll();
-                let parsed = { ...settings };
-                if (settings.store_config) {
-                    const config = typeof settings.store_config === 'string'
-                        ? JSON.parse(settings.store_config)
-                        : settings.store_config;
-                    parsed = { ...parsed, ...config };
-                }
-                if (parsed.currency) setCurrency(parsed.currency);
-            } catch (e) { console.error(e); }
-        };
-        fetchSettings();
-    }, []);
 
     const formatCurrency = (amount) => {
         return formatMoney(amount || 0);
@@ -131,7 +106,7 @@ export default function CreditSalesPage() {
             toast.success(t('credit.invoiceSent'));
         } catch (error) {
             console.error('Failed to send invoice:', error);
-            toast.error(`${t('credit.invoiceFailed')} ${error.message}`);
+            toast.error(`${t('credit.invoiceFailed')} ${translateError(error)}`);
         }
     };
 
@@ -148,7 +123,7 @@ export default function CreditSalesPage() {
             toast.success(t('credit.reminderSent'));
         } catch (error) {
             console.error('Failed to send reminder:', error);
-            toast.error(`${t('credit.reminderFailed')} ${error.message}`);
+            toast.error(`${t('credit.reminderFailed')} ${translateError(error)}`);
         }
     };
 
@@ -388,7 +363,7 @@ export default function CreditSalesPage() {
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-between pt-2 border-t border-dark-border">
-                                    <p className="text-xs text-zinc-500">Due: {formatDate(sale.due_date)}</p>
+                                    <p className="text-xs text-zinc-500">{t('credit.dueN', { date: formatDate(sale.due_date) })}</p>
                                     <div className="flex gap-1">
                                         <button onClick={() => handleViewDetails(sale)} className="p-2 hover:bg-dark-tertiary rounded-lg">
                                             <Eye className="w-4 h-4" />

@@ -4,9 +4,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Edit2, Trash2, Package, Grid, List, FileSpreadsheet, QrCode } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { Input, SearchInput } from '../components/ui/Input';
+import { SearchInput } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
-import { Modal, ModalBody } from '../components/ui/Modal';
 import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader, EmptyState } from '../components/ui/Table';
 import { Badge, StatusBadge } from '../components/ui/Badge';
 import { toast } from '../components/ui/Toast';
@@ -29,14 +28,13 @@ export default function ProductsPage() {
     const [showProductModal, setShowProductModal] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
-    const [editingCategory, setEditingCategory] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showExcelImport, setShowExcelImport] = useState(false);
     const [initialValues, setInitialValues] = useState(null);
     const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
 
-    const { settings, loadSettings } = useSettingsStore();
+    const { loadSettings } = useSettingsStore();
 
     useEffect(() => {
         loadData();
@@ -62,7 +60,7 @@ export default function ProductsPage() {
             ]);
             setProducts(productsData);
             setCategories(categoriesData);
-        } catch (error) {
+        } catch {
             toast.error(t('common.loadFailed'));
         } finally {
             setLoading(false);
@@ -96,20 +94,8 @@ export default function ProductsPage() {
                 await window.electronAPI.products.delete(product.id);
                 toast.success(t('products.deleted'));
                 loadData();
-            } catch (error) {
+            } catch {
                 toast.error(t('products.deleteFailed'));
-            }
-        }
-    };
-
-    const handleDeleteCategory = async (category) => {
-        if (confirm(t('categories.deleteConfirm', { name: category.name }))) {
-            try {
-                await window.electronAPI.categories.delete(category.id);
-                toast.success(t('products.categoryDeleted'));
-                loadData();
-            } catch (error) {
-                toast.error(t('products.categoryDeleteFailed'));
             }
         }
     };

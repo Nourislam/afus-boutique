@@ -1,4 +1,5 @@
 import { t } from '../../i18n';
+import { translateError } from '../../i18n/errors';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -59,7 +60,7 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
             toast.success(t('receipt.sentTo', { email }));
         } catch (error) {
             console.error('Email failed:', error);
-            toast.error(error.message || t('receipt.emailFailed'));
+            toast.error(translateError(error) || t('receipt.emailFailed'));
         } finally {
             setSendingEmail(false);
         }

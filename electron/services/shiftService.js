@@ -10,7 +10,7 @@ class ShiftService {
         // Check if there is already an active shift for this employee
         const activeShift = this.getCurrentShift(employeeId);
         if (activeShift) {
-            throw new Error('Employee already has an active shift.');
+            throw new Error('SHIFT_ALREADY_OPEN|{}');
         }
 
         const shift = {
@@ -31,8 +31,8 @@ class ShiftService {
 
     endShift(shiftId, closingCash, notes = '') {
         const shift = this.getShiftById(shiftId);
-        if (!shift) throw new Error('Shift not found');
-        if (shift.end_time) throw new Error('Shift already closed');
+        if (!shift) throw new Error('SHIFT_NOT_FOUND|{}');
+        if (shift.end_time) throw new Error('SHIFT_ALREADY_CLOSED|{}');
 
         const endTime = new Date().toISOString();
 
@@ -58,7 +58,7 @@ class ShiftService {
 
     getShiftStats(shiftId) {
         const shift = this.getShiftById(shiftId);
-        if (!shift) throw new Error('Shift not found');
+        if (!shift) throw new Error('SHIFT_NOT_FOUND|{}');
 
         // Calculate sales totals during this shift
         // We use the shift start time and either the shift end time or current time

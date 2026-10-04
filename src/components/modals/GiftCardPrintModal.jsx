@@ -55,7 +55,7 @@ export default function GiftCardPrintModal({ isOpen, onClose, giftCard }) {
             // Pass the barcode image data to the backend
             const path = await window.electronAPI.giftCards.savePdf({ ...giftCard, barcodeImage });
             if (path) toast.success(t('common.savedTo', { path }));
-        } catch (error) {
+        } catch {
             toast.error(t('gift.pdfFailed'));
         }
     };
@@ -141,8 +141,7 @@ export default function GiftCardPrintModal({ isOpen, onClose, giftCard }) {
                     </div>
 
                     <p className="text-sm text-zinc-500 text-center no-print">
-                        {t('gift.previewHint')}
-                        Use a high-quality printer or card printer for best results.
+                        {t('gift.previewHint')} {t('gift.printerHint')}
                     </p>
                 </div>
 
@@ -184,7 +183,7 @@ export default function GiftCardPrintModal({ isOpen, onClose, giftCard }) {
             </ModalFooter>
 
             {/* Print Styles */}
-            <style jsx global>{`
+            <style>{`
                 @media print {
                     body * {
                         visibility: hidden;

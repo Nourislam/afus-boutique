@@ -2,8 +2,7 @@ import { t } from '../../i18n';
 import { formatDate as formatLocalDate } from '../../i18n/format';
 import { formatMoney } from '../../i18n/format';
 import React, { useState, useEffect } from 'react';
-import { format } from 'date-fns';
-import { ArrowUpRight, ArrowDownLeft, FileText, Banknote, RefreshCcw } from 'lucide-react';
+import { FileText, Banknote, RefreshCcw } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 

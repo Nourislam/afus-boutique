@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { Tabs } from '../components/ui/Tabs';
-import { Search, Eye, Filter } from 'lucide-react';
+import { Search, Eye } from 'lucide-react';
 import ReceiptPreviewModal from '../components/modals/ReceiptPreviewModal';
 import ReturnModal from '../components/modals/ReturnModal';
 import ReturnDetailsModal from '../components/modals/ReturnDetailsModal';
@@ -101,25 +101,6 @@ export default function TransactionsPage() {
             toast.error(t('tx.receiptFailed'));
         }
     };
-
-    const [currency, setCurrency] = useState('USD');
-
-    useEffect(() => {
-        const fetchSettings = async () => {
-            try {
-                const settings = await window.electronAPI.settings.getAll();
-                let parsed = { ...settings };
-                if (settings.store_config) {
-                    const config = typeof settings.store_config === 'string'
-                        ? JSON.parse(settings.store_config)
-                        : settings.store_config;
-                    parsed = { ...parsed, ...config };
-                }
-                if (parsed.currency) setCurrency(parsed.currency);
-            } catch (e) { console.error(e); }
-        };
-        fetchSettings();
-    }, []);
 
     const formatCurrency = (amount) => {
         return formatMoney(amount);

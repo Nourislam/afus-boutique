@@ -747,7 +747,6 @@ class EcommerceSyncManager {
 
         try {
             // Find the connection for this platform
-            let _connection = null;
             let mapping = null;
 
             if (event.platform === 'shopify' && event.inventoryItemId) {

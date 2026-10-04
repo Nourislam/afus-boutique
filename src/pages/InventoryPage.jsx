@@ -4,15 +4,14 @@ import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { Package, AlertTriangle, Plus, Minus, History, ArrowUpDown } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { Input, SearchInput, TextArea } from '../components/ui/Input';
+import { Input, SearchInput } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
-import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader, EmptyState } from '../components/ui/Table';
-import { Badge, StatusBadge } from '../components/ui/Badge';
-import { Card, StatCard } from '../components/ui/Card';
+import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader } from '../components/ui/Table';
+import { StatusBadge } from '../components/ui/Badge';
+import { StatCard } from '../components/ui/Card';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
-import { format } from 'date-fns';
 import { useSettingsStore } from '../stores/settingsStore';
 import { variantLabel } from '../lib/clothing';
 import { MANUAL_REASONS, stockReasonLabel } from '../lib/stockReasons';
@@ -29,7 +28,7 @@ export default function InventoryPage() {
     const [variantsByProduct, setVariantsByProduct] = useState({});
 
     const { currentEmployee } = useAuthStore();
-    const { settings, loadSettings } = useSettingsStore();
+    const { loadSettings } = useSettingsStore();
 
     useEffect(() => {
         loadData();
@@ -50,7 +49,7 @@ export default function InventoryPage() {
             setProducts(productsData);
             setLowStockProducts(lowStock);
             setInventoryLogs(logs);
-        } catch (error) {
+        } catch {
             toast.error(t('inventory.loadFailed'));
         } finally {
             setLoading(false);
@@ -81,7 +80,7 @@ export default function InventoryPage() {
             const logs = await window.electronAPI.inventory.getLogs(product.id);
             setInventoryLogs(logs);
             setShowLogsModal(true);
-        } catch (error) {
+        } catch {
             toast.error(t('inventory.logsFailed'));
         }
     };
@@ -153,13 +152,13 @@ export default function InventoryPage() {
                                         <p className="text-xs text-zinc-300 truncate">{variantLabel(row)}</p>
                                     )}
                                     <p className="text-sm text-amber-400">
-                                        {row.stock_quantity} remaining
+                                        {t('inventory.remainingN', { n: row.stock_quantity })}
                                     </p>
                                 </div>
                             ))}
                         </div>
                         {lowStockProducts.length > 8 && (
-                            <p className="text-xs text-amber-400 mt-2">+ {lowStockProducts.length - 8} more variants/products are low on stock</p>
+                            <p className="text-xs text-amber-400 mt-2">{t('inventory.moreLow', { n: lowStockProducts.length - 8 })}</p>
                         )}
                     </div>
                 )}
@@ -376,7 +375,7 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
             });
             toast.success(t('inventory.updated'));
             onSave();
-        } catch (error) {
+        } catch {
             toast.error(t('inventory.updateFailed'));
         } finally {
             setLoading(false);
@@ -394,8 +393,8 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
                         <div className="p-4 rounded-lg bg-dark-tertiary">
                             <p className="font-medium">{product.name}</p>
                             <p className="text-sm text-zinc-400">
-                                Current Stock: {currentStock}
-                                {needsVariant && ` (total for all variants: ${product.stock_quantity})`}
+                                {t('inventory.currentN', { n: currentStock })}
+                                {needsVariant && ` ${t('inventory.allVariantsTotal', { n: product.stock_quantity })}`}
                             </p>
                         </div>
 

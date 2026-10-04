@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { translateError } from '../i18n/errors';
 import { Check, ChevronRight, ChevronLeft, Store, User, Percent, Printer, Languages, WifiOff, Shirt } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -147,7 +148,7 @@ export default function SetupWizard({ onComplete }) {
             setCurrentStep(STEPS.length - 1);
         } catch (error) {
             console.error('Setup error:', error);
-            toast.error(t('setup.saveFailed', { error: error.message }));
+            toast.error(t('setup.saveFailed', { error: translateError(error) }));
         } finally {
             setLoading(false);
         }
