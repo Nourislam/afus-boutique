@@ -5,12 +5,11 @@ import { Modal, ModalBody } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { toast } from '../ui/Toast';
-import { t, currentLanguage } from '../../i18n';
-import { CATEGORY_SUGGESTIONS, categoryName } from '../../lib/clothing';
+import { t } from '../../i18n';
 
 /**
  * Clothing categories (T-shirts, trousers, shoes, bags…). The shop owner can
- * add suggested categories in one click, create their own, rename or delete.
+ * create their own categories, rename or delete them.
  */
 export function CategoryManagerModal({ isOpen, onClose, categories, onSave }) {
     return (
@@ -28,9 +27,7 @@ export function CategoryManager({ categories, onSave, layout = 'list' }) {
     const [editing, setEditing] = useState(null); // { id, name, color }
     const [loading, setLoading] = useState(false);
 
-    const lang = currentLanguage();
     const existingNames = new Set(categories.map(c => c.name.trim().toLowerCase()));
-    const suggestions = CATEGORY_SUGGESTIONS.filter(s => ![s.en, s.fr, s.ar].some(n => existingNames.has(n.toLowerCase())));
 
     const create = async (name, color) => {
         const clean = name.trim();
@@ -61,13 +58,6 @@ export function CategoryManager({ categories, onSave, layout = 'list' }) {
         }
     };
 
-    const handleSuggestion = async (suggestion) => {
-        try {
-            if (await create(categoryName(suggestion, lang), suggestion.color)) onSave();
-        } catch {
-            toast.error(t('common.saveFailed'));
-        }
-    };
 
     const handleRename = async () => {
         if (!editing?.name.trim()) {
@@ -116,25 +106,6 @@ export function CategoryManager({ categories, onSave, layout = 'list' }) {
                             <Plus className="w-4 h-4" /> {t('common.add')}
                         </Button>
                     </div>
-
-                    {suggestions.length > 0 && (
-                        <div>
-                            <p className="text-sm text-zinc-400 mb-2">{t('categories.suggestions')}</p>
-                            <div className="flex flex-wrap gap-2">
-                                {suggestions.map(s => (
-                                    <button
-                                        key={s.code}
-                                        type="button"
-                                        onClick={() => handleSuggestion(s)}
-                                        className="px-3 py-1.5 rounded-full text-sm bg-dark-tertiary hover:bg-zinc-700 flex items-center gap-2"
-                                    >
-                                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                                        + {categoryName(s, lang)}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
 
                     <div className={layout === 'grid' ? 'grid gap-2 sm:grid-cols-2 xl:grid-cols-3' : 'space-y-2 max-h-80 overflow-y-auto'}>
                         {categories.length === 0 && <p className="text-sm text-zinc-500">{t('categories.empty')}</p>}

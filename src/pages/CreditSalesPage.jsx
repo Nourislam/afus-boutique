@@ -234,7 +234,7 @@ export default function CreditSalesPage() {
             <div className="card overflow-hidden">
                 {/* Desktop Table */}
                 <div className="hidden lg:block overflow-x-auto">
-                    <table className="w-full">
+                    <table className="w-full [&_th]:whitespace-nowrap">
                         <thead>
                             <tr className="border-b border-dark-border">
                                 <th className="text-start p-4 text-sm font-medium text-zinc-400">{t('credit.invoiceNo')}</th>

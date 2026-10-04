@@ -36,6 +36,8 @@ export const PERMISSIONS = {
     CUSTOMERS_CREATE: 'customers.create',
     CUSTOMERS_EDIT: 'customers.edit',
     CUSTOMERS_DELETE: 'customers.delete',
+    // Allowing a customer to buy on kridi (and the limit) is the manager's decision
+    CUSTOMERS_CREDIT: 'customers.credit',
 
     // Gift Cards
     GIFT_CARDS_VIEW: 'gift_cards.view',
@@ -82,6 +84,7 @@ const ROLE_PERMISSIONS = {
         PERMISSIONS.CUSTOMERS_CREATE,
         PERMISSIONS.CUSTOMERS_EDIT,
         PERMISSIONS.CUSTOMERS_DELETE,
+        PERMISSIONS.CUSTOMERS_CREDIT,
         PERMISSIONS.GIFT_CARDS_VIEW,
         PERMISSIONS.GIFT_CARDS_CREATE,
         PERMISSIONS.GIFT_CARDS_RELOAD,

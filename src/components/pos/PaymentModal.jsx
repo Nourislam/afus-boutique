@@ -230,247 +230,216 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
         ...(features?.giftCards ? [{ id: 'gift_card', icon: Gift, label: t('pay.giftCard'), active: 'border-purple-500 bg-purple-500/10' }] : []),
     ];
 
+    const amountBox = (value, tone = 'text-white') => <bdi className={`tabular ${tone}`}>{formatCurrency(value)}</bdi>;
+
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={t('pos.payment')} size="lg">
+        <Modal isOpen={isOpen} onClose={onClose} title={t('pos.payment')} size="xl" closeOnOverlay={false}>
             <ModalBody>
-                <div className="grid grid-cols-2 gap-6">
-                    {/* Payment Method Selection */}
-                    <div className="space-y-4">
-                        <p className="text-sm text-zinc-400">{t('pos.paymentMethod')}</p>
-                        <div className="grid grid-cols-3 gap-2">
-                            {methods.map(m => (
-                                <button
-                                    key={m.id}
-                                    onClick={() => setPaymentMethod(m.id)}
-                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2
-                                        ${paymentMethod === m.id ? m.active : 'border-dark-border hover:border-zinc-600'}`}
-                                >
-                                    <m.icon className="w-5 h-5" />
-                                    <span className="text-xs font-medium text-center">{m.label}</span>
-                                </button>
-                            ))}
+                <div className="space-y-5">
+                    {/* Amount to collect */}
+                    <div className="rounded-2xl bg-dark-tertiary px-5 py-4 flex flex-wrap items-end justify-between gap-3">
+                        <div className="min-w-0">
+                            <p className="text-sm text-zinc-400">{splitPayments.length > 0 ? t('pos.remaining') : t('pos.totalAmount')}</p>
+                            <p className="text-4xl font-bold leading-tight">{amountBox(remainingDue, 'text-accent-primary')}</p>
                         </div>
-
-                        {/* Total Display */}
-                        <div className="p-6 rounded-xl bg-dark-tertiary text-center">
-                            {splitPayments.length > 0 && (
-                                <div className="mb-4 space-y-2">
-                                    <p className="text-sm text-zinc-400">{t('pos.paymentsApplied')}</p>
-                                    {splitPayments.map((p, i) => (
-                                        <div key={i} className="flex justify-between text-sm px-4 py-2 bg-dark-secondary rounded-lg">
-                                            <span>{paymentLabel(p.method)}</span>
-                                            <span className="font-medium text-green-400">{formatCurrency(p.amount)}</span>
-                                        </div>
-                                    ))}
-                                    <div className="h-px bg-dark-border my-2" />
-                                </div>
-                            )}
-                            <p className="text-sm text-zinc-400 mb-1">
-                                {splitPayments.length > 0 ? t('pos.remaining') : t('pos.totalAmount')}
-                            </p>
-                            <p className="text-4xl font-bold text-accent-primary">
-                                {formatCurrency(remainingDue)}
-                            </p>
-                        </div>
-
-                        {/* Gift Card Input */}
-                        {paymentMethod === 'gift_card' && (
-                            <div className="space-y-3">
-                                <p className="text-sm text-zinc-400">{t('pos.scanGift')}</p>
-                                <div className="flex gap-2">
-                                    <Input
-                                        value={giftCardCode}
-                                        onChange={(e) => setGiftCardCode(e.target.value)}
-                                        placeholder={t('pos.scanOrEnter')}
-                                        className="flex-1"
-                                        data-scan-passthrough
-                                        autoFocus
-                                    />
-                                    <Button onClick={checkGiftCardBalance} disabled={!giftCardCode || checkingGiftCard}>
-                                        {checkingGiftCard ? t('pos.checking') : t('pos.check')}
-                                    </Button>
-                                </div>
-                                {giftCardError && (
-                                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-                                        {giftCardError}
-                                    </div>
-                                )}
-                                {giftCardBalance !== null && !giftCardError && (
-                                    <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-                                        <p className="text-sm text-purple-300">{t('pos.availableBalance')}</p>
-                                        <p className="text-2xl font-bold text-purple-400">{formatCurrency(giftCardBalance)}</p>
-                                        {giftCardBalance < total && (
-                                            <p className="text-xs text-red-400 mt-2">{t('pos.insufficientGift')}</p>
-                                        )}
-                                    </div>
-                                )}
+                        {splitPayments.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                                {splitPayments.map((p, i) => (
+                                    <span key={i} className="badge badge-success">{paymentLabel(p.method)} · <bdi>{formatCurrency(p.amount)}</bdi></span>
+                                ))}
                             </div>
-                        )}
-
-                        {/* Credit Sale - Customer Selection */}
-                        {paymentMethod === 'credit' && (
-                            <div className="space-y-3">
-                                <p className="text-sm text-zinc-400">{t('pos.selectCustomer')}</p>
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        placeholder={t('pos.searchCustomer')}
-                                        value={selectedCustomer ? selectedCustomer.name : customerSearch}
-                                        onChange={(e) => {
-                                            setCustomerSearch(e.target.value);
-                                            setSelectedCustomer(null);
-                                            setShowCustomerDropdown(true);
-                                        }}
-                                        onFocus={() => setShowCustomerDropdown(true)}
-                                        className="input w-full"
-                                    />
-                                    {showCustomerDropdown && customerSearch && filteredCustomers.length > 0 && (
-                                        <div className="absolute z-10 w-full mt-1 bg-dark-secondary border border-dark-border rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                                            {filteredCustomers.map(customer => (
-                                                <button
-                                                    key={customer.id}
-                                                    onClick={() => {
-                                                        setSelectedCustomer(customer);
-                                                        setCustomerSearch('');
-                                                        setShowCustomerDropdown(false);
-                                                    }}
-                                                    className="w-full px-4 py-3 text-start hover:bg-dark-tertiary flex items-center justify-between"
-                                                >
-                                                    <div>
-                                                        <p className="font-medium">{customer.name}</p>
-                                                        <p className="text-xs text-zinc-500">{customer.phone || customer.email}</p>
-                                                    </div>
-                                                    {customer.credit_enabled ? (
-                                                        <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded">{t('pos.creditOk')}</span>
-                                                    ) : null}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Credit Info Display */}
-                                {selectedCustomer && (
-                                    <div className={`p-4 rounded-xl ${creditInfo?.credit_enabled ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
-                                        {loadingCredit ? (
-                                            <p className="text-center text-zinc-400">{t('pos.loadingCredit')}</p>
-                                        ) : creditInfo ? (
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-sm text-zinc-400">{t('pos.creditStatus')}</span>
-                                                    <span className={`text-sm font-medium ${creditInfo.credit_enabled ? 'text-green-400' : 'text-red-400'}`}>
-                                                        {creditInfo.credit_enabled ? t('pos.enabled') : t('pos.notEnabled')}
-                                                    </span>
-                                                </div>
-                                                {creditInfo.credit_enabled && (
-                                                    <>
-                                                        <div className="flex justify-between items-center">
-                                                            <span className="text-sm text-zinc-400">{t('pos.creditLimitLabel')}</span>
-                                                            <span className="font-medium">{formatCurrency(creditInfo.credit_limit)}</span>
-                                                        </div>
-                                                        <div className="flex justify-between items-center">
-                                                            <span className="text-sm text-zinc-400">{t('pos.currentBalance')}</span>
-                                                            <span className="font-medium text-amber-400">{formatCurrency(creditInfo.credit_balance)}</span>
-                                                        </div>
-                                                        <div className="flex justify-between items-center pt-2 border-t border-dark-border">
-                                                            <span className="text-sm font-medium">{t('pos.availableCredit')}</span>
-                                                            <span className={`font-bold ${creditInfo.available_credit >= total ? 'text-green-400' : 'text-red-400'}`}>
-                                                                {formatCurrency(creditInfo.available_credit)}
-                                                            </span>
-                                                        </div>
-
-                                                        <div className="flex justify-between items-center pt-2">
-                                                            <span className="text-sm text-zinc-400">{t('pos.dueDate')}</span>
-                                                            <div className="w-40">
-                                                                <DatePicker
-                                                                    value={dueDate}
-                                                                    onChange={setDueDate}
-                                                                    className="w-full"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                        {creditInfo.available_credit < total && (
-                                                            <p className="text-xs text-red-400 mt-2">
-                                                                {t('pos.insufficientCredit')}
-                                                            </p>
-                                                        )}
-                                                    </>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <p className="text-center text-zinc-400">{t('pos.noCreditInfo')}</p>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {paymentMethod === 'cash' && (
-                            <>
-                                {/* Quick Cash Buttons */}
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => setCashAmount(String(Math.round(remainingDue * 100) / 100))}
-                                        className="flex-1 py-2 rounded-lg bg-accent-primary/20 text-accent-primary font-medium hover:bg-accent-primary/30 transition-colors"
-                                    >
-                                        {t('pos.exact')}
-                                    </button>
-                                    {quickCashValues.map(val => (
-                                        <button
-                                            key={val}
-                                            onClick={() => setCashAmount(val.toString())}
-                                            className="flex-1 py-2 rounded-lg bg-dark-tertiary hover:bg-zinc-700 font-medium transition-colors"
-                                        >
-                                            {formatCurrency(val)}
-                                        </button>
-                                    ))}
-                                </div>
-
-                                {/* Change Display */}
-                                {cashValue > 0 && (
-                                    <div className={`p-4 rounded-xl text-center ${change >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                                        <p className="text-sm text-zinc-400 mb-1">
-                                            {change >= 0 ? t('pos.change') : t('pos.amountDue')}
-                                        </p>
-                                        <p className={`text-2xl font-bold ${change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                            {formatCurrency(Math.abs(change))}
-                                        </p>
-                                    </div>
-                                )}
-                            </>
                         )}
                     </div>
 
-                    {/* Numpad / Right Side */}
+                    {/* Payment method: one row, same size for every method */}
+                    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${methods.length}, minmax(0, 1fr))` }} role="radiogroup" aria-label={t('pos.paymentMethod')}>
+                        {methods.map(m => (
+                            <button
+                                key={m.id}
+                                type="button"
+                                role="radio"
+                                aria-checked={paymentMethod === m.id}
+                                onClick={() => setPaymentMethod(m.id)}
+                                title={m.label}
+                                className={`h-[72px] px-2 rounded-xl border-2 transition-colors flex flex-col items-center justify-center gap-1.5 min-w-0
+                                    ${paymentMethod === m.id ? m.active : 'border-dark-border hover:border-zinc-600'}`}
+                            >
+                                <m.icon className="w-5 h-5 flex-none" />
+                                <span className="text-xs font-medium leading-tight text-center line-clamp-2">{m.label}</span>
+                            </button>
+                        ))}
+                    </div>
+
                     {paymentMethod === 'cash' && (
-                        <div>
-                            <p className="text-sm text-zinc-400 mb-4">{t('pos.cashReceived')}</p>
-                            <div className="p-4 rounded-xl bg-dark-tertiary mb-4">
-                                <p className="text-3xl font-bold text-end font-mono">
-                                    {formatCurrency(parseFloat(cashAmount) || 0)}
-                                </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div className="space-y-3">
+                                <p className="text-sm text-zinc-400">{t('pos.cashReceived')}</p>
+                                <div className="rounded-xl bg-dark-tertiary border border-dark-border px-4 h-16 flex items-center justify-end">
+                                    <span className="text-3xl font-bold">{amountBox(parseFloat(cashAmount) || 0)}</span>
+                                </div>
+                                {/* Quick amounts: exact, then the next round notes */}
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button type="button"
+                                        onClick={() => setCashAmount(String(Math.round(remainingDue * 100) / 100))}
+                                        className="h-11 px-2 rounded-lg bg-accent-primary/15 text-accent-primary font-medium hover:bg-accent-primary/25 transition-colors truncate">
+                                        {t('pos.exact')}
+                                    </button>
+                                    {quickCashValues.map(val => (
+                                        <button key={val} type="button" onClick={() => setCashAmount(val.toString())}
+                                            className="h-11 px-2 rounded-lg bg-dark-tertiary hover:bg-zinc-700 font-medium transition-colors truncate">
+                                            <bdi className="tabular">{formatCurrency(val)}</bdi>
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className={`rounded-xl px-4 py-3 flex items-center justify-between gap-3 ${cashValue <= 0 ? 'bg-dark-tertiary/60' : change >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                                    <span className="text-sm text-zinc-400">{cashValue > 0 && change < 0 ? t('pos.amountDue') : t('pos.change')}</span>
+                                    <span className={`text-2xl font-bold ${cashValue <= 0 ? 'text-zinc-500' : change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {amountBox(cashValue > 0 ? Math.abs(change) : 0, '')}
+                                    </span>
+                                </div>
                             </div>
-                            <NumPad
-                                value={cashAmount}
-                                onChange={setCashAmount}
-                                onEnter={handlePayment}
-                            />
+                            <NumPad value={cashAmount} onChange={setCashAmount} onEnter={handlePayment} />
                         </div>
                     )}
 
-                    {(paymentMethod === 'card' || paymentMethod === 'transfer') && (
-                        <div className="flex items-center justify-center">
-                            <div className="text-center">
-                                {paymentMethod === 'card'
-                                    ? <CreditCard className="w-20 h-20 mx-auto mb-4 text-zinc-600" />
-                                    : <Smartphone className="w-20 h-20 mx-auto mb-4 text-zinc-600" />}
-                                <p className="text-zinc-400">{paymentMethod === 'card' ? t('pos.cardReady') : t('pos.transferReady')}</p>
-                            </div>
-                        </div>
-                    )}
+                    {(paymentMethod === 'credit' || paymentMethod === 'gift_card') && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div className="space-y-3 min-w-0">
+                        {/* Gift Card Input */}
+                                {paymentMethod === 'gift_card' && (
+                                    <div className="space-y-3">
+                                        <p className="text-sm text-zinc-400">{t('pos.scanGift')}</p>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                value={giftCardCode}
+                                                onChange={(e) => setGiftCardCode(e.target.value)}
+                                                placeholder={t('pos.scanOrEnter')}
+                                                className="flex-1"
+                                                data-scan-passthrough
+                                                autoFocus
+                                            />
+                                            <Button onClick={checkGiftCardBalance} disabled={!giftCardCode || checkingGiftCard}>
+                                                {checkingGiftCard ? t('pos.checking') : t('pos.check')}
+                                            </Button>
+                                        </div>
+                                        {giftCardError && (
+                                            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+                                                {giftCardError}
+                                            </div>
+                                        )}
+                                        {giftCardBalance !== null && !giftCardError && (
+                                            <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                                                <p className="text-sm text-purple-300">{t('pos.availableBalance')}</p>
+                                                <p className="text-2xl font-bold text-purple-400">{formatCurrency(giftCardBalance)}</p>
+                                                {giftCardBalance < total && (
+                                                    <p className="text-xs text-red-400 mt-2">{t('pos.insufficientGift')}</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
+                        {/* Credit Sale - Customer Selection */}
+                                {paymentMethod === 'credit' && (
+                                    <div className="space-y-3">
+                                        <p className="text-sm text-zinc-400">{t('pos.selectCustomer')}</p>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                placeholder={t('pos.searchCustomer')}
+                                                value={selectedCustomer ? selectedCustomer.name : customerSearch}
+                                                onChange={(e) => {
+                                                    setCustomerSearch(e.target.value);
+                                                    setSelectedCustomer(null);
+                                                    setShowCustomerDropdown(true);
+                                                }}
+                                                onFocus={() => setShowCustomerDropdown(true)}
+                                                className="input w-full"
+                                            />
+                                            {showCustomerDropdown && customerSearch && filteredCustomers.length > 0 && (
+                                                <div className="absolute z-10 w-full mt-1 bg-dark-secondary border border-dark-border rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                                                    {filteredCustomers.map(customer => (
+                                                        <button
+                                                            key={customer.id}
+                                                            onClick={() => {
+                                                                setSelectedCustomer(customer);
+                                                                setCustomerSearch('');
+                                                                setShowCustomerDropdown(false);
+                                                            }}
+                                                            className="w-full px-4 py-3 text-start hover:bg-dark-tertiary flex items-center justify-between"
+                                                        >
+                                                            <div>
+                                                                <p className="font-medium">{customer.name}</p>
+                                                                <p className="text-xs text-zinc-500">{customer.phone || customer.email}</p>
+                                                            </div>
+                                                            {customer.credit_enabled ? (
+                                                                <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded">{t('pos.creditOk')}</span>
+                                                            ) : null}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Credit Info Display */}
+                                        {selectedCustomer && (
+                                            <div className={`p-4 rounded-xl ${creditInfo?.credit_enabled ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
+                                                {loadingCredit ? (
+                                                    <p className="text-center text-zinc-400">{t('pos.loadingCredit')}</p>
+                                                ) : creditInfo ? (
+                                                    <div className="space-y-2">
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-sm text-zinc-400">{t('pos.creditStatus')}</span>
+                                                            <span className={`text-sm font-medium ${creditInfo.credit_enabled ? 'text-green-400' : 'text-red-400'}`}>
+                                                                {creditInfo.credit_enabled ? t('pos.enabled') : t('pos.notEnabled')}
+                                                            </span>
+                                                        </div>
+                                                        {creditInfo.credit_enabled && (
+                                                            <>
+                                                                <div className="flex justify-between items-center">
+                                                                    <span className="text-sm text-zinc-400">{t('pos.creditLimitLabel')}</span>
+                                                                    <span className="font-medium">{formatCurrency(creditInfo.credit_limit)}</span>
+                                                                </div>
+                                                                <div className="flex justify-between items-center">
+                                                                    <span className="text-sm text-zinc-400">{t('pos.currentBalance')}</span>
+                                                                    <span className="font-medium text-amber-400">{formatCurrency(creditInfo.credit_balance)}</span>
+                                                                </div>
+                                                                <div className="flex justify-between items-center pt-2 border-t border-dark-border">
+                                                                    <span className="text-sm font-medium">{t('pos.availableCredit')}</span>
+                                                                    <span className={`font-bold ${creditInfo.available_credit >= total ? 'text-green-400' : 'text-red-400'}`}>
+                                                                        {formatCurrency(creditInfo.available_credit)}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div className="flex justify-between items-center pt-2">
+                                                                    <span className="text-sm text-zinc-400">{t('pos.dueDate')}</span>
+                                                                    <div className="w-40">
+                                                                        <DatePicker
+                                                                            value={dueDate}
+                                                                            onChange={setDueDate}
+                                                                            className="w-full"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                                {creditInfo.available_credit < total && (
+                                                                    <p className="text-xs text-red-400 mt-2">
+                                                                        {t('pos.insufficientCredit')}
+                                                                    </p>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-center text-zinc-400">{t('pos.noCreditInfo')}</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                            </div>
                     {paymentMethod === 'credit' && (
-                        <div className="flex items-center justify-center">
+                        <div className="flex items-center justify-center rounded-xl bg-dark-tertiary/40 p-6">
                             <div className="text-center">
                                 <FileText className="w-20 h-20 mx-auto mb-4 text-amber-500/50" />
                                 <p className="text-zinc-400">
@@ -490,7 +459,7 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
                     )}
 
                     {paymentMethod === 'gift_card' && (
-                        <div className="flex items-center justify-center">
+                        <div className="flex items-center justify-center rounded-xl bg-dark-tertiary/40 p-6">
                             <div className="text-center">
                                 <Gift className="w-20 h-20 mx-auto mb-4 text-purple-500/50" />
                                 <p className="text-zinc-400">
@@ -503,6 +472,19 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                         {t('pos.partialAvailable')}
                                     </p>
                                 )}
+                            </div>
+                        </div>
+                    )}
+                        </div>
+                    )}
+
+                    {(paymentMethod === 'card' || paymentMethod === 'transfer') && (
+                        <div className="flex items-center justify-center rounded-xl bg-dark-tertiary/40 p-8">
+                            <div className="text-center">
+                                {paymentMethod === 'card'
+                                    ? <CreditCard className="w-20 h-20 mx-auto mb-4 text-zinc-600" />
+                                    : <Smartphone className="w-20 h-20 mx-auto mb-4 text-zinc-600" />}
+                                <p className="text-zinc-400">{paymentMethod === 'card' ? t('pos.cardReady') : t('pos.transferReady')}</p>
                             </div>
                         </div>
                     )}

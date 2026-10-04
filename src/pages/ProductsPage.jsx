@@ -17,7 +17,6 @@ import { ExcelImport } from '../components/ui/ExcelImport';
 
 import { useSettingsStore } from '../stores/settingsStore';
 import { ProductFormModal } from '../components/products/ProductFormModal';
-import { CategoryManagerModal } from '../components/products/CategoryManagerModal';
 
 export default function ProductsPage() {
     const [products, setProducts] = useState([]);
@@ -26,7 +25,6 @@ export default function ProductsPage() {
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [viewMode, setViewMode] = useState('grid');
     const [showProductModal, setShowProductModal] = useState(false);
-    const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showExcelImport, setShowExcelImport] = useState(false);
@@ -162,9 +160,6 @@ export default function ProductsPage() {
                                 <Button variant="secondary" onClick={() => setShowExcelImport(true)}>
                                     <FileSpreadsheet className="w-4 h-4" />
                                     {t('common.importExcel')}
-                                </Button>
-                                <Button variant="secondary" onClick={() => setShowCategoryModal(true)}>
-                                    {t('products.manageCategories')}
                                 </Button>
                                 <Button onClick={() => {
                                     setInitialValues(null);
@@ -367,13 +362,6 @@ export default function ProductsPage() {
                     onSave={() => { loadData(); setShowProductModal(false); }}
                 />
 
-                {/* Category Modal */}
-                <CategoryManagerModal
-                    isOpen={showCategoryModal}
-                    onClose={() => setShowCategoryModal(false)}
-                    categories={categories}
-                    onSave={loadData}
-                />
 
                 {/* Excel Import Modal */}
                 <ExcelImport

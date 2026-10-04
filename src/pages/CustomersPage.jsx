@@ -14,6 +14,7 @@ import { v4 as uuid } from 'uuid';
 import { ExcelImport } from '../components/ui/ExcelImport';
 import { FileSpreadsheet } from 'lucide-react';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useAuthStore, PERMISSIONS } from '../stores/authStore';
 
 export default function CustomersPage() {
     const [customers, setCustomers] = useState([]);
@@ -338,6 +339,7 @@ export default function CustomersPage() {
 }
 
 function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
+    const canManageCredit = useAuthStore(state => state.hasPermission(PERMISSIONS.CUSTOMERS_CREDIT));
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -449,17 +451,25 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
                         <div className="pt-4 border-t border-dark-border">
                             <h4 className="text-sm font-medium text-zinc-400 mb-3">{t('customers.creditSettings')}</h4>
                             <div className="space-y-3">
-                                <label className="flex items-center gap-3 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.credit_enabled}
-                                        onChange={(e) => setFormData({ ...formData, credit_enabled: e.target.checked })}
-                                        className="w-5 h-5 rounded border-dark-border bg-dark-tertiary accent-accent-primary"
-                                    />
-                                    <span>{t('customers.enableCredit')}</span>
-                                </label>
+                                {canManageCredit ? (
+                                    <label className="flex items-center gap-3 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.credit_enabled}
+                                            onChange={(e) => setFormData({ ...formData, credit_enabled: e.target.checked })}
+                                            className="w-5 h-5 rounded border-dark-border bg-dark-tertiary accent-accent-primary"
+                                        />
+                                        <span>{t('customers.enableCredit')}</span>
+                                    </label>
+                                ) : (
+                                    // Workers see the decision but cannot change it
+                                    <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-dark-tertiary text-sm">
+                                        <span>{formData.credit_enabled ? t('customers.creditAllowed') : t('customers.creditNotAllowed')}</span>
+                                        <span className="text-xs text-zinc-500">{t('customers.creditManagerOnly')}</span>
+                                    </div>
+                                )}
 
-                                {formData.credit_enabled && (
+                                {formData.credit_enabled && canManageCredit && (
                                     <Input
                                         label={t('customers.creditLimitDa')}
                                         type="number"

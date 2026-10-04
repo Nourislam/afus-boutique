@@ -5,7 +5,7 @@ export default {
     'settings.saveFailed': ["Failed to save settings", "Échec de l'enregistrement des paramètres", "تعذّر حفظ الإعدادات"],
     'settings.tab.business': ["Shop", "Boutique", "المحل"],
     'settings.tab.language': ["Language & tax", "Langue et taxes", "اللغة والرسوم"],
-    'settings.tab.receipt': ["Receipt", "Ticket", "التذكرة"],
+    'settings.tab.receipt': ["Tickets", "Tickets", "التذاكر"],
     'settings.tab.printers': ["Printers & labels", "Imprimantes et étiquettes", "الطابعات والملصقات"],
     'settings.tab.scanner': ["Scanner", "Lecteur", "القارئ"],
     'settings.tab.sku': ["SKU / QR", "SKU / QR", "SKU / QR"],

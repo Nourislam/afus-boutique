@@ -296,3 +296,53 @@ describe('free label codes', () => {
         own.forEach(code => expect(code.startsWith('29')).toBe(false));
     });
 });
+
+describe('label codes for articles without barcode', () => {
+    async function shop() {
+        const db = await createLegacyDb();
+        applyMigrations(db);
+        const api = createApi(db);
+        // Imitation jeans in two colours, no manufacturer barcode
+        catalog.saveProduct(api, { id: 'jean', name: 'Jean', price: 3000 }, [
+            { color: 'Noir', color_code: 'black', size: '40', sku: 'JEAN-BLK-40', stock_quantity: 3 },
+            { color: 'Bleu', color_code: 'blue', size: '40', sku: 'JEAN-BLU-40', stock_quantity: 5 },
+        ], { isNew: true });
+        catalog.saveProduct(api, { id: 'belt', name: 'Ceinture', price: 800, sku: 'CEINT-1' }, [], { isNew: true });
+        return api;
+    }
+
+    it('gives the whole article one new barcode when colour/size are not counted', async () => {
+        const api = await shop();
+        expect(catalog.findMissingCodes(api, { scope: 'article' }).map(r => r.productId).sort()).toEqual(['belt', 'jean']);
+        const variants = catalog.getVariants(api, 'jean');
+        const result = catalog.ensureLabelCodes(api, variants.map(v => ({ variantId: v.id, quantity: v.stock_quantity })), { scope: 'article' });
+        expect(result.items).toEqual([{ productId: 'jean', quantity: 8, article: true }]);
+        expect(result.created).toBe(1);
+        const barcode = api.get('SELECT barcode FROM products WHERE id = ?', ['jean']).barcode;
+        expect(barcode).toMatch(/^2[0-8]\d{11}$/);
+        // Scanning that code sells a piece without asking colour/size
+        const scanned = catalog.lookupCode(api, barcode, { articleScope: true });
+        expect(scanned.type).toBe('variant');
+        expect(scanned.variant.color).toBe('Bleu'); // the colour with most stock
+        // Without article scope the colour/size is asked as before
+        expect(catalog.lookupCode(api, barcode).needsVariant).toBe(true);
+        // A preview never writes
+        const preview = catalog.ensureLabelCodes(api, [{ productId: 'belt', quantity: 1 }], { scope: 'article', dryRun: true });
+        expect(preview.items[0].previewBarcode).toMatch(/^2\d{12}$/);
+        expect(api.get('SELECT barcode FROM products WHERE id = ?', ['belt']).barcode).toBeFalsy();
+    });
+
+    it('gives each colour/size its own barcode when printing EAN-13 labels', async () => {
+        const api = await shop();
+        expect(catalog.findMissingCodes(api, { scope: 'variant', codeType: 'ean13' })).toHaveLength(3);
+        expect(catalog.findMissingCodes(api, { scope: 'variant', codeType: 'qr' })).toHaveLength(0); // SKU/QR exist
+        const variants = catalog.getVariants(api, 'jean');
+        const result = catalog.ensureLabelCodes(api, variants.map(v => ({ variantId: v.id, quantity: 1 })), { scope: 'variant', codeType: 'ean13' });
+        expect(result.created).toBe(2);
+        const codes = catalog.getVariants(api, 'jean').map(v => v.barcode);
+        expect(new Set(codes).size).toBe(2);
+        codes.forEach(code => expect(catalog.lookupCode(api, code).type).toBe('variant'));
+        // Printing again creates nothing new
+        expect(catalog.ensureLabelCodes(api, variants.map(v => ({ variantId: v.id, quantity: 1 })), { scope: 'variant', codeType: 'ean13' }).created).toBe(0);
+    });
+});

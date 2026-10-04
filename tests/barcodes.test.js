@@ -38,3 +38,31 @@ describe('free barcode checks', () => {
         expect(labelService.resolveLayout({ template: 'roll-40x30', shape: 'rounded' }).shape).toBe('rounded');
     });
 });
+
+describe('label settings are honoured', () => {
+    const label = (symbology) => ({
+        symbology, qrValue: symbology ? '2001234567893' : 'TSH-BLK-M-001', sku: 'TSH-BLK-M-001',
+        productName: 'T-shirt', variantLabel: 'Noir / M', price: 2500, quantity: 1,
+    });
+    const shop = { name: 'Boutique Amina', logo: 'data:image/png;base64,iVBORw0KGgo=', lang: 'fr' };
+    const all = { showShopName: true, showLogo: true, showProductName: true, showVariant: true, showSku: true, showPrice: true };
+
+    for (const symbology of [undefined, 'ean13']) {
+        it(`shows and hides each part (${symbology || 'QR'} label)`, () => {
+            const html = (patch) => labelService.buildLabelsHtml([label(symbology)], { template: 'roll-40x30', ...all, ...patch }, shop);
+            const full = html({});
+            expect(full).toContain('Boutique Amina');
+            expect(full).toContain('<img src="data:image/png');
+            expect(full).toContain('T-shirt');
+            expect(full).toContain('Noir / M');
+            expect(full).toMatch(/2\u00a0500/);
+            expect(html({ showShopName: false })).not.toContain('Boutique Amina');
+            expect(html({ showLogo: false })).not.toContain('<img src="data:image/png');
+            expect(html({ showProductName: false })).not.toContain('class="name');
+            expect(html({ showVariant: false })).not.toContain('Noir / M');
+            expect(html({ showPrice: false })).not.toMatch(/2\u00a0500/);
+            // Code in text: the SKU under a QR, the digits under a barcode
+            expect(html({ showSku: false }).length).toBeLessThan(full.length);
+        });
+    }
+});

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { loadCatalogCustomization } from './lib/clothing';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
 import LoginScreen from './components/employees/LoginScreen';
@@ -40,6 +41,7 @@ function App() {
         const init = async () => {
             try {
                 await loadSettings();
+                await loadCatalogCustomization();
 
                 const settings = await window.electronAPI.settings.getAll();
                 // Handle both string 'true' and boolean true
@@ -58,6 +60,9 @@ function App() {
             }
         };
         init();
+        // Colours and sizes edited in the Catalogue apply everywhere at once
+        window.addEventListener('pos:settings-changed', loadCatalogCustomization);
+        return () => window.removeEventListener('pos:settings-changed', loadCatalogCustomization);
     }, []);
 
     const handleSetupComplete = async (adminEmployee) => {

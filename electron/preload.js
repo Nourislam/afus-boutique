@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         checkIdentifier: (code, { excludeVariantId = null, excludeProductId = null } = {}) =>
             ipcRenderer.invoke('catalog:checkIdentifier', { code, excludeVariantId, excludeProductId }),
         lookupCode: (code) => ipcRenderer.invoke('catalog:lookupCode', code),
+        missingCodes: () => ipcRenderer.invoke('catalog:missingCodes'),
         searchVariants: (query, limit = 50) => ipcRenderer.invoke('catalog:searchVariants', { query, limit }),
         regenerateQr: (variantId) => ipcRenderer.invoke('catalog:regenerateQr', variantId),
     },

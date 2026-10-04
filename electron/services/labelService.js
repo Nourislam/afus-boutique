@@ -69,6 +69,10 @@ const DEFAULT_LABEL_SETTINGS = {
     qrErrorCorrection: 'M',
     // rect | rounded | round: drawn as a cut guide and keeps content inside round stickers
     shape: 'rect',
+    // Code printed on article labels: qr | ean13 | code128 | code39 | datamatrix
+    codeType: 'qr',
+    // variant: each colour/size has its own code; article: one code per article
+    codeScope: 'variant',
 };
 
 // Symbologies a free label can use (bwip-js ids)
@@ -225,7 +229,10 @@ function renderCodeLabel(label, layout, shop) {
     const spec = SYMBOLOGIES[label.symbology] || SYMBOLOGIES.code128;
 
     const top = [];
-    if (layout.showShopName && shop.name) top.push(`<div class="shop c">${escapeHtml(shop.name)}</div>`);
+    const logo = layout.showLogo && shop.logo ? `<img src="${shop.logo}" alt="">` : '';
+    if ((layout.showShopName && shop.name) || logo) {
+        top.push(`<div class="shop c">${logo}${layout.showShopName && shop.name ? `<span>${escapeHtml(shop.name)}</span>` : ''}</div>`);
+    }
     if (layout.showProductName && label.productName) top.push(`<div class="name c">${escapeHtml(label.productName)}</div>`);
     if (layout.showVariant && label.variantLabel) top.push(`<div class="variant c">${escapeHtml(label.variantLabel)}</div>`);
     const bottom = [];
@@ -245,7 +252,7 @@ function renderCodeLabel(label, layout, shop) {
     return `
         <div class="label code-label ${layout.shape || 'rect'}" style="width:${layout.widthMm}mm;height:${layout.heightMm}mm;padding:${pad.toFixed(2)}mm;font-size:${base.toFixed(2)}mm">
             ${top.join('')}
-            <div class="code" style="${codeBox}">${codeSvg(label.symbology, label.qrValue, { eclevel: layout.qrErrorCorrection })}</div>
+            <div class="code" style="${codeBox}">${codeSvg(label.symbology, label.qrValue, { eclevel: layout.qrErrorCorrection, includeText: layout.showSku !== false })}</div>
             ${bottom.join('')}
         </div>`;
 }
@@ -316,6 +323,7 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
     .code-label .code { flex: none; display: flex; align-items: center; justify-content: center; }
     .code-label .code svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
     .code-label .shop { justify-content: center; }
+    .code-label .shop img { height: 1.8em; }
     .code-label .name { -webkit-line-clamp: 1; font-size: 0.85em; }
     .code-label .variant { font-size: 0.8em; }
     .code-label .sku { font-size: 0.75em; }

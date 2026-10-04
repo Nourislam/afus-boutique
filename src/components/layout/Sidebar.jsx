@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
     LayoutDashboard, ShoppingCart, Package, Boxes, UserCog, BarChart3, Settings, LogOut, Gift, Percent, QrCode,
-    History, CreditCard, FileText, Sparkles, LibraryBig, Banknote,
+    History, CreditCard, FileText, Sparkles, LibraryBig,
 } from 'lucide-react';
 import { useAuthStore, PERMISSIONS } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -52,7 +52,7 @@ const NAV_GROUPS = [
 export function Sidebar() {
     const { currentEmployee, logout, hasPermission } = useAuthStore();
     const [currentShiftId, setCurrentShiftId] = useState(null);
-    const [showShiftSummary, setShowShiftSummary] = useState(null); // 'logout' | 'close'
+    const [showShiftSummary, setShowShiftSummary] = useState(false);
     const { t } = useT();
     const features = useSettingsStore(state => state.settings.features);
 
@@ -74,7 +74,7 @@ export function Sidebar() {
 
     // Leaving with an open cash drawer always goes through the closing screen
     const handleLogout = () => {
-        if (currentShiftId) setShowShiftSummary('logout');
+        if (currentShiftId) setShowShiftSummary(true);
         else logout();
     };
 
@@ -118,28 +118,23 @@ export function Sidebar() {
             </nav>
 
             <div className="p-2 border-t border-dark-border space-y-0.5">
-                {currentShiftId && (
-                    <button onClick={() => setShowShiftSummary('close')} className="sidebar-item w-full text-emerald-300 hover:bg-emerald-500/10">
-                        <Banknote className="w-[18px] h-[18px]" />
-                        <span>{t('nav.closeShift')}</span>
-                    </button>
-                )}
+                {/* One button: with an open cash drawer it goes through counting and closing */}
                 <button onClick={handleLogout} className="sidebar-item w-full text-red-300 hover:text-red-200 hover:bg-red-500/10">
-                    <LogOut className="w-[18px] h-[18px] flip-rtl" />
-                    <span>{t('nav.logout')}</span>
+                    <LogOut className="w-[18px] h-[18px] flip-rtl flex-none" />
+                    <span className="truncate">{currentShiftId ? t('nav.closeAndLogout') : t('nav.logout')}</span>
                 </button>
             </div>
 
             {showShiftSummary && currentShiftId && (
                 <ShiftSummaryDialog
                     shiftId={currentShiftId}
-                    mode={showShiftSummary}
-                    onClose={() => setShowShiftSummary(null)}
+                    mode="logout"
+                    onClose={() => setShowShiftSummary(false)}
                     onLogout={({ keptOpen = false } = {}) => {
-                        const leaving = showShiftSummary === 'logout';
-                        setShowShiftSummary(null);
+                        // Closing the drawer always logs out (keptOpen: short break)
+                        setShowShiftSummary(false);
                         if (!keptOpen) setCurrentShiftId(null);
-                        if (leaving) logout();
+                        logout();
                     }}
                 />
             )}

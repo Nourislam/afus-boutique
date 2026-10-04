@@ -284,6 +284,115 @@ function generateFreeCodes(api, { type = 'ean13', count = 1, reserved = [] } = {
     return codes;
 }
 
+/**
+ * Make sure every label about to be printed has a code to print.
+ *
+ * scope 'article': one code per article (colour and size are not counted):
+ *   variant lines are merged into their article and an article without a
+ *   barcode gets a new in-shop EAN-13, saved on the article.
+ * scope 'variant': one code per colour/size. When the label prints an EAN-13
+ *   barcode, pieces without a barcode get one (their SKU/QR stay as they are).
+ *
+ * items: [{ productId?, variantId?, quantity }]
+ * @returns {{ items, created }} items to print, number of barcodes created
+ */
+function ensureLabelCodes(api, items = [], { scope = 'variant', codeType = 'qr', dryRun = false } = {}) {
+    // dryRun (preview): nothing is saved, the code that would be created is
+    // returned on the item as previewBarcode
+    let created = 0;
+    const reserved = new Set();
+    const newCode = () => {
+        const [code] = generateInternalBarcodes(api, 1, reserved);
+        reserved.add(code);
+        created += 1;
+        return code;
+    };
+    const setProductBarcode = (product) => {
+        if (product.barcode) return null;
+        product.barcode = newCode();
+        if (dryRun) return product.barcode;
+        api.run('UPDATE products SET barcode = ?, updated_at = CURRENT_TIMESTAMP, is_synced = 0 WHERE id = ?', [product.barcode, product.id]);
+        return null;
+    };
+
+    const result = [];
+    if (scope === 'article') {
+        const byProduct = new Map();
+        for (const item of items) {
+            let productId = item.productId;
+            if (!productId && item.variantId) {
+                const v = api.get('SELECT product_id FROM product_variants WHERE id = ?', [item.variantId]);
+                productId = v && v.product_id;
+            }
+            if (!productId) continue;
+            const qty = Math.max(1, parseInt(item.quantity, 10) || 1);
+            byProduct.set(productId, (byProduct.get(productId) || 0) + qty);
+        }
+        for (const [productId, quantity] of byProduct) {
+            const product = api.get('SELECT id, barcode FROM products WHERE id = ?', [productId]);
+            if (!product) continue;
+            const previewBarcode = setProductBarcode(product);
+            result.push({ productId, quantity, article: true, ...(previewBarcode ? { previewBarcode } : {}) });
+        }
+        return { items: result, created };
+    }
+
+    for (const item of items) {
+        let previewBarcode = null;
+        if (item.variantId && codeType === 'ean13') {
+            const v = api.get('SELECT id, barcode FROM product_variants WHERE id = ?', [item.variantId]);
+            if (v && !v.barcode) {
+                const code = newCode();
+                if (dryRun) previewBarcode = code;
+                else api.run('UPDATE product_variants SET barcode = ?, updated_at = CURRENT_TIMESTAMP, is_synced = 0 WHERE id = ?', [code, v.id]);
+            }
+        } else if (item.productId) {
+            const product = api.get('SELECT id, sku, barcode, has_variants FROM products WHERE id = ?', [item.productId]);
+            // A simple article always needs something to print
+            if (product && !product.has_variants && (codeType === 'ean13' || !product.sku)) previewBarcode = setProductBarcode(product);
+        }
+        result.push(previewBarcode ? { ...item, previewBarcode } : item);
+    }
+    return { items: result, created };
+}
+
+/**
+ * Articles (or pieces) that still need a printed code, for "label everything
+ * that has no barcode": imitation clothes usually come without one.
+ */
+function findMissingCodes(api, { scope = 'variant', codeType = 'qr' } = {}) {
+    if (scope === 'article') {
+        return api.all(`
+            SELECT p.id AS productId, p.name, p.price, p.stock_quantity AS stock
+            FROM products p
+            WHERE p.is_active = 1 AND (p.barcode IS NULL OR p.barcode = '')
+            ORDER BY p.name
+        `);
+    }
+    const simple = api.all(`
+        SELECT p.id AS productId, p.name, p.price, p.stock_quantity AS stock
+        FROM products p
+        WHERE p.is_active = 1 AND COALESCE(p.has_variants, 0) = 0
+          AND (p.barcode IS NULL OR p.barcode = '') AND (? = 'ean13' OR p.sku IS NULL OR p.sku = '')
+        ORDER BY p.name
+    `, [codeType]);
+    const pieces = codeType === 'ean13' ? api.all(`
+        SELECT v.id AS variantId, v.product_id AS productId, p.name, v.color, v.color_code, v.size, v.sku,
+               COALESCE(v.price, p.price) AS price, v.stock_quantity AS stock
+        FROM product_variants v JOIN products p ON p.id = v.product_id
+        WHERE v.is_active = 1 AND p.is_active = 1 AND (v.barcode IS NULL OR v.barcode = '')
+        ORDER BY p.name, v.sort_order
+    `) : [];
+    return [...simple, ...pieces];
+}
+
+/** The piece sold when an article code (one code for all colours/sizes) is scanned. */
+function pickVariantForArticle(variants) {
+    const active = (variants || []).filter(v => v.is_active !== 0);
+    if (!active.length) return null;
+    return [...active].sort((a, b) => (Number(b.stock_quantity) || 0) - (Number(a.stock_quantity) || 0))[0];
+}
+
 function effectivePrice(product, variant) {
     if (variant && variant.price !== null && variant.price !== undefined && variant.price !== '') {
         return Number(variant.price);
@@ -575,7 +684,7 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
  * A product with variants matched by its own code returns type 'product' with
  * `needsVariant: true`, so the UI can ask which variant to sell.
  */
-function lookupCode(api, code) {
+function lookupCode(api, code, { articleScope = false } = {}) {
     const normalized = normalizeCode(code);
     if (!normalized) return null;
 
@@ -609,7 +718,15 @@ function lookupCode(api, code) {
     if (productRow) {
         const product = api.get(productSelect, [productRow.id]);
         if (product.has_variants) {
-            return { type: 'product', product, needsVariant: true, variants: getVariants(api, product.id) };
+            const variants = getVariants(api, product.id);
+            // One code for the whole article: sell any piece, colour/size not counted
+            if (articleScope) {
+                const variant = pickVariantForArticle(variants);
+                if (variant) {
+                    return { type: 'variant', product, autoPicked: true, variant: { ...variant, effective_price: effectivePrice(product, variant), label: variantLabel(variant) } };
+                }
+            }
+            return { type: 'product', product, needsVariant: true, variants };
         }
         return { type: 'product', product };
     }
@@ -681,6 +798,9 @@ module.exports = {
     paletteCode,
     ean13CheckDigit,
     generateInternalBarcodes,
+    ensureLabelCodes,
+    findMissingCodes,
+    pickVariantForArticle,
     gs1CheckDigit,
     generateFreeCodes,
     freeCodeFormat,

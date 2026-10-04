@@ -102,6 +102,7 @@ const MESSAGES = {
     'dialog.imageFiles': ['Images', 'Images', 'الصور'],
     'dialog.dataFolder': ['Data folder', 'Dossier des données', 'مجلد البيانات'],
     'app.name': ['Hanout', 'Hanout', 'حانوت'],
+    'labels.sampleName': ['Classic T-shirt', 'T-shirt classique', 'تيشيرت كلاسيك'],
 };
 
 function normalizeLanguage(lang) {

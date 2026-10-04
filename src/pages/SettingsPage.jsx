@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { translateError } from '../i18n/errors';
-import { useNavigate } from 'react-router-dom';
 import {
     Building, Receipt, Percent, Database, Save, Download, Upload, Mail, Lock, CheckCircle, Printer, ScanLine, Hash,
-    Languages, Shirt, Tags, Users, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor,
+    Languages, Tags, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, TextArea } from '../components/ui/Input';
@@ -14,12 +14,11 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
 import { ShopInfoForm } from '../components/settings/ShopInfoForm';
-import { PrinterSettingsForm } from '../components/settings/PrinterSettingsForm';
+import { ReceiptPrinterForm, LabelPrinterForm } from '../components/settings/PrinterSettingsForm';
 import { ScannerSettingsForm } from '../components/settings/ScannerSettingsForm';
-import { CategoryManagerModal } from '../components/products/CategoryManagerModal';
 import { DEFAULT_SHOP, loadShopConfiguration, saveShopConfiguration } from '../lib/shopSettings';
 import { DEFAULT_FEATURES, resolveFeatures } from '../lib/features';
-import { COLORS, SIZE_SETS, colorName, sizeSetLabel } from '../lib/clothing';
+import { colorName } from '../lib/clothing';
 import { useSettingsStore } from '../stores/settingsStore';
 import { SystemLogs } from '../components/settings/SystemLogs';
 import { EcommerceSettings } from '../components/settings/EcommerceSettings';
@@ -27,19 +26,20 @@ import { LANGUAGES, setLanguage, useT } from '../i18n';
 import { formatMoney } from '../i18n/format';
 import { getThemePreference, setThemePreference } from '../lib/theme';
 
-const BASE_TABS = ['business', 'language', 'appearance', 'receipt', 'printers', 'scanner', 'sku', 'catalog', 'features', 'backup'];
+const BASE_TABS = ['business', 'language', 'appearance', 'receipt', 'labelPrinter', 'scanner', 'sku', 'features', 'backup'];
 
 // Settings sections, grouped like the shop thinks about them
 const SECTION_GROUPS = [
-    { id: 'shop', ids: ['business', 'language', 'appearance', 'receipt'] },
-    { id: 'devices', ids: ['printers', 'scanner'] },
-    { id: 'catalog', ids: ['catalog', 'sku'] },
+    { id: 'shop', ids: ['business', 'language', 'appearance'] },
+    // Each device has its own tab, even when one printer does both jobs
+    { id: 'devices', ids: ['receipt', 'labelPrinter', 'scanner'] },
+    { id: 'catalog', ids: ['sku'] },
     { id: 'app', ids: ['features', 'mail', 'ecommerce', 'backup', 'logs'] },
 ];
 
 const SECTION_ICONS = {
-    business: Building, language: Languages, appearance: Palette, receipt: Receipt, printers: Printer, scanner: ScanLine,
-    sku: Hash, catalog: Shirt, features: ToggleRight, mail: Mail, ecommerce: Globe, backup: Database, logs: ScrollText,
+    business: Building, language: Languages, appearance: Palette, receipt: Receipt, labelPrinter: Tags, scanner: ScanLine,
+    sku: Hash, features: ToggleRight, mail: Mail, ecommerce: Globe, backup: Database, logs: ScrollText,
 };
 
 function SectionHeader({ icon: Icon, color, title, text }) {
@@ -58,8 +58,14 @@ function SectionHeader({ icon: Icon, color, title, text }) {
 
 export default function SettingsPage() {
     const { t, lang } = useT();
-    const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState('business');
+    const [searchParams] = useSearchParams();
+    // Opened from another screen on a given section (e.g. ?tab=labelPrinter)
+    const [activeTab, setActiveTab] = useState(() => ({ printers: 'labelPrinter' })[searchParams.get('tab')] || searchParams.get('tab') || 'business');
+    // Also when the page is already open (link from the labels page)
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab) setActiveTab(({ printers: 'labelPrinter' })[tab] || tab);
+    }, [searchParams]);
     const [settings, setSettings] = useState({
         ...DEFAULT_SHOP,
         email_host: 'smtp.gmail.com',
@@ -71,8 +77,6 @@ export default function SettingsPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
-    const [showCategories, setShowCategories] = useState(false);
-    const [categories, setCategories] = useState([]);
 
     // Printer, label, scanner and SKU configuration (separate settings keys)
     const [printers, setPrinters] = useState(null);
@@ -95,9 +99,6 @@ export default function SettingsPage() {
         loadSettings();
     }, []);
 
-    const loadCategories = async () => {
-        try { setCategories(await window.electronAPI.categories.getAll()); } catch { /* shown empty */ }
-    };
 
     const loadSettings = async () => {
         try {
@@ -127,7 +128,6 @@ export default function SettingsPage() {
             setScanner(config.scanner);
             setSku(config.sku);
             window.electronAPI.app.getInfo().then(setAppInfo).catch(() => { });
-            loadCategories();
         } catch (error) {
             toast.error(t('common.loadFailed'));
             console.error(error);
@@ -429,7 +429,12 @@ export default function SettingsPage() {
                             </Card>
                         )}
 
-                        {activeTab === 'receipt' && (
+                        {activeTab === 'receipt' && printers && (
+                            <div className="space-y-4">
+                            <Card className="space-y-6">
+                                <SectionHeader icon={Printer} color="bg-violet-500/20 text-violet-400" title={t('settings.tab.receipt')} text={t('settings.receiptPrinterText')} />
+                                <ReceiptPrinterForm printers={printers} onPrintersChange={setPrinters} />
+                            </Card>
                             <Card className="space-y-6">
                                 <SectionHeader icon={Receipt} color="bg-green-500/20 text-green-400" title={t('settings.receiptTitle')} text={t('settings.receiptText')} />
                                 <div className="grid gap-4">
@@ -533,12 +538,13 @@ export default function SettingsPage() {
                                     </div>
                                 </div>
                             </Card>
+                            </div>
                         )}
 
-                        {activeTab === 'printers' && printers && (
+                        {activeTab === 'labelPrinter' && printers && (
                             <Card className="space-y-6">
-                                <SectionHeader icon={Printer} color="bg-violet-500/20 text-violet-400" title={t('settings.tab.printers')} text={t('settings.printersText')} />
-                                <PrinterSettingsForm
+                                <SectionHeader icon={Tags} color="bg-violet-500/20 text-violet-400" title={t('settings.tab.labelPrinter')} text={t('settings.labelPrinterText')} />
+                                <LabelPrinterForm
                                     printers={printers}
                                     onPrintersChange={setPrinters}
                                     labels={labels}
@@ -586,46 +592,6 @@ export default function SettingsPage() {
                                     <p className="text-zinc-400">{t('settings.sku.explain')}</p>
                                 </div>
                             </Card>
-                        )}
-
-                        {activeTab === 'catalog' && (
-                            <div className="space-y-4">
-                                <Card className="space-y-4">
-                                    <SectionHeader icon={Shirt} color="bg-pink-500/20 text-pink-400" title={t('settings.tab.catalog')} text={t('settings.catalogText')} />
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <Button variant="secondary" onClick={() => setShowCategories(true)}>
-                                            <Shirt className="w-4 h-4" /> {t('products.manageCategories')} ({categories.length})
-                                        </Button>
-                                        <Button variant="secondary" onClick={() => navigate('/catalog?tab=brands')}>
-                                            <Tags className="w-4 h-4" /> {t('brands.title')}
-                                        </Button>
-                                        <Button variant="secondary" onClick={() => navigate('/employees')}>
-                                            <Users className="w-4 h-4" /> {t('nav.employees')}
-                                        </Button>
-                                    </div>
-                                </Card>
-                                <Card className="space-y-3">
-                                    <h4 className="font-medium">{t('settings.colors')}</h4>
-                                    <div className="flex flex-wrap gap-2">
-                                        {COLORS.map(c => (
-                                            <span key={c.code} className="inline-flex items-center gap-2 rounded-full bg-dark-tertiary px-3 py-1 text-sm">
-                                                <span className="w-3.5 h-3.5 rounded-full border border-zinc-600" style={{ background: c.hex }} />
-                                                {colorName(c.code)}
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <h4 className="font-medium pt-2">{t('settings.sizes')}</h4>
-                                    <div className="space-y-2 text-sm">
-                                        {SIZE_SETS.map(set => (
-                                            <div key={set.code} className="flex gap-3">
-                                                <span className="text-zinc-400 w-40 shrink-0">{sizeSetLabel(set)}</span>
-                                                <span className="ltr text-zinc-200">{set.sizes.join(' · ')}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <p className="text-xs text-zinc-500">{t('settings.colorsHint')}</p>
-                                </Card>
-                            </div>
                         )}
 
                         {activeTab === 'features' && (
@@ -747,13 +713,6 @@ export default function SettingsPage() {
                     </div>
                 </div>
             </div>
-
-            <CategoryManagerModal
-                isOpen={showCategories}
-                onClose={() => setShowCategories(false)}
-                categories={categories}
-                onSave={loadCategories}
-            />
 
             <ConfirmDialog
                 isOpen={showResetConfirm}

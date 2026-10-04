@@ -50,12 +50,14 @@ export function Select({
                     ref={buttonRef}
                     type="button"
                     onClick={() => setIsOpen(!isOpen)}
-                    className={`input flex items-center justify-between ${error ? 'border-red-500' : ''}`}
+                    className={`input flex items-center justify-between gap-2 min-w-0 ${error ? 'border-red-500' : ''}`}
+                    title={selectedOption?.label}
                 >
-                    <span className={selectedOption ? 'text-white' : 'text-zinc-500'}>
+                    {/* One line: long choices are cut with … (the full text is in the list) */}
+                    <span className={`truncate min-w-0 ${selectedOption ? 'text-white' : 'text-zinc-500'}`}>
                         {selectedOption?.label || placeholder || t('common.select')}
                     </span>
-                    <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                    <ChevronDown className={`w-4 h-4 flex-none text-zinc-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
 
                 {isOpen && (

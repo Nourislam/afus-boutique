@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Barcode, QrCode, Wand2, Keyboard, Trash2, Plus, ShieldCheck } from 'lucide-react';
+import { Wand2, Keyboard, Trash2, Plus, ShieldCheck } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { toast } from '../components/ui/Toast';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
-import { LabelLayoutPanel, useLabelSetup, cleanError } from '../components/labels/LabelLayoutPanel';
-import { SYMBOLOGIES, symbology, normalizeCode } from '../lib/barcodes';
+import { LabelPrintPanel, useLabelSetup, cleanError } from '../components/labels/LabelLayoutPanel';
+import { symbology, normalizeCode } from '../lib/barcodes';
 import { t } from '../i18n';
 
 const clampInt = (value, min, max) => Math.min(max, Math.max(min, parseInt(value, 10) || min));
@@ -18,7 +18,8 @@ const clampInt = (value, min, max) => Math.min(max, Math.max(min, parseInt(value
  */
 export default function BarcodeLabelPage() {
     const setup = useLabelSetup();
-    const [type, setType] = useState('ean13');
+    // The code type is the one chosen in Settings (QR there means a QR code here)
+    const type = { qr: 'qrcode' }[setup.layout?.codeType] || setup.layout?.codeType || 'ean13';
     const [mode, setMode] = useState('auto');
     const [count, setCount] = useState(10);
     const [copies, setCopies] = useState(1);
@@ -84,39 +85,18 @@ export default function BarcodeLabelPage() {
         return items;
     };
 
-    const fields = [
-        ['showShopName', t('labels.showShopName')],
-        ['showProductName', t('labels.freeTitleField')],
-        ['showPrice', t('labels.showPrice')],
-        ...(spec.kind === '2D' ? [['showSku', t('labels.codeUnder')]] : []),
-    ];
-
     return (
         <div className="h-full grid grid-cols-1 xl:grid-cols-12 content-start xl:content-stretch overflow-y-auto xl:overflow-hidden">
             <div className="xl:col-span-7 xl:overflow-y-auto p-4 space-y-4 xl:border-e border-dark-border min-h-0">
-                {/* 1. Type */}
-                <section className="card p-4">
-                    <h3 className="font-semibold mb-3">{t('labels.step1')}</h3>
-                    <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
-                        {SYMBOLOGIES.map(s => (
-                            <button key={s.id} type="button" onClick={() => setType(s.id)}
-                                className={`p-3 rounded-lg border text-start transition-colors ${type === s.id
-                                    ? 'border-indigo-500 bg-indigo-500/10'
-                                    : 'border-dark-border bg-dark-tertiary/40 hover:border-zinc-600'}`}>
-                                <div className="flex items-center gap-2 font-medium">
-                                    {s.kind === '2D' ? <QrCode className="w-4 h-4 text-indigo-300" /> : <Barcode className="w-4 h-4 text-indigo-300" />}
-                                    <span className="ltr">{s.name}</span>
-                                </div>
-                                <p className="text-xs text-zinc-500 mt-1 leading-snug">{t(s.hint)}</p>
-                            </button>
-                        ))}
-                    </div>
-                </section>
+                <div className="card p-3 flex items-center gap-2 text-sm">
+                    <span className="text-zinc-400">{t('labels.freeTypeFromSettings')}</span>
+                    <span className="badge bg-dark-tertiary text-zinc-200 ltr">{spec.name}</span>
+                </div>
 
                 {/* 2. Codes */}
                 <section className="card p-4 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="font-semibold">{t('labels.step2')}</h3>
+                        <h3 className="font-semibold">{t('labels.step1Codes')}</h3>
                         <div className="segmented">
                             <button type="button" className={`inline-flex items-center gap-1.5 ${mode === 'auto' ? 'active' : ''}`} onClick={() => setMode('auto')}>
                                 <Wand2 className="w-4 h-4" /> {t('labels.modeAuto')}
@@ -158,7 +138,7 @@ export default function BarcodeLabelPage() {
 
                 {/* 3. Text on the label */}
                 <section className="card p-4">
-                    <h3 className="font-semibold mb-3">{t('labels.step3')}</h3>
+                    <h3 className="font-semibold mb-3">{t('labels.step2Text')}</h3>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="form-group">
                             <label className="form-label">{t('labels.freeTitle')}</label>
@@ -199,7 +179,7 @@ export default function BarcodeLabelPage() {
             </div>
 
             <div className="xl:col-span-5 xl:overflow-y-auto p-4">
-                <LabelLayoutPanel setup={setup} items={items} totalLabels={totalLabels} fields={fields} beforePrint={beforePrint} />
+                <LabelPrintPanel setup={setup} items={items} totalLabels={totalLabels} beforePrint={beforePrint} />
             </div>
         </div>
     );

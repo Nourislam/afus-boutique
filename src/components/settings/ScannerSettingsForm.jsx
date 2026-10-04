@@ -49,6 +49,7 @@ export function ScannerSettingsForm({ value, onChange }) {
                         { value: 'os', label: t('scanner.layoutOs') },
                     ]}
                 />
+                <p className="form-hint col-span-full -mt-2">{t('scanner.layoutHint')}</p>
                 <Input
                     label={t('scanner.interval')}
                     type="number"

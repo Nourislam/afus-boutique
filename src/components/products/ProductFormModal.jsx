@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Trash2, Shirt, ImagePlus, Wand2, Barcode, ChevronDown } from 'lucide-react';
+import { Trash2, Shirt, ImagePlus, Wand2, Barcode, ChevronDown, Printer } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 import { Button } from '../ui/Button';
 import { Input, TextArea } from '../ui/Input';
@@ -14,6 +14,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { t } from '../../i18n';
 import { translateErrorLines } from '../../i18n/errors';
 import { GENDERS, SEASONS, genderLabel, seasonLabel, sizeSetForCategory } from '../../lib/clothing';
+import { printArticleLabels, labelResultMessages } from '../../lib/labels';
 
 const EMPTY_PRODUCT = {
     name: '',
@@ -68,6 +69,13 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
     const [suppliers, setSuppliers] = useState([]);
     const [brands, setBrands] = useState([]);
     const [loading, setLoading] = useState(false);
+    // Print the labels right after saving (remembered on this computer)
+    const [printAfter, setPrintAfter] = useState(() => { try { return localStorage.getItem('product.printAfter') === '1'; } catch { return false; } });
+    const [labelQty, setLabelQty] = useState('');
+    const togglePrintAfter = (value) => {
+        setPrintAfter(value);
+        try { localStorage.setItem('product.printAfter', value ? '1' : '0'); } catch { /* per-viewer convenience */ }
+    };
     const [loadingVariants, setLoadingVariants] = useState(false);
     const [imagePreview, setImagePreview] = useState(null);
     const [errors, setErrors] = useState([]);
@@ -223,6 +231,15 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 isNew: !product,
             });
             toast.success(product ? t('products.updated') : t('products.created'));
+            if (printAfter) {
+                // With the look saved in Settings; missing barcodes are created now
+                try {
+                    const result = await printArticleLabels(data.id, labelQty);
+                    labelResultMessages(result).forEach(msg => toast.success(msg));
+                } catch (printError) {
+                    toast.error(t('barcode.printFailed', { error: translateErrorLines(printError).join(' ') }));
+                }
+            }
             onSave();
         } catch (error) {
             setErrors(translateErrorLines(error));
@@ -418,9 +435,25 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                     )}
                 </ModalBody>
                 <ModalFooter>
+                    {/* Labels printed straight after saving: no need to open the labels page */}
+                    <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" checked={printAfter} onChange={(e) => togglePrintAfter(e.target.checked)} className="w-4 h-4 rounded" />
+                            <Printer className="w-4 h-4 text-zinc-400" />
+                            <span className="whitespace-nowrap">{t('products.printLabelsAfter')}</span>
+                        </label>
+                        {printAfter && (
+                            <label className="flex items-center gap-2 text-zinc-400">
+                                <input type="number" min="1" max="1000" value={labelQty} onChange={(e) => setLabelQty(e.target.value)}
+                                    className="input input-sm w-20 tabular" placeholder={t('products.labelQtyStock')} aria-label={t('products.labelQty')} />
+                                <span className="text-xs whitespace-nowrap">{labelQty ? t('products.labelQtyEach') : t('products.labelQtyStockHint')}</span>
+                            </label>
+                        )}
+                    </div>
                     <Button type="button" variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
                     <Button type="submit" loading={loading}>
-                        {product ? t('products.update') : t('products.add')}
+                        {printAfter ? <Printer className="w-4 h-4" /> : null}
+                        {printAfter ? t('products.saveAndPrint') : (product ? t('products.update') : t('products.add'))}
                     </Button>
                 </ModalFooter>
             </form>

@@ -5,7 +5,7 @@ import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { toast } from '../ui/Toast';
 import { QrPreview } from './QrPreview';
 import { t, currentLanguage } from '../../i18n';
-import { COLORS, SIZE_SETS, findColor, colorName, colorHex, sizeLabel, sizeSetLabel, sortSizes } from '../../lib/clothing';
+import { getColors, getSizeSets, findColor, colorName, colorHex, sizeLabel, sizeSetLabel, sortSizes } from '../../lib/clothing';
 import { translateError } from '../../i18n/errors';
 
 const normalize = (code) => String(code || '').trim().toUpperCase();
@@ -202,8 +202,12 @@ export function VariantEditor({ product, variants, onChange, suggestedSizeSet })
     const invalidChars = (code) => !!normalize(code) && !/^[A-Z0-9][A-Z0-9._-]*$/.test(normalize(code));
     const problems = active.filter(v => !normalize(v.sku) || isDuplicate(v.sku) || invalidChars(v.sku) || isDuplicate(v.barcode)).length;
 
-    const palette = showAllColors ? COLORS : COLORS.slice(0, 12);
-    const orderedSets = suggestedSizeSet ? [suggestedSizeSet, ...SIZE_SETS.filter(s => s.code !== suggestedSizeSet.code)] : SIZE_SETS;
+    // The shop's colours and sizes (Catalogue › Colours / Sizes)
+    const shopColors = getColors();
+    const sizeSets = getSizeSets();
+    const palette = showAllColors ? shopColors : shopColors.slice(0, 12);
+    const orderedSets = suggestedSizeSet && sizeSets.some(s => s.code === suggestedSizeSet.code)
+        ? [suggestedSizeSet, ...sizeSets.filter(s => s.code !== suggestedSizeSet.code)] : sizeSets;
 
     const regenerateQr = async (variant) => {
         try {
@@ -237,9 +241,9 @@ export function VariantEditor({ product, variants, onChange, suggestedSizeSet })
                             </button>
                         );
                     })}
-                    {!showAllColors && (
+                    {!showAllColors && shopColors.length > 12 && (
                         <button type="button" onClick={() => setShowAllColors(true)} className="h-8 px-3 rounded-full text-sm text-zinc-400 hover:text-white border border-dashed border-dark-border">
-                            {t('variants.moreColors', { n: COLORS.length - 12 })}
+                            {t('variants.moreColors', { n: shopColors.length - 12 })}
                         </button>
                     )}
                     {colors.filter(c => !c.code).map(c => (

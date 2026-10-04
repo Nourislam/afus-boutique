@@ -14,6 +14,7 @@ import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import ReceiptPreviewModal from '../components/modals/ReceiptPreviewModal';
 import CartOptionsModal from '../components/modals/CartOptionsModal';
 import PaymentModal from '../components/pos/PaymentModal';
+import { afterSaleMode } from '../components/settings/PrinterSettingsForm';
 import CustomerPickerModal from '../components/pos/CustomerPickerModal';
 import OpeningCashDialog from '../components/shifts/OpeningCashDialog';
 import { VariantPickerModal } from '../components/pos/VariantPickerModal';
@@ -287,13 +288,15 @@ export default function POSPage() {
             try { tendered = cashPayment?.reference ? JSON.parse(cashPayment.reference).tendered || 0 : 0; } catch { tendered = 0; }
             setLastSale({ ...sale, change: tendered > 0 ? tendered - (cashPayment?.amount || 0) : 0 });
 
+            // After the sale: print the ticket, show it, or nothing (Settings › ticket printer)
             try {
                 const printerSettings = await window.electronAPI.printers.getSettings();
-                if (printerSettings?.receipt?.autoPrint) {
+                const mode = afterSaleMode(printerSettings?.receipt);
+                if (mode === 'print') {
                     window.electronAPI.receipts.print(sale)
                         .then((ok) => ok && toast.success(t('pos.printed')))
-                        .catch((printError) => toast.error(t('pos.notPrinted', { error: printError.message })));
-                } else {
+                        .catch((printError) => toast.error(t('pos.notPrinted', { error: translateError(printError) })));
+                } else if (mode === 'preview') {
                     setReceiptData(sale);
                     setShowReceiptModal(true);
                 }

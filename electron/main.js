@@ -650,8 +650,14 @@ ipcMain.handle('catalog:checkIdentifier', (_, { code, excludeVariantId, excludeP
     : { valid: true };
 });
 
+ipcMain.handle('catalog:missingCodes', () => {
+  const layout = getLabelSettings();
+  return catalog.findMissingCodes(dbApi, { scope: layout.codeScope, codeType: layout.codeType });
+});
+
 ipcMain.handle('catalog:lookupCode', (_, code) => {
-  return catalog.lookupCode(dbApi, code);
+  // With one code per article, scanning sells a piece without asking colour/size
+  return catalog.lookupCode(dbApi, code, { articleScope: getLabelSettings().codeScope === 'article' });
 });
 
 ipcMain.handle('catalog:searchVariants', (_, { query, limit }) => {
@@ -1753,11 +1759,22 @@ function enrichSaleForPrint(sale) {
   return { ...sale, items };
 }
 
+// A printer removed or renamed in Windows/macOS: say so in the shop's language
+function printerError(error, printerName) {
+  const message = String(error && error.message || error);
+  if (/deviceName|printer.*not found|no printer/i.test(message)) return catalog.codedError('PRINTER_NOT_FOUND', { name: printerName || '' });
+  return error;
+}
+
 ipcMain.handle('receipts:print', async (_, sale, overrides = {}) => {
   const printer = { ...getPrinterSettings().receipt, ...overrides };
   // Without a selected printer the system print dialog is shown
   if (!printer.printerName) printer.silent = false;
-  return receiptService.print(enrichSaleForPrint(sale), getShopSettingsForPrint(), printer);
+  try {
+    return await receiptService.print(enrichSaleForPrint(sale), getShopSettingsForPrint(), printer);
+  } catch (error) {
+    throw printerError(error, printer.printerName);
+  }
 });
 
 ipcMain.handle('receipts:getHtml', async (_, sale) => {
@@ -1817,13 +1834,37 @@ function articleSymbology(layout, value) {
   return type;
 }
 
-// items: [{ variantId?, productId?, quantity }] or free labels [{ code, symbology, title?, price?, quantity }]
+// What an article label prints: the code and, when the layout asks for a
+// barcode, the symbology (EAN-13 needs digits, otherwise Code 128 is used)
+function articleCode(layout, { qrValue, barcode, sku }) {
+  const type = articleSymbology(layout, barcode || sku);
+  return type ? { symbology: type, qrValue: barcode || sku } : { qrValue };
+}
+
+// items: [{ variantId?, productId?, quantity, article?, previewBarcode? }],
+// free labels [{ code, symbology, title?, price?, quantity }] or { sample: true }
 function buildLabelData(items, layout = {}) {
   const settings = getStoreSettings();
+  const articleScope = layout.codeScope === 'article';
+  const money = { currency: settings.currency, currencySymbol: settings.currencySymbol };
   const labels = [];
   for (const item of items || []) {
     const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
-    if (item.code) {
+    if (item.sample) {
+      // Example shown in Settings while the layout is being chosen
+      const lang = i18n.normalizeLanguage(getStoreSettings().defaultLanguage);
+      const body = '200123456789';
+      const barcode = body + catalog.gs1CheckDigit(body);
+      labels.push({
+        productName: i18n.translate(lang, 'labels.sampleName'),
+        variantLabel: articleScope ? '' : i18n.variantLabel({ color: 'black', color_code: 'black', size: 'M' }, lang),
+        sku: articleScope ? barcode : 'TSH-BLK-M-001',
+        ...articleCode(layout, { qrValue: articleScope ? barcode : 'TSH-BLK-M-001', barcode, sku: 'TSH-BLK-M-001' }),
+        price: 2500,
+        ...money,
+        quantity,
+      });
+    } else if (item.code) {
       labels.push({
         productName: item.title || '',
         variantLabel: '',
@@ -1834,40 +1875,42 @@ function buildLabelData(items, layout = {}) {
         currency: settings.currency,
         quantity,
       });
-    } else if (item.variantId) {
+    } else if (item.variantId && !articleScope) {
       const variant = getOne('SELECT * FROM product_variants WHERE id = ?', [item.variantId]);
       if (!variant) throw catalog.codedError('VARIANT_GONE', { product: '' });
       const product = getOne('SELECT * FROM products WHERE id = ?', [variant.product_id]);
+      const barcode = item.previewBarcode || variant.barcode;
       labels.push({
         productName: product ? product.name : '',
         variantLabel: catalog.variantLabel(variant),
         sku: variant.sku,
-        qrValue: variant.qr_code || variant.sku,
-        ...(articleSymbology(layout, variant.barcode || variant.sku)
-          ? { symbology: articleSymbology(layout, variant.barcode || variant.sku), qrValue: variant.barcode || variant.sku }
-          : {}),
+        ...articleCode(layout, { qrValue: variant.qr_code || variant.sku, barcode, sku: variant.sku }),
         price: catalog.effectivePrice(product || {}, variant),
-        currency: settings.currency,
-        currencySymbol: settings.currencySymbol,
+        ...money,
         quantity,
       });
-    } else if (item.productId) {
-      const product = getOne('SELECT * FROM products WHERE id = ?', [item.productId]);
+    } else if (item.productId || item.variantId) {
+      let productId = item.productId;
+      if (!productId) productId = (getOne('SELECT product_id FROM product_variants WHERE id = ?', [item.variantId]) || {}).product_id;
+      const product = getOne('SELECT * FROM products WHERE id = ?', [productId]);
       if (!product) throw new Error('Product not found');
-      if (product.has_variants) throw catalog.codedError('VARIANT_REQUIRED', { product: product.name });
-      const code = product.sku || product.barcode;
+      if (product.has_variants && !articleScope) throw catalog.codedError('VARIANT_REQUIRED', { product: product.name });
+      const barcode = item.previewBarcode || product.barcode;
+      const code = barcode || product.sku;
       if (!code) throw catalog.codedError('LABEL_NO_CODE', { product: product.name });
+      // One code for the whole article: price from the article (lowest piece price when unset)
+      let price = product.price;
+      if (product.has_variants && !(Number(price) > 0)) {
+        const min = getOne('SELECT MIN(price) AS p FROM product_variants WHERE product_id = ? AND is_active = 1 AND price IS NOT NULL', [product.id]);
+        if (min && min.p !== null) price = min.p;
+      }
       labels.push({
         productName: product.name,
         variantLabel: '',
-        sku: product.sku || product.barcode,
-        qrValue: code,
-        ...(articleSymbology(layout, product.barcode || code)
-          ? { symbology: articleSymbology(layout, product.barcode || code), qrValue: product.barcode || code }
-          : {}),
-        price: product.price,
-        currency: settings.currency,
-        currencySymbol: settings.currencySymbol,
+        sku: product.sku || barcode,
+        ...articleCode(layout, { qrValue: code, barcode, sku: product.sku || barcode }),
+        price,
+        ...money,
         quantity,
       });
     }
@@ -1878,13 +1921,18 @@ function buildLabelData(items, layout = {}) {
 function buildLabelsDocument(items, layoutOverrides, { preview = false } = {}) {
   const layout = getLabelSettings(layoutOverrides);
   const shop = getShopSettingsForPrint();
-  const html = labelService.buildLabelsHtml(buildLabelData(items, layout), layout, {
+  // Articles without a code get one (saved when printing, only shown in a preview)
+  const article = (items || []).filter(i => !i.code && !i.sample);
+  const ensure = (list) => catalog.ensureLabelCodes(dbApi, list, { scope: layout.codeScope, codeType: layout.codeType, dryRun: preview });
+  const prepared = article.length ? (preview ? ensure(article) : dbApi.transaction(() => ensure(article))) : { items: [], created: 0 };
+  const allItems = [...(items || []).filter(i => i.code || i.sample), ...prepared.items];
+  const html = labelService.buildLabelsHtml(buildLabelData(allItems, layout), layout, {
     name: shop.businessName,
     logo: shop.shopLogoDataUri,
     lang: i18n.normalizeLanguage(shop.defaultLanguage),
     preview,
   });
-  return { html, layout };
+  return { html, layout, created: prepared.created };
 }
 
 ipcMain.handle('labels:getTemplates', () => ({
@@ -1903,7 +1951,9 @@ ipcMain.handle('labels:print', async (_, { items, layout, printer }) => {
   const doc = buildLabelsDocument(items, layout);
   const options = { ...getPrinterSettings().label, ...(printer || {}) };
   if (!options.printerName) options.silent = false;
-  return labelService.printLabels(BrowserWindow, doc.html, doc.layout, options);
+  const result = await labelService.printLabels(BrowserWindow, doc.html, doc.layout, options)
+    .catch((error) => { throw printerError(error, options.printerName); });
+  return { ...result, created: doc.created };
 });
 
 ipcMain.handle('labels:savePdf', async (_, { items, layout }) => {
