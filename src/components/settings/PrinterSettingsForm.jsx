@@ -1,6 +1,7 @@
 import { t } from '../../i18n';
 import { useEffect, useState } from 'react';
-import { RefreshCw, Printer, Tag } from 'lucide-react';
+import { RefreshCw, Printer, Tag, FlaskConical } from 'lucide-react';
+import { toast } from '../ui/Toast';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
@@ -27,8 +28,8 @@ function Toggle({ checked, onChange, label, hint }) {
  *
  * printers: { receipt: {...}, label: {...} }  (printer_settings)
  * labels:   label layout/content settings      (label_settings)
- * Any printer installed in Windows can be selected; nothing is tied to a
- * printer brand.
+ * Any printer installed in Windows or macOS can be selected; nothing is
+ * tied to a printer brand.
  */
 export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabelsChange, compact = false }) {
     const [printerList, setPrinterList] = useState([]);
@@ -57,6 +58,44 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
     }, []);
 
     const layout = { ...defaults, ...labels };
+    const [testing, setTesting] = useState(null);
+
+    // Test pages use the settings on screen, even before they are saved
+    const testReceipt = async () => {
+        setTesting('receipt');
+        try {
+            const now = new Date().toISOString();
+            const sale = {
+                id: 'test', receipt_number: 'TEST-0001', created_at: now, employee_name: t('printers.testName'),
+                items: [
+                    { product_name: t('printers.testItem1'), quantity: 1, unit_price: 2500, total: 2500, size: 'M', color: 'Noir', color_code: 'black' },
+                    { product_name: t('printers.testItem2'), quantity: 2, unit_price: 1200, total: 2400 },
+                ],
+                subtotal: 4900, tax_amount: 0, discount_amount: 0, total: 4900,
+                payments: [{ method: 'cash', amount: 4900, reference: JSON.stringify({ tendered: 5000 }) }],
+            };
+            const result = await window.electronAPI.receipts.print(sale, printers.receipt);
+            if (result?.success !== false) toast.success(t('printers.testSent'));
+        } catch (error) {
+            toast.error(t('barcode.printFailed', { error: error.message }));
+        } finally {
+            setTesting(null);
+        }
+    };
+    const testLabel = async () => {
+        setTesting('label');
+        try {
+            const result = await window.electronAPI.labels.print(
+                [{ code: 'TEST-0001', symbology: 'code128', title: t('printers.testLabel'), price: 2500, quantity: 1 }],
+                layout, printers.label,
+            );
+            if (result?.success) toast.success(t('printers.testSent'));
+        } catch (error) {
+            toast.error(t('barcode.printFailed', { error: error.message }));
+        } finally {
+            setTesting(null);
+        }
+    };
     const setReceipt = (key, v) => onPrintersChange({ ...printers, receipt: { ...printers.receipt, [key]: v } });
     const setLabelPrinter = (key, v) => onPrintersChange({ ...printers, label: { ...printers.label, [key]: v } });
     const setLayout = (patch) => onLabelsChange({ ...labels, ...patch });
@@ -122,6 +161,9 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
                         onChange={(e) => setReceipt('copies', Math.max(1, parseInt(e.target.value, 10) || 1))}
                     />
                 </div>
+                <Button type="button" variant="secondary" size="sm" onClick={testReceipt} loading={testing === 'receipt'}>
+                    <FlaskConical className="w-4 h-4" /> {t('printers.testReceipt')}
+                </Button>
                 <div className="space-y-3">
                     <Toggle
                         checked={printers.receipt.autoPrint}
@@ -132,7 +174,7 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
                         checked={printers.receipt.silent}
                         onChange={(v) => setReceipt('silent', v)}
                         label={t('printers.silent')}
-                        hint="Only applies when a printer is selected above."
+                        hint={t('printers.silentHint')}
                     />
                 </div>
             </section>
@@ -159,11 +201,14 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
                         ]}
                     />
                 </div>
+                <Button type="button" variant="secondary" size="sm" onClick={testLabel} loading={testing === 'label'}>
+                    <FlaskConical className="w-4 h-4" /> {t('printers.testLabelButton')}
+                </Button>
                 <Toggle
                     checked={printers.label.silent}
                     onChange={(v) => setLabelPrinter('silent', v)}
                     label={t('printers.labelSilent')}
-                    hint="Only applies when a printer is selected above. Print density/darkness is set in the printer's Windows driver."
+                    hint={t('printers.labelSilentHint')}
                 />
 
                 <div className="grid grid-cols-2 gap-4">

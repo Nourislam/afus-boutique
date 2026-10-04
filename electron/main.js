@@ -1032,30 +1032,62 @@ ipcMain.handle('db:sales:getToday', (_, params = {}) => {
 });
 
 ipcMain.handle('db:sales:getStats', (_, { startDate, endDate, employeeId }) => {
-  let query = `
-    SELECT 
-      COUNT(s.id) as total_transactions,
-      COALESCE(SUM(s.total), 0) as total_revenue,
-      COALESCE(AVG(s.total), 0) as average_sale,
-      COALESCE(SUM(s.tax_amount), 0) as total_tax,
-      COALESCE(SUM(p.profit), 0) as total_profit
+  // Profit = what the customer paid (after every discount, without TVA) minus
+  // the purchase cost of the pieces; returns are taken off both.
+  const emp = employeeId ? ' AND s.employee_id = ?' : '';
+  const params = employeeId ? [startDate, endDate, employeeId] : [startDate, endDate];
+  const sales = getOne(`
+    SELECT
+      COUNT(s.id) AS total_transactions,
+      COALESCE(SUM(s.total), 0) AS total_revenue,
+      COALESCE(AVG(s.total), 0) AS average_sale,
+      COALESCE(SUM(s.tax_amount), 0) AS total_tax,
+      COALESCE(SUM(s.discount_amount), 0) AS total_discount,
+      COALESCE(SUM(c.cost), 0) AS total_cost,
+      COALESCE(SUM(c.pieces), 0) AS items_sold
     FROM sales s
     LEFT JOIN (
-        SELECT sale_id, SUM((unit_price - unit_cost) * quantity) as profit
-        FROM sale_items
-        GROUP BY sale_id
-    ) p ON s.id = p.sale_id
-    WHERE s.created_at BETWEEN ? AND ?
-  `;
-  const queryParams = [startDate, endDate];
+      SELECT sale_id, SUM(COALESCE(unit_cost, 0) * quantity) AS cost, SUM(quantity) AS pieces
+      FROM sale_items GROUP BY sale_id
+    ) c ON c.sale_id = s.id
+    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)${emp}
+  `, params) || {};
+  const returns = getOne(`
+    SELECT
+      COUNT(DISTINCT r.id) AS count,
+      COALESCE(SUM(r.total_refund), 0) AS refunds
+    FROM returns r
+    LEFT JOIN sales s ON s.id = r.sale_id
+    WHERE datetime(r.created_at) BETWEEN datetime(?) AND datetime(?)${employeeId ? ' AND r.employee_id = ?' : ''}
+  `, params) || {};
+  const returnedCost = getOne(`
+    SELECT COALESCE(SUM(ri.quantity * COALESCE(si.unit_cost, 0)), 0) AS cost
+    FROM return_items ri
+    JOIN returns r ON r.id = ri.return_id
+    LEFT JOIN sale_items si ON si.id = ri.sale_item_id
+    WHERE datetime(r.created_at) BETWEEN datetime(?) AND datetime(?)${employeeId ? ' AND r.employee_id = ?' : ''}
+  `, params) || {};
 
-  if (employeeId) {
-    query += ' AND s.employee_id = ?';
-    queryParams.push(employeeId);
-  }
-
-  const result = runQuery(query, queryParams);
-  return result.length > 0 ? result[0] : { total_transactions: 0, total_revenue: 0, average_sale: 0, total_tax: 0, total_profit: 0 };
+  const revenue = sales.total_revenue || 0;
+  const refunds = returns.refunds || 0;
+  const netRevenue = revenue - refunds;
+  const cost = (sales.total_cost || 0) - (returnedCost.cost || 0);
+  const profit = (revenue - (sales.total_tax || 0)) - refunds - cost;
+  const r2 = (n) => Math.round(n * 100) / 100;
+  return {
+    total_transactions: sales.total_transactions || 0,
+    total_revenue: r2(revenue),
+    average_sale: r2(sales.average_sale || 0),
+    total_tax: r2(sales.total_tax || 0),
+    total_discount: r2(sales.total_discount || 0),
+    items_sold: sales.items_sold || 0,
+    total_refunds: r2(refunds),
+    refunds_count: returns.count || 0,
+    net_revenue: r2(netRevenue),
+    total_cost: r2(cost),
+    total_profit: r2(profit),
+    margin_percent: netRevenue > 0 ? r2((profit / netRevenue) * 100) : 0,
+  };
 });
 
 // Held Transactions
@@ -1168,18 +1200,18 @@ ipcMain.handle('db:logs:getAll', (_, { startDate, endDate, type, limit = 100 } =
 ipcMain.handle('db:reports:salesByDate', (_, { startDate, endDate, employeeId }) => {
   let query = `
     SELECT 
-      date(s.created_at) as date,
+      date(s.created_at, 'localtime') as date,
       COUNT(s.id) as transactions,
       SUM(s.total) as revenue,
       SUM(s.tax_amount) as tax,
-      COALESCE(SUM(p.profit), 0) as profit
+      COALESCE(SUM(s.total - s.tax_amount - COALESCE(p.cost, 0)), 0) as profit
     FROM sales s
     LEFT JOIN (
-        SELECT sale_id, SUM((unit_price - unit_cost) * quantity) as profit
+        SELECT sale_id, SUM(COALESCE(unit_cost, 0) * quantity) as cost
         FROM sale_items
         GROUP BY sale_id
     ) p ON s.id = p.sale_id
-    WHERE s.created_at BETWEEN ? AND ?
+    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
   `;
   const queryParams = [startDate, endDate];
 
@@ -1189,7 +1221,7 @@ ipcMain.handle('db:reports:salesByDate', (_, { startDate, endDate, employeeId })
   }
 
   query += `
-    GROUP BY date(s.created_at)
+    GROUP BY date(s.created_at, 'localtime')
     ORDER BY date ASC
   `;
 
@@ -1210,7 +1242,7 @@ ipcMain.handle('db:reports:topProducts', (_, { startDate, endDate, limit = 10, e
       SUM(si.total) as total_revenue
     FROM sale_items si
     JOIN sales s ON si.sale_id = s.id
-    WHERE s.created_at BETWEEN ? AND ?
+    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
   `;
   const queryParams = [startDate, endDate];
 
@@ -1240,7 +1272,7 @@ ipcMain.handle('db:reports:salesByCategory', (_, { startDate, endDate, employeeI
     JOIN sales s ON si.sale_id = s.id
     JOIN products p ON si.product_id = p.id
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE s.created_at BETWEEN ? AND ?
+    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
   `;
   const queryParams = [startDate, endDate];
 
@@ -1265,7 +1297,7 @@ ipcMain.handle('db:reports:paymentMethods', (_, { startDate, endDate, employeeId
       SUM(p.amount) as total
     FROM payments p
     JOIN sales s ON p.sale_id = s.id
-    WHERE s.created_at BETWEEN ? AND ?
+    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
   `;
   const queryParams = [startDate, endDate];
 

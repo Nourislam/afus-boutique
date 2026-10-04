@@ -271,9 +271,10 @@ class ShiftService {
                 e.name as employee_name
             FROM shifts s
             JOIN employees e ON s.employee_id = e.id
-            WHERE s.start_time BETWEEN ? AND ?
+            WHERE datetime(s.start_time) BETWEEN datetime(?) AND datetime(?)
+               OR (s.end_time IS NULL AND datetime(s.start_time) <= datetime(?))
             ORDER BY s.start_time DESC
-        `, [startDate, endDate]);
+        `, [startDate, endDate, endDate]);
 
         // Augment with calculated stats
         return shifts.map(shift => {

@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Building, Receipt, Percent, Database, Save, Download, Upload, Mail, Lock, CheckCircle, Printer, ScanLine, Hash,
-    Languages, Shirt, Tags, Users, ToggleRight,
+    Languages, Shirt, Tags, Users, ToggleRight, Globe, ScrollText, Settings as SettingsIcon,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, TextArea } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Card } from '../components/ui/Card';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { Tabs } from '../components/ui/Tabs';
+import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
 import { ShopInfoForm } from '../components/settings/ShopInfoForm';
@@ -26,6 +26,19 @@ import { LANGUAGES, setLanguage, useT } from '../i18n';
 import { formatMoney } from '../i18n/format';
 
 const BASE_TABS = ['business', 'language', 'receipt', 'printers', 'scanner', 'sku', 'catalog', 'features', 'backup'];
+
+// Settings sections, grouped like the shop thinks about them
+const SECTION_GROUPS = [
+    { id: 'shop', ids: ['business', 'language', 'receipt'] },
+    { id: 'devices', ids: ['printers', 'scanner'] },
+    { id: 'catalog', ids: ['catalog', 'sku'] },
+    { id: 'app', ids: ['features', 'mail', 'ecommerce', 'backup', 'logs'] },
+];
+
+const SECTION_ICONS = {
+    business: Building, language: Languages, receipt: Receipt, printers: Printer, scanner: ScanLine,
+    sku: Hash, catalog: Shirt, features: ToggleRight, mail: Mail, ecommerce: Globe, backup: Database, logs: ScrollText,
+};
 
 function SectionHeader({ icon: Icon, color, title, text }) {
     return (
@@ -72,9 +85,8 @@ export default function SettingsPage() {
         ...(features.email ? ['mail'] : []),
         ...(features.ecommerce ? ['ecommerce'] : []),
         'backup',
-        ...(isAdmin ? ['logs'] : []),
+        ...(isAdmin() ? ['logs'] : []),
     ];
-    const tabs = tabIds.map(id => ({ id, label: t(`settings.tab.${id}`) }));
 
     useEffect(() => {
         loadSettings();
@@ -267,27 +279,44 @@ export default function SettingsPage() {
         : 0;
 
     return (
-        <div className="h-full flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="p-6 border-b border-dark-border">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold">{t('nav.settings')}</h1>
-                        <p className="text-zinc-500">{t('settings.subtitle')}</p>
-                    </div>
+        <div className="page">
+            <PageHeader
+                icon={SettingsIcon}
+                title={t('nav.settings')}
+                subtitle={t('settings.subtitle')}
+                actions={(
                     <Button onClick={handleSave} loading={saving}>
-                        <Save className="w-4 h-4" />
-                        {t('common.saveChanges')}
+                        <Save className="w-4 h-4" /> {t('common.saveChanges')}
                     </Button>
-                </div>
-            </div>
+                )}
+            />
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
-                <div className="max-w-3xl mx-auto">
-                    <Tabs tabs={tabs} defaultTab={activeTab} onChange={setActiveTab} />
+            <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+                {/* Sections */}
+                <nav className="md:w-56 flex-none border-b md:border-b-0 md:border-e border-dark-border p-2 md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto no-scrollbar">
+                    {SECTION_GROUPS.map(group => {
+                        const ids = group.ids.filter(id => tabIds.includes(id));
+                        if (!ids.length) return null;
+                        return (
+                            <div key={group.id} className="flex md:flex-col gap-1 md:mb-3">
+                                <p className="hidden md:block px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t(`settings.group.${group.id}`)}</p>
+                                {ids.map(id => {
+                                    const Icon = SECTION_ICONS[id] || ToggleRight;
+                                    return (
+                                        <button key={id} type="button" onClick={() => setActiveTab(id)}
+                                            title={t(`settings.tab.${id}`)} className={`sidebar-item whitespace-nowrap ${activeTab === id ? 'active' : ''}`}>
+                                            <Icon className="w-4 h-4 flex-none" />
+                                            <span className="truncate">{t(`settings.tab.${id}`)}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        );
+                    })}
+                </nav>
 
-                    <div className="mt-6">
+                <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6">
+                    <div className="max-w-5xl">
                         {activeTab === 'business' && (
                             <Card className="space-y-6">
                                 <SectionHeader icon={Building} color="bg-accent-primary/20 text-accent-primary" title={t('settings.shopTitle')} text={t('setup.shopText')} />
@@ -345,6 +374,16 @@ export default function SettingsPage() {
                                             ]}
                                         />
                                     </div>
+                                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                                        <span className="text-zinc-500">{t('settings.tvaPresets')}</span>
+                                        {[0, 9, 19].map(rate => (
+                                            <button key={rate} type="button" onClick={() => handleChange('taxRate', rate)}
+                                                className={`px-3 h-8 rounded-full border tabular ${Number(settings.taxRate) === rate ? 'border-indigo-500 bg-indigo-500/15 text-white' : 'border-dark-border text-zinc-400 hover:text-white'}`}>
+                                                {rate}%
+                                            </button>
+                                        ))}
+                                        <span className="form-hint">{t('settings.tvaHint')}</span>
+                                    </div>
                                 </Card>
                             </div>
                         )}
@@ -364,6 +403,15 @@ export default function SettingsPage() {
                                         onChange={(e) => handleChange('receiptFooter', e.target.value)}
                                         placeholder={t('settings.receiptFooterDefault')}
                                     />
+                                    <div className="flex flex-wrap gap-2">
+                                        {['settings.footer.exchange7', 'settings.footer.noReturn', 'settings.footer.keepTicket', 'settings.footer.thanks'].map(key => (
+                                            <button key={key} type="button"
+                                                onClick={() => handleChange('receiptFooter', [settings.receiptFooter, t(key)].filter(Boolean).join('\n'))}
+                                                className="px-3 py-1.5 rounded-full border border-dark-border text-xs text-zinc-300 hover:border-indigo-500 hover:text-white">
+                                                + {t(key)}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
 
                                 {/* Receipt preview */}
