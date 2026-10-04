@@ -1,4 +1,4 @@
--- Store POS database schema (base tables; later changes are in init.js and migrations.js)
+-- afus boutique database schema (base tables; later changes are in init.js and migrations.js)
 
 -- Categories
 CREATE TABLE IF NOT EXISTS categories (

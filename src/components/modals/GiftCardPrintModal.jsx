@@ -92,9 +92,6 @@ export default function GiftCardPrintModal({ isOpen, onClose, giftCard }) {
                         {/* Background Design */}
                         <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 to-purple-800 opacity-90 transition-all duration-300"></div>
 
-                        {/* Pattern Overlay (Optional) */}
-                        <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
-
                         {/* Content */}
                         <div className="relative h-full flex flex-col justify-between p-8 z-10">
                             {/* Header */}

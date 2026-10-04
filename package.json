@@ -1,5 +1,5 @@
 {
-  "name": "store-pos",
+  "name": "afus-boutique",
   "version": "1.1.2",
   "description": "afus boutique - offline sales and stock management for Algerian clothing and accessory shops (Windows desktop, Electron)",
   "main": "electron/main.js",
@@ -74,13 +74,12 @@
     "eslint-plugin-react": "^7.37.5",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
-    "to-ico": "^1.0.1",
     "vite": "^7.3.0",
     "vitest": "^4.0.16",
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.storepos.desktop",
+    "appId": "com.afus.boutique",
     "productName": "afus boutique",
     "copyright": "Copyright © afus. Includes software licensed under the MIT License (see LICENSE.txt).",
     "directories": {

@@ -123,38 +123,13 @@ function createWindow() {
 // ------------------------------------------------------------------
 // Data folder
 // ------------------------------------------------------------------
-// The database and images live in a fixed folder under %APPDATA% so that
-// renaming the application never "loses" a shop's data. Installations made
-// under the previous product name are copied (not moved) on first start.
-const DATA_DIR_NAME = 'StorePOS';
-const LEGACY_DATA_DIR_NAMES = ['pos-by-cirvex', 'Cirvex One', 'POS by Cirvex'];
+// The database and images live in a fixed folder under %APPDATA%, one folder
+// per afus application: %APPDATA%\afus\boutique (macOS: ~/Library/Application
+// Support/afus/boutique). Fixed, so it never depends on the installer name.
+const DATA_DIR = ['afus', 'boutique'];
 
 function configureDataDirectory() {
-  const appData = app.getPath('appData');
-  const target = path.join(appData, DATA_DIR_NAME);
-  const targetDb = path.join(target, 'pos-database.sqlite');
-
-  if (!fs.existsSync(targetDb)) {
-    for (const name of LEGACY_DATA_DIR_NAMES) {
-      const legacyDir = path.join(appData, name);
-      const legacyDb = path.join(legacyDir, 'pos-database.sqlite');
-      if (!fs.existsSync(legacyDb)) continue;
-      try {
-        fs.mkdirSync(target, { recursive: true });
-        fs.copyFileSync(legacyDb, targetDb);
-        const legacyImages = path.join(legacyDir, 'images');
-        if (fs.existsSync(legacyImages)) {
-          fs.cpSync(legacyImages, path.join(target, 'images'), { recursive: true, force: false });
-        }
-        console.log(`Copied existing shop data from ${legacyDir} to ${target}`);
-      } catch (error) {
-        console.error('Failed to copy existing data folder:', error);
-      }
-      break;
-    }
-  }
-
-  app.setPath('userData', target);
+  app.setPath('userData', path.join(app.getPath('appData'), ...DATA_DIR));
 }
 
 configureDataDirectory();
@@ -427,7 +402,7 @@ ipcMain.handle('backup:create', async () => {
 
   const { filePath } = await dialog.showSaveDialog({
     title: shopT('dialog.exportBackup'),
-    defaultPath: `hanout-backup-${new Date().toISOString().split('T')[0]}.sqlite`,
+    defaultPath: `afus-boutique-backup-${new Date().toISOString().split('T')[0]}.sqlite`,
     filters: [{ name: shopT('dialog.backupFiles'), extensions: ['sqlite'] }]
   });
 

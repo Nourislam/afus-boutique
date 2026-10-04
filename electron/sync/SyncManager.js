@@ -20,8 +20,8 @@ const { getDatabase, runQuery, runInsert, getTableColumns, saveDatabase } = requ
  * - Offline queue with retry
  * - Conflict resolution
  */
-// Sync transports that can be enabled. The previous product's hosted cloud
-// ('firebase') has been removed, so nothing is enabled by default.
+// Sync transports that can be enabled. None is bundled: nothing leaves the
+// computer and sync stays off.
 const SUPPORTED_PROVIDERS = [];
 
 class SyncManager {

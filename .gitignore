@@ -8,10 +8,6 @@ build
 *.log
 .DS_Store
 Thumbs.db
-.next
-.firebase
-website/.next
-website/.firebase
 
 # Environment & Secrets
 .env

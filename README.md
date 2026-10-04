@@ -1,6 +1,7 @@
-# Store POS
+# afus boutique
 
-An offline point of sale for clothing stores, built as a Windows desktop application
+afus boutique is the afus application for clothing and accessory shops: an offline point of sale
+and stock manager, built as a Windows desktop application
 (Electron + React + SQLite). It works without an account, without activation and without
 internet: all data lives in a local database on the shop's computer.
 
@@ -36,19 +37,20 @@ npm run electron:dev   # Vite dev server + Electron
 npm test               # unit tests (vitest)
 npm run lint
 npm run electron:build # production build + installer for the current OS
+node scripts/generate-icons.js   # rebuild icon.png / icon-512.png / icon.ico from public/icon.svg
 ```
 
-The Windows installer (NSIS) is produced by `npm run electron:build` on Windows, or by the
-`Release` GitHub workflow (runs on `windows-latest` when a `v*` tag is pushed). Building the
+The Windows installer (NSIS, `afus boutique Setup <version>.exe`) is produced by
+`npm run electron:build:win` on Windows, or by the `Build Windows Installer` GitHub workflow
+(artifact `afus-boutique-Setup-<version>-win-x64`, nothing published). Building the
 Windows installer on Linux requires Wine. Customers only need the installer – no Node.js or
 other tools.
 
 ## Data
 
-- Database: `%APPDATA%\StorePOS\pos-database.sqlite` (product images and the logo are in
-  `%APPDATA%\StorePOS\images`).
-- Installations created by the previous product name are copied into this folder on first
-  start (the old folder is left untouched).
+- Database: `%APPDATA%\afus\boutique\pos-database.sqlite` (product images and the logo are in
+  `%APPDATA%\afus\boutique\images`). On macOS: `~/Library/Application Support/afus/boutique`.
+  Each afus application has its own folder under `afus`.
 - Schema changes are versioned in `electron/database/migrations.js`; a backup copy of the
   database file is written before an existing database is upgraded.
 - Settings › Backup exports/imports the database.
@@ -86,6 +88,5 @@ nothing leaves the computer.
 
 ## License
 
-MIT. This application is based on open-source software originally published as
-"POSbyCirvex" – see [LICENSE.txt](LICENSE.txt) for the original copyright notice, which must
-be kept with copies of the software.
+MIT – see [LICENSE.txt](LICENSE.txt). Part of the code comes from earlier MIT-licensed
+open-source software; its copyright notice is kept in LICENSE.txt as that license requires.

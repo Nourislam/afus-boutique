@@ -10,7 +10,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const TEMP_DIR = path.join(os.tmpdir(), 'hanout-print');
+const TEMP_DIR = path.join(os.tmpdir(), 'afus-boutique-print');
 
 function tempFile() {
     fs.mkdirSync(TEMP_DIR, { recursive: true });
