@@ -92,12 +92,12 @@ export default function BarcodeLabelPage() {
     ];
 
     return (
-        <div className="h-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
-            <div className="lg:col-span-7 overflow-y-auto p-4 space-y-4 border-e border-dark-border min-h-0">
+        <div className="h-full grid grid-cols-1 xl:grid-cols-12 content-start xl:content-stretch overflow-y-auto xl:overflow-hidden">
+            <div className="xl:col-span-7 xl:overflow-y-auto p-4 space-y-4 xl:border-e border-dark-border min-h-0">
                 {/* 1. Type */}
                 <section className="card p-4">
                     <h3 className="font-semibold mb-3">{t('labels.step1')}</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
                         {SYMBOLOGIES.map(s => (
                             <button key={s.id} type="button" onClick={() => setType(s.id)}
                                 className={`p-3 rounded-lg border text-start transition-colors ${type === s.id
@@ -198,7 +198,7 @@ export default function BarcodeLabelPage() {
                 </section>
             </div>
 
-            <div className="lg:col-span-5 overflow-y-auto p-4">
+            <div className="xl:col-span-5 xl:overflow-y-auto p-4">
                 <LabelLayoutPanel setup={setup} items={items} totalLabels={totalLabels} fields={fields} beforePrint={beforePrint} />
             </div>
         </div>

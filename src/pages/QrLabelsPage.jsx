@@ -139,9 +139,9 @@ export default function QrLabelsPage() {
     ];
 
     return (
-        <div className="h-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+        <div className="h-full grid grid-cols-1 xl:grid-cols-12 content-start xl:content-stretch overflow-y-auto xl:overflow-hidden">
             {/* Search & queue */}
-            <div className="lg:col-span-7 flex flex-col overflow-hidden border-e border-dark-border min-h-0">
+            <div className="xl:col-span-7 flex flex-col min-h-[360px] xl:overflow-hidden xl:border-e border-dark-border">
                     <div className="p-4 border-b border-dark-border relative">
                         <Search className="absolute start-7 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
                         <input
@@ -234,7 +234,7 @@ export default function QrLabelsPage() {
                 </div>
 
                 {/* Layout, printer and preview */}
-                <div className="lg:col-span-5 overflow-y-auto p-4">
+                <div className="xl:col-span-5 xl:overflow-y-auto p-4">
                     <LabelLayoutPanel setup={setup} items={items} totalLabels={totalLabels} fields={fields}>
                         <div>
                             <span className="form-label">{t('labels.codeOnLabel')}</span>
