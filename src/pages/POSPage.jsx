@@ -5,7 +5,7 @@ import {
     Search, ShoppingBag, Pause, Trash2, Plus, Minus, SlidersHorizontal, Shirt, ScanLine, UserRound, X,
     LayoutGrid, List, Tag, Percent, Banknote, ChevronDown, History, Check,
 } from 'lucide-react';
-import { useCartStore } from '../stores/cartStore';
+import { useCartStore, heldLines } from '../stores/cartStore';
 import { useAuthStore, PERMISSIONS } from '../stores/authStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { toast } from '../components/ui/Toast';
@@ -637,8 +637,7 @@ export default function POSPage() {
                     ) : (
                         <div className="space-y-2">
                             {heldTransactions.map(held => {
-                                let lines = [];
-                                try { lines = JSON.parse(held.items_json); } catch { lines = []; }
+                                const lines = heldLines(held);
                                 return (
                                     <button key={held.id} onClick={() => handleRecallTransaction(held)}
                                         className="w-full p-4 rounded-xl bg-dark-tertiary hover:bg-zinc-700/70 text-start transition-colors">

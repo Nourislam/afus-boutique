@@ -16,6 +16,8 @@ export default {
     'errors.SKU_EXHAUSTED': ["No free SKU left for {stem}", "Plus de SKU disponible pour {stem}", "لا يوجد رمز SKU متاح لـ {stem}"],
     'errors.PRODUCT_NAME_REQUIRED': ["The product name is required", "Le nom de l'article est obligatoire", "اسم السلعة إجباري"],
     'errors.GIFT_CARD_NOT_FOUND': ["Gift card {code} not found", "Carte cadeau {code} introuvable", "بطاقة الهدية {code} غير موجودة"],
+    'errors.STOCK_INSUFFICIENT': ["Not enough stock for \"{product}\": {available} left", "Stock insuffisant pour « {product} » : il en reste {available}", "المخزون غير كافٍ لـ «{product}»: المتبقي {available}"],
+    'errors.RETURN_TOO_MANY': ["\"{product}\": only {left} piece(s) can still be returned", "« {product} » : il ne reste que {left} pièce(s) à retourner", "«{product}»: يمكن إرجاع {left} قطعة فقط"],
     'errors.GIFT_CARD_BALANCE': ["Not enough balance on gift card {code}", "Solde insuffisant sur la carte {code}", "رصيد غير كافٍ في البطاقة {code}"],
     'errors.LABEL_NO_CODE': ["\"{product}\" has no SKU or barcode for the QR code", "« {product} » n'a pas de SKU ni de code-barres pour le QR", "«{product}» ليس له رمز SKU أو باركود لـ QR"],
     'errors.PO_RECEIVED_DELETE': ["A received purchase cannot be deleted. Use a return instead.", "Un achat reçu ne peut pas être supprimé. Faites un retour.", "لا يمكن حذف شراء مستلم. استعمل الإرجاع."],

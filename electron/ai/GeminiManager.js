@@ -49,8 +49,12 @@ class GeminiManager {
 
             // Initialize LangChain Model
             // NOTE: apiKey is required.
+            // Without a key the assistant stays off: nothing is sent to the
+            // internet unless the shop enters its own key in Settings
             if (!this.apiKey) {
-                console.warn('[GeminiManager] No API Key found.');
+                console.warn('[GeminiManager] No API key: AI features are off.');
+                this.currentModel = null;
+                return;
             }
 
             // Fix for "Cannot read properties of undefined (reading 'replace')"
@@ -78,6 +82,7 @@ class GeminiManager {
 
     async updateConfig(config) {
         try {
+            if (!config) return;
             if (config.apiKey) {
                 this.apiKey = config.apiKey;
                 this.currentModel = new ChatGoogleGenerativeAI({

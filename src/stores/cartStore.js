@@ -6,6 +6,17 @@ import { bestPromotion } from '../lib/promotions';
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const lineTotal = (quantity, unitPrice, discount = 0) => round2(quantity * unitPrice - (discount || 0));
 
+/** Lines of a ticket put on hold (stored as JSON); a damaged record gives none. */
+export function heldLines(held) {
+    let lines = held?.items_json ?? held?.items;
+    try {
+        while (typeof lines === 'string') lines = JSON.parse(lines);
+    } catch {
+        lines = [];
+    }
+    return Array.isArray(lines) ? lines : [];
+}
+
 export const useCartStore = create((set, get) => ({
     items: [],
     customer: null,
@@ -285,9 +296,7 @@ export const useCartStore = create((set, get) => ({
     },
 
     recallTransaction: (held) => {
-        const items = typeof held.items_json === 'string'
-            ? JSON.parse(held.items_json)
-            : held.items;
+        const items = heldLines(held);
         set({
             items,
             customer: held.customer_id ? { id: held.customer_id, name: held.customer_name } : null,

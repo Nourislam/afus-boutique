@@ -6,6 +6,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { toast } from '../ui/Toast';
+import { translateError } from '../../i18n/errors';
 import { useAuthStore } from '../../stores/authStore';
 
 export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) {
@@ -16,20 +17,8 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
 
     useEffect(() => {
         if (sale && isOpen) {
-            // Initialize items with 0 return quantity
-            if (sale.items) {
-                setItems(sale.items.map(item => ({
-                    ...item,
-                    returnQty: 0,
-                    condition: 'sellable'
-                })));
-            } else {
-                // Fetch items if missing?
-                // TransactionsPage usually fetches full sale for receipt, 
-                // but if passing row object, it might be partial.
-                // We'll rely on TransactionsPage to pass full object or we fetch here.
-                fetchSaleDetails();
-            }
+            // Always read the sale again: it gives what was already returned
+            fetchSaleDetails();
         }
     }, [sale, isOpen]);
 
@@ -38,6 +27,8 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
             const fullSale = await window.electronAPI.sales.getById(sale.id);
             setItems(fullSale.items.map(item => ({
                 ...item,
+                // Pieces that can still come back on this line
+                maxReturn: Math.max(0, (Number(item.quantity) || 0) - (Number(item.returned_quantity) || 0)),
                 returnQty: 0,
                 condition: 'sellable'
             })));
@@ -51,8 +42,8 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
         setItems(items.map(item => {
             if (item.id === itemId) {
                 const val = parseInt(qty) || 0;
-                // Clamp between 0 and original quantity
-                const clamped = Math.min(Math.max(0, val), item.quantity);
+                // Between 0 and what was sold minus earlier returns
+                const clamped = Math.min(Math.max(0, val), item.maxReturn ?? item.quantity);
                 return { ...item, returnQty: clamped };
             }
             return item;
@@ -101,7 +92,8 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
             onClose();
         } catch (error) {
             console.error('Return failed:', error);
-            toast.error(t('return.failed'));
+            // The reason (e.g. more pieces than can still be returned)
+            toast.error(`${t('return.failed')} — ${translateError(error)}`);
         } finally {
             setLoading(false);
         }
@@ -132,13 +124,17 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
                                             {item.product_name}
                                             {item.variant_label && <div className="text-xs text-accent-primary">{item.variant_label}{item.sku ? ` · ${item.sku}` : ''}</div>}
                                         </td>
-                                        <td className="p-3 text-zinc-300">{item.quantity}</td>
+                                        <td className="p-3 text-zinc-300">
+                                            {item.quantity}
+                                            {item.returned_quantity > 0 && <div className="text-xs text-amber-400">{t('return.alreadyReturned', { n: item.returned_quantity })}</div>}
+                                        </td>
                                         <td className="p-3 text-zinc-300">{formatCurrency(item.unit_price)}</td>
                                         <td className="p-3">
                                             <input
                                                 type="number"
                                                 min="0"
-                                                max={item.quantity}
+                                                max={item.maxReturn ?? item.quantity}
+                                                disabled={item.maxReturn === 0}
                                                 value={item.returnQty}
                                                 onChange={(e) => handleQtyChange(item.id, e.target.value)}
                                                 className="w-16 bg-zinc-900 border border-dark-border rounded px-2 py-1 text-white text-center focus:outline-none focus:border-accent-primary"

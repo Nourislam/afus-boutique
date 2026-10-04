@@ -7,6 +7,7 @@ import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Search, Trash2 } from 'lucide-react';
 import { toast } from '../ui/Toast';
+import { translateError } from '../../i18n/errors';
 import { variantLabel } from '../../lib/clothing';
 
 export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }) {
@@ -174,7 +175,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
             onClose();
         } catch (error) {
             console.error('Failed to create PO:', error);
-            toast.error(t('po.createFailed'));
+            toast.error(`${t('po.createFailed')} — ${translateError(error)}`);
         } finally {
             setLoading(false);
         }

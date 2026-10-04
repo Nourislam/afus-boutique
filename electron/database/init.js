@@ -17,6 +17,15 @@ function getDbPath() {
     return databasePath(app.getPath('userData'));
 }
 
+/**
+ * Parameters as sql.js accepts them. sql.js refuses `undefined` ("tried to
+ * bind a value of an unknown type"); an optional field the interface did not
+ * send is stored as NULL instead of making the whole statement fail.
+ */
+function bindable(params) {
+    return Array.isArray(params) ? params.map(value => (value === undefined ? null : value)) : params;
+}
+
 function timestampSuffix() {
     return new Date().toISOString().replace(/[:.]/g, '-');
 }
@@ -665,7 +674,7 @@ function runQuery(sql, params = []) {
     try {
         const stmt = db.prepare(sql);
         if (params.length > 0) {
-            stmt.bind(params);
+            stmt.bind(bindable(params));
         }
         const results = [];
         while (stmt.step()) {
@@ -682,7 +691,7 @@ function runQuery(sql, params = []) {
 
 function runInsert(sql, params = []) {
     try {
-        db.run(sql, params);
+        db.run(sql, bindable(params));
         if (transactionDepth === 0) {
             saveDatabase();
             // Notify listeners
@@ -702,7 +711,7 @@ function runInsert(sql, params = []) {
  * logs and returns false outside of transactions). Used by the newer services.
  */
 function runStatement(sql, params = []) {
-    db.run(sql, params);
+    db.run(sql, bindable(params));
     if (transactionDepth === 0) {
         saveDatabase();
         notifyChangeListeners();
@@ -757,5 +766,5 @@ function getOne(sql, params = []) {
 
 module.exports = {
     initDatabase, getDatabase, saveDatabase, runQuery, runInsert, runStatement, runTransaction,
-    getOne, getTableColumns, addDatabaseChangeListener, getDbPath,
+    getOne, getTableColumns, addDatabaseChangeListener, getDbPath, bindable,
 };

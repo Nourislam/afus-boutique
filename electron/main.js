@@ -874,7 +874,7 @@ ipcMain.handle('db:sales:create', (_, sale) => {
     sale.service_charge || 0, sale.tax_exempt ? 1 : 0]);
 
     for (const item of sale.items) {
-      const product = getOne('SELECT id, cost, has_variants FROM products WHERE id = ?', [item.product_id]);
+      const product = getOne('SELECT id, name, cost, has_variants, stock_quantity FROM products WHERE id = ?', [item.product_id]);
       const variant = item.variant_id
         ? getOne('SELECT * FROM product_variants WHERE id = ?', [item.variant_id])
         : null;
@@ -883,6 +883,19 @@ ipcMain.handle('db:sales:create', (_, sale) => {
       }
       if (product && product.has_variants && !variant) {
         throw catalog.codedError('VARIANT_REQUIRED', { product: item.product_name });
+      }
+      // Same rule as the sales screen, checked again here: a ticket put on hold
+      // or a cart opened before another sale cannot take more than the stock.
+      // Lines are read after the previous ones were taken off, so two lines of
+      // the same piece add up.
+      if (product) {
+        const available = variant ? (variant.stock_quantity || 0) : (product.stock_quantity || 0);
+        if (Number(item.quantity) > available) {
+          throw catalog.codedError('STOCK_INSUFFICIENT', {
+            product: variant ? `${product.name} (${catalog.variantLabel(variant)})` : product.name,
+            available,
+          });
+        }
       }
 
       // Cost snapshot for profit reports: variant cost if set, else product cost
@@ -1025,7 +1038,11 @@ ipcMain.handle('db:sales:getById', (_, id) => {
   `, [id]);
 
   if (sale) {
-    sale.items = runQuery('SELECT * FROM sale_items WHERE sale_id = ?', [id]);
+    // returned_quantity: pieces of the line already brought back (returns screen)
+    sale.items = runQuery(`
+      SELECT si.*, IFNULL((SELECT SUM(ri.quantity) FROM return_items ri WHERE ri.sale_item_id = si.id), 0) AS returned_quantity
+      FROM sale_items si WHERE si.sale_id = ?
+    `, [id]);
     sale.payments = runQuery('SELECT * FROM payments WHERE sale_id = ?', [id]);
   }
 
@@ -1125,7 +1142,9 @@ ipcMain.handle('db:held:create', (_, held) => {
   runInsert(`
     INSERT INTO held_transactions (id, employee_id, customer_id, items_json, subtotal, notes)
     VALUES (?, ?, ?, ?, ?, ?)
-  `, [held.id, held.employee_id, held.customer_id, JSON.stringify(held.items), held.subtotal, held.notes]);
+  `, [held.id, held.employee_id, held.customer_id,
+    // Lines as a list; text that is already JSON is kept as it is
+    typeof held.items === 'string' ? held.items : JSON.stringify(held.items || []), held.subtotal, held.notes]);
   return held;
 });
 
@@ -1386,19 +1405,31 @@ ipcMain.handle('db:returns:getItems', (_, returnId) => {
   `, [returnId]);
 });
 
-ipcMain.handle('db:returns:create', (_, returnData) => {
-  // Insert the return record
+ipcMain.handle('db:returns:create', (_, returnData) => runTransaction(() => {
+  // One transaction: the return, its lines, the stock and the sale status are
+  // saved together, or not at all
   runInsert(`
     INSERT INTO returns (id, sale_id, return_number, total_refund, reason, employee_id)
     VALUES (?, ?, ?, ?, ?, ?)
   `, [returnData.id, returnData.sale_id, returnData.return_number, returnData.total_refund, returnData.reason, returnData.employee_id]);
 
   // Insert return items and restock the exact variant that was sold
-  runTransaction(() => {
+  {
     for (const item of returnData.items) {
       const saleItem = item.sale_item_id
-        ? getOne('SELECT product_id, variant_id FROM sale_items WHERE id = ?', [item.sale_item_id])
+        ? getOne('SELECT product_id, variant_id, product_name, variant_label, quantity FROM sale_items WHERE id = ?', [item.sale_item_id])
         : null;
+      // Never more pieces back than were sold on the line (earlier returns included)
+      if (saleItem) {
+        const already = getOne('SELECT IFNULL(SUM(quantity), 0) AS n FROM return_items WHERE sale_item_id = ?', [item.sale_item_id]).n;
+        const left = (Number(saleItem.quantity) || 0) - already;
+        if (Number(item.quantity) > left) {
+          throw catalog.codedError('RETURN_TOO_MANY', {
+            product: saleItem.variant_label ? `${saleItem.product_name} (${saleItem.variant_label})` : saleItem.product_name,
+            left: Math.max(0, left),
+          });
+        }
+      }
       const variantId = item.variant_id || (saleItem && saleItem.variant_id) || null;
       const productId = item.product_id || (saleItem && saleItem.product_id);
 
@@ -1419,7 +1450,7 @@ ipcMain.handle('db:returns:create', (_, returnData) => {
         });
       }
     }
-  });
+  }
 
   // Check if sale is fully or partially refunded
   const sale = getOne('SELECT total FROM sales WHERE id = ?', [returnData.sale_id]);
@@ -1438,7 +1469,7 @@ ipcMain.handle('db:returns:create', (_, returnData) => {
   logSystemAction('return_processed', `Processed Return: ${returnData.return_number}`, { returnId: returnData.id, saleId: returnData.sale_id, amount: returnData.total_refund }, returnData.employee_id);
 
   return returnData;
-});
+}));
 
 // ================================================
 // PHASE 2: ADVANCED FEATURES
@@ -2218,7 +2249,7 @@ ipcMain.handle('db:suppliers:getHistory', (_, supplierId) => {
 });
 
 // Record Supplier Payment
-ipcMain.handle('db:supplierPayments:create', (_, data) => { // data: { purchase_order_id, supplier_id, amount, payment_method, reference, notes }
+ipcMain.handle('db:supplierPayments:create', (_, data) => runTransaction(() => { // data: { purchase_order_id, supplier_id, amount, payment_method, reference, notes }
   const id = uuid();
   const { purchase_order_id, supplier_id, amount, payment_method, reference, notes } = data;
 
@@ -2257,7 +2288,7 @@ ipcMain.handle('db:supplierPayments:create', (_, data) => { // data: { purchase_
     console.error('Failed to record supplier payment:', error);
     throw error;
   }
-});
+}));
 
 // Create Purchase Return
 ipcMain.handle('db:purchaseReturns:create', (_, data) => {
@@ -2364,7 +2395,9 @@ ipcMain.handle('db:purchaseOrders:getById', (_, id) => {
   return po;
 });
 
-ipcMain.handle('db:purchaseOrders:create', (_, po) => {
+ipcMain.handle('db:purchaseOrders:create', (_, po) => runTransaction(() => {
+  // One transaction: the order and its lines are saved together, and an error
+  // reaches the interface instead of a "created" message for nothing
   const id = po.id || uuid();
   runInsert(`
     INSERT INTO purchase_orders (
@@ -2391,9 +2424,9 @@ ipcMain.handle('db:purchaseOrders:create', (_, po) => {
   }
 
   return { ...po, id };
-});
+}));
 
-ipcMain.handle('db:purchaseOrders:delete', (_, id) => {
+ipcMain.handle('db:purchaseOrders:delete', (_, id) => runTransaction(() => {
   // Check validation rules
   const po = getOne('SELECT status, amount_paid FROM purchase_orders WHERE id = ?', [id]);
 
@@ -2419,7 +2452,7 @@ ipcMain.handle('db:purchaseOrders:delete', (_, id) => {
     console.error('Failed to delete PO:', error);
     throw error;
   }
-});
+}));
 
 // GOODS RECEIVING (GRN)
 ipcMain.handle('db:receivings:create', (_, data) => {
@@ -2621,7 +2654,7 @@ ipcMain.handle('db:giftCards:update', (_, giftCard) => {
   return giftCard;
 });
 
-ipcMain.handle('db:giftCards:redeem', (_, { giftCardId, amount, saleId, employeeId }) => {
+ipcMain.handle('db:giftCards:redeem', (_, { giftCardId, amount, saleId, employeeId }) => runTransaction(() => {
   const giftCard = getOne('SELECT * FROM gift_cards WHERE id = ?', [giftCardId]);
   if (!giftCard || !giftCard.is_active) {
     throw new Error('Gift card not found or inactive');
@@ -2645,9 +2678,9 @@ ipcMain.handle('db:giftCards:redeem', (_, { giftCardId, amount, saleId, employee
 
   SyncManager.triggerSync();
   return { ...giftCard, current_balance: newBalance, is_active: !!isActive };
-});
+}));
 
-ipcMain.handle('db:giftCards:reload', (_, { giftCardId, amount, employeeId }) => {
+ipcMain.handle('db:giftCards:reload', (_, { giftCardId, amount, employeeId }) => runTransaction(() => {
   const giftCard = getOne('SELECT * FROM gift_cards WHERE id = ?', [giftCardId]);
   if (!giftCard) {
     throw new Error('Gift card not found');
@@ -2664,7 +2697,7 @@ ipcMain.handle('db:giftCards:reload', (_, { giftCardId, amount, employeeId }) =>
 
   SyncManager.triggerSync();
   return { ...giftCard, current_balance: newBalance, is_active: 1 };
-});
+}));
 
 ipcMain.handle('db:giftCards:getTransactions', (_, giftCardId) => {
   return runQuery(`
@@ -2720,7 +2753,7 @@ ipcMain.handle('db:bundles:getActive', () => {
   return bundles;
 });
 
-ipcMain.handle('db:bundles:create', (_, { bundle, items }) => {
+ipcMain.handle('db:bundles:create', (_, { bundle, items }) => runTransaction(() => {
   // Calculate original price and savings
   let originalPrice = 0;
   for (const item of items) {
@@ -2770,9 +2803,9 @@ ipcMain.handle('db:bundles:create', (_, { bundle, items }) => {
   }
 
   return { ...bundle, original_price: originalPrice, savings, items };
-});
+}));
 
-ipcMain.handle('db:bundles:update', (_, { bundle, items }) => {
+ipcMain.handle('db:bundles:update', (_, { bundle, items }) => runTransaction(() => {
   // Calculate original price and savings
   let originalPrice = 0;
   for (const item of items) {
@@ -2835,9 +2868,9 @@ ipcMain.handle('db:bundles:update', (_, { bundle, items }) => {
   }
 
   return { ...bundle, original_price: originalPrice, savings, items };
-});
+}));
 
-ipcMain.handle('db:bundles:delete', (_, id) => {
+ipcMain.handle('db:bundles:delete', (_, id) => runTransaction(() => {
   const bundle = getOne('SELECT * FROM bundles WHERE id = ?', [id]);
   if (!bundle) return true;
 
@@ -2860,9 +2893,9 @@ ipcMain.handle('db:bundles:delete', (_, id) => {
 
   runInsert('DELETE FROM bundles WHERE id = ?', [id]);
   return true;
-});
+}));
 
-ipcMain.handle('db:bundles:assemble', (_, { id, quantity }) => {
+ipcMain.handle('db:bundles:assemble', (_, { id, quantity }) => runTransaction(() => {
   const bundle = getOne('SELECT * FROM bundles WHERE id = ?', [id]);
   if (!bundle) throw new Error('Bundle not found');
 
@@ -2898,9 +2931,9 @@ ipcMain.handle('db:bundles:assemble', (_, { id, quantity }) => {
   runInsert('UPDATE bundles SET stock_quantity = COALESCE(stock_quantity, 0) + ? WHERE id = ?', [quantity, id]);
 
   return true;
-});
+}));
 
-ipcMain.handle('db:bundles:disassemble', (_, { id, quantity }) => {
+ipcMain.handle('db:bundles:disassemble', (_, { id, quantity }) => runTransaction(() => {
   const bundle = getOne('SELECT * FROM bundles WHERE id = ?', [id]);
   if (!bundle) throw new Error('Bundle not found');
 
@@ -2928,7 +2961,7 @@ ipcMain.handle('db:bundles:disassemble', (_, { id, quantity }) => {
   }
 
   return true;
-});
+}));
 
 // Promotions
 ipcMain.handle('db:promotions:getAll', () => {
@@ -3145,7 +3178,7 @@ ipcMain.handle('excel:export', (_, { data, dataType }) => {
 // ================================================
 // QUOTATIONS
 // ================================================
-ipcMain.handle('db:quotations:create', (_, quote) => {
+ipcMain.handle('db:quotations:create', (_, quote) => runTransaction(() => {
   runInsert(`
     INSERT INTO quotations (id, quote_number, customer_id, subtotal, tax_amount, discount_amount, total, notes, status, valid_until, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -3182,7 +3215,7 @@ ipcMain.handle('db:quotations:create', (_, quote) => {
     ]);
   }
   return quote;
-});
+}));
 
 ipcMain.handle('db:quotations:getAll', () => {
   return runQuery(`
@@ -3345,7 +3378,7 @@ ipcMain.handle('db:creditSales:getByCustomer', (_, customerId) => {
   `, [customerId]);
 });
 
-ipcMain.handle('db:creditSales:create', (_, creditSale) => {
+ipcMain.handle('db:creditSales:create', (_, creditSale) => runTransaction(() => {
   const invoiceNumber = creditSale.invoice_number || generateInvoiceNumber();
   const id = creditSale.id || uuid();
 
@@ -3375,7 +3408,7 @@ ipcMain.handle('db:creditSales:create', (_, creditSale) => {
   `, [creditSale.amount_due, creditSale.customer_id]);
 
   return { ...creditSale, id, invoice_number: invoiceNumber, due_date: dueDate };
-});
+}));
 
 ipcMain.handle('db:creditSales:update', (_, creditSale) => {
   runInsert(`
@@ -3388,7 +3421,7 @@ ipcMain.handle('db:creditSales:update', (_, creditSale) => {
 });
 
 // Credit Payments
-ipcMain.handle('db:creditPayments:create', (_, payment) => {
+ipcMain.handle('db:creditPayments:create', (_, payment) => runTransaction(() => {
   const id = payment.id || uuid();
 
   // Get the credit sale
@@ -3439,7 +3472,7 @@ ipcMain.handle('db:creditPayments:create', (_, payment) => {
 
   SyncManager.triggerSync();
   return { ...payment, id };
-});
+}));
 
 ipcMain.handle('db:creditPayments:getByCreditSale', (_, creditSaleId) => {
   return runQuery(`

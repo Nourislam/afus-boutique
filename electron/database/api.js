@@ -5,12 +5,12 @@
  * transaction).
  */
 const { v4: uuid } = require('uuid');
-const { getDatabase, runStatement, runTransaction } = require('./init');
+const { getDatabase, runStatement, runTransaction, bindable } = require('./init');
 
 function all(sql, params = []) {
     const stmt = getDatabase().prepare(sql);
     try {
-        stmt.bind(params);
+        stmt.bind(bindable(params));
         const rows = [];
         while (stmt.step()) rows.push(stmt.getAsObject());
         return rows;

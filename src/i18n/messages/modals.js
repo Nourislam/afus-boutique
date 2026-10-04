@@ -28,6 +28,7 @@ export default {
     'return.done': ["Return processed successfully", "Retour enregistré", "تم تسجيل الإرجاع"],
     'return.failed': ["Failed to process return", "Échec de l'enregistrement du retour", "تعذّر تسجيل الإرجاع"],
     'return.soldQty': ["Sold Qty", "Qté vendue", "الكمية المباعة"],
+    'return.alreadyReturned': ["{n} already returned", "{n} déjà retournée(s)", "{n} مُرجعة سابقاً"],
     'return.qty': ["Return Qty", "Qté retournée", "الكمية المرجعة"],
     'return.condition': ["Condition", "État", "الحالة"],
     'return.refund': ["Refund", "Remboursement", "الاسترجاع"],
