@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { create } from 'zustand';
 import { hasPermission as checkPermission, PERMISSIONS } from '../lib/permissions';
 
@@ -31,7 +32,7 @@ export const useAuthStore = create((set, get) => ({
                 set({ currentEmployee: employee, isAuthenticated: true });
                 return { success: true };
             }
-            return { success: false, error: 'Invalid PIN' };
+            return { success: false, error: t('login.invalidPin') };
         } catch (error) {
             return { success: false, error: error.message };
         }

@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useState, useEffect } from 'react';
 import { ShoppingBag, Link, Unlink, RefreshCw, Check, X, AlertTriangle, ChevronRight, Store, Plus, Trash2, ArrowLeftRight } from 'lucide-react';
 import { Button } from '../ui/Button';
@@ -5,6 +6,7 @@ import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { toast } from '../ui/Toast';
+import { formatDate as formatLocalDate } from '../../i18n/format';
 
 // Platform configurations
 const PLATFORMS = {
@@ -61,7 +63,7 @@ export function EcommerceSettings() {
             setConnections(data || []);
         } catch (error) {
             console.error('Failed to load connections:', error);
-            toast.error('Failed to load e-commerce connections');
+            toast.error(t('ecommerce.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -75,7 +77,7 @@ export function EcommerceSettings() {
         // Validate required fields
         for (const field of platform.fields) {
             if (field.required && !formData[field.key]) {
-                toast.error(`${field.label} is required`);
+                toast.error(t('ecommerce.fieldRequired', { field: t(`ecommerce.field.${field.key}`) }));
                 return;
             }
         }
@@ -92,36 +94,36 @@ export function EcommerceSettings() {
 
             if (result.success) {
                 if (result.testResult?.success) {
-                    toast.success(`Connected to ${result.testResult.details?.shopName || platform.name}!`);
+                    toast.success(t('ecommerce.connected', { name: result.testResult.details?.shopName || platform.name }));
                 } else {
-                    toast.warning(`Connection saved, but test failed: ${result.testResult?.message}`);
+                    toast.warning(t('ecommerce.savedTestFailed', { message: result.testResult?.message }));
                 }
                 await loadConnections();
                 setShowAddModal(false);
                 setFormData({});
                 setSelectedPlatform(null);
             } else {
-                toast.error(result.message || 'Failed to add connection');
+                toast.error(result.message || t('ecommerce.addFailed'));
             }
         } catch (error) {
             console.error('Failed to add connection:', error);
-            toast.error('Failed to add connection');
+            toast.error(t('ecommerce.addFailed'));
         } finally {
             setConnecting(false);
         }
     };
 
     const handleRemoveConnection = async (connectionId) => {
-        if (!confirm('Are you sure you want to remove this connection? All product mappings will be lost.')) {
+        if (!confirm(t('ecommerce.removeConfirm'))) {
             return;
         }
 
         try {
             await window.electronAPI.ecommerce.removeConnection(connectionId);
-            toast.success('Connection removed');
+            toast.success(t('ecommerce.removed'));
             await loadConnections();
         } catch (error) {
-            toast.error('Failed to remove connection');
+            toast.error(t('ecommerce.removeFailed'));
         }
     };
 
@@ -130,13 +132,13 @@ export function EcommerceSettings() {
         try {
             const result = await window.electronAPI.ecommerce.sync(connectionId);
             if (result.success) {
-                toast.success(`Sync complete! Pushed: ${result.results?.pushed || 0}, Pulled: ${result.results?.pulled || 0}`);
+                toast.success(t('ecommerce.syncDone', { pushed: result.results?.pushed || 0, pulled: result.results?.pulled || 0 }));
             } else {
-                toast.error(result.message || 'Sync failed');
+                toast.error(result.message || t('ecommerce.syncFailed'));
             }
             await loadConnections();
         } catch (error) {
-            toast.error('Sync failed');
+            toast.error(t('ecommerce.syncFailed'));
         } finally {
             setSyncing(prev => ({ ...prev, [connectionId]: false }));
         }
@@ -147,12 +149,12 @@ export function EcommerceSettings() {
         try {
             const result = await window.electronAPI.ecommerce.testConnection(connectionId);
             if (result.success) {
-                toast.success(`Connection successful: ${result.message}`);
+                toast.success(t('ecommerce.testOk', { message: result.message }));
             } else {
-                toast.error(`Test failed: ${result.message}`);
+                toast.error(t('ecommerce.testFailed', { message: result.message }));
             }
         } catch (error) {
-            toast.error('Test failed');
+            toast.error(t('ecommerce.testError'));
         } finally {
             setSyncing(prev => ({ ...prev, [connectionId]: false }));
         }
@@ -170,7 +172,7 @@ export function EcommerceSettings() {
             setMappings(mappingsData || []);
             setUnmappedProducts(unmappedData || []);
         } catch (error) {
-            toast.error('Failed to load product mappings');
+            toast.error(t('ecommerce.mappingsFailed'));
         }
     };
 
@@ -181,7 +183,7 @@ export function EcommerceSettings() {
         try {
             const result = await window.electronAPI.ecommerce.autoMapProducts(selectedConnection.id);
             if (result.success) {
-                toast.success(`Auto-mapped ${result.results?.mapped || 0} products by SKU`);
+                toast.success(t('ecommerce.autoMapped', { n: result.results?.mapped || 0 }));
                 // Reload mappings
                 const [mappingsData, unmappedData] = await Promise.all([
                     window.electronAPI.ecommerce.getMappings(selectedConnection.id),
@@ -190,10 +192,10 @@ export function EcommerceSettings() {
                 setMappings(mappingsData || []);
                 setUnmappedProducts(unmappedData || []);
             } else {
-                toast.error('Auto-mapping failed');
+                toast.error(t('ecommerce.autoMapFailed'));
             }
         } catch (error) {
-            toast.error('Auto-mapping failed');
+            toast.error(t('ecommerce.autoMapFailed'));
         } finally {
             setAutoMapping(false);
         }
@@ -202,10 +204,10 @@ export function EcommerceSettings() {
     const handleDeleteMapping = async (mappingId) => {
         try {
             await window.electronAPI.ecommerce.deleteMapping(mappingId);
-            toast.success('Mapping removed');
+            toast.success(t('ecommerce.mappingRemoved'));
             setMappings(prev => prev.filter(m => m.id !== mappingId));
         } catch (error) {
-            toast.error('Failed to remove mapping');
+            toast.error(t('ecommerce.mappingRemoveFailed'));
         }
     };
 
@@ -215,10 +217,10 @@ export function EcommerceSettings() {
         const now = new Date();
         const diff = (now - date) / 1000 / 60; // minutes
         
-        if (diff < 1) return 'Just now';
-        if (diff < 60) return `${Math.floor(diff)} min ago`;
-        if (diff < 1440) return `${Math.floor(diff / 60)} hours ago`;
-        return date.toLocaleDateString();
+        if (diff < 1) return t('ecommerce.justNow');
+        if (diff < 60) return t('ecommerce.minutesAgo', { n: Math.floor(diff) });
+        if (diff < 1440) return t('ecommerce.hoursAgo', { n: Math.floor(diff / 60) });
+        return formatLocalDate(date, 'date');
     };
 
     if (loading) {
@@ -238,13 +240,13 @@ export function EcommerceSettings() {
                         <ShoppingBag className="w-6 h-6 text-teal-400" />
                     </div>
                     <div>
-                        <h3 className="font-semibold">E-commerce Integrations</h3>
-                        <p className="text-sm text-zinc-400">Connect your online stores for two-way inventory sync</p>
+                        <h3 className="font-semibold">{t('ecommerce.title')}</h3>
+                        <p className="text-sm text-zinc-400">{t('ecommerce.subtitle')}</p>
                     </div>
                 </div>
                 <Button onClick={() => setShowAddModal(true)}>
                     <Plus className="w-4 h-4" />
-                    Add Connection
+                    {t('ecommerce.add')}
                 </Button>
             </div>
 
@@ -252,11 +254,10 @@ export function EcommerceSettings() {
             <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-200 text-sm">
                 <p className="font-semibold flex items-center gap-2 mb-1">
                     <ArrowLeftRight className="w-4 h-4" />
-                    Two-Way Sync
+                    {t('ecommerce.twoWay')}
                 </p>
                 <p className="opacity-80">
-                    Products are matched by SKU. When stock changes in POS, it pushes to your online stores. 
-                    Changes from online stores are pulled during sync. Newest value wins on conflicts.
+                    {t('ecommerce.syncText')}
                 </p>
             </div>
 
@@ -264,8 +265,8 @@ export function EcommerceSettings() {
             {connections.length === 0 ? (
                 <div className="text-center py-12 text-zinc-500">
                     <Store className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No e-commerce stores connected yet.</p>
-                    <p className="text-sm mt-1">Click &ldquo;Add Connection&rdquo; to get started.</p>
+                    <p>{t('ecommerce.none')}</p>
+                    <p className="text-sm mt-1">{t('ecommerce.noneHint')}</p>
                 </div>
             ) : (
                 <div className="grid gap-4">
@@ -288,12 +289,12 @@ export function EcommerceSettings() {
                                             {conn.is_active ? (
                                                 <span className="flex items-center gap-1 text-sm text-green-400">
                                                     <Check className="w-4 h-4" />
-                                                    Connected
+                                                    {t('ecommerce.connectedStatus')}
                                                 </span>
                                             ) : (
                                                 <span className="flex items-center gap-1 text-sm text-red-400">
                                                     <X className="w-4 h-4" />
-                                                    Disconnected
+                                                    {t('ecommerce.disconnected')}
                                                 </span>
                                             )}
                                         </div>
@@ -305,7 +306,7 @@ export function EcommerceSettings() {
                                             {conn.last_sync_status === 'error' && (
                                                 <span className="flex items-center gap-1 text-red-400">
                                                     <AlertTriangle className="w-4 h-4" />
-                                                    Error
+                                                    {t('common.error')}
                                                 </span>
                                             )}
                                         </div>
@@ -316,7 +317,7 @@ export function EcommerceSettings() {
                                                 onClick={() => openMappingModal(conn)}
                                             >
                                                 <Link className="w-4 h-4" />
-                                                Mappings
+                                                {t('ecommerce.mappings')}
                                             </Button>
                                             <Button 
                                                 size="sm" 
@@ -325,14 +326,14 @@ export function EcommerceSettings() {
                                                 loading={syncing[conn.id]}
                                             >
                                                 <RefreshCw className="w-4 h-4" />
-                                                Sync Now
+                                                {t('ecommerce.syncNow')}
                                             </Button>
                                             <Button 
                                                 size="sm" 
                                                 variant="ghost"
                                                 onClick={() => handleTestConnection(conn.id)}
                                             >
-                                                Test
+                                                {t('ecommerce.test')}
                                             </Button>
                                             <Button 
                                                 size="sm" 
@@ -352,23 +353,23 @@ export function EcommerceSettings() {
             )}
 
             {/* Add Connection Modal */}
-            <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); setSelectedPlatform(null); setFormData({}); }} title="Add E-commerce Connection">
+            <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); setSelectedPlatform(null); setFormData({}); }} title={t('ecommerce.addTitle')}>
                 <ModalBody>
                     {!selectedPlatform ? (
                         <div className="grid gap-4">
-                            <p className="text-zinc-400 mb-2">Select a platform to connect:</p>
+                            <p className="text-zinc-400 mb-2">{t('ecommerce.selectPlatform')}</p>
                             {Object.entries(PLATFORMS).map(([key, platform]) => (
                                 <button
                                     key={key}
                                     onClick={() => setSelectedPlatform(key)}
-                                    className={`p-4 rounded-lg border-2 text-left transition-all hover:border-zinc-600 ${platform.borderColor} ${platform.bgColor} bg-opacity-10`}
+                                    className={`p-4 rounded-lg border-2 text-start transition-all hover:border-zinc-600 ${platform.borderColor} ${platform.bgColor} bg-opacity-10`}
                                 >
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-3">
                                             <Store className={`w-6 h-6 ${platform.color}`} />
                                             <div>
                                                 <div className="font-semibold">{platform.name}</div>
-                                                <div className="text-sm text-zinc-500">{platform.description}</div>
+                                                <div className="text-sm text-zinc-500">{t(`ecommerce.${key}Description`)}</div>
                                             </div>
                                         </div>
                                         <ChevronRight className="w-5 h-5 text-zinc-400" />
@@ -392,7 +393,7 @@ export function EcommerceSettings() {
                                             window.electronAPI.shell.openExternal(PLATFORMS[selectedPlatform].helpUrl);
                                         }}
                                     >
-                                        View Setup Guide →
+                                        {t('ecommerce.guide')}
                                     </a>
                                 </div>
                             </div>
@@ -400,7 +401,7 @@ export function EcommerceSettings() {
                             {PLATFORMS[selectedPlatform].fields.map(field => (
                                 <Input
                                     key={field.key}
-                                    label={field.label}
+                                    label={t(`ecommerce.field.${field.key}`)}
                                     type={field.type}
                                     placeholder={field.placeholder}
                                     value={formData[field.key] || ''}
@@ -421,12 +422,12 @@ export function EcommerceSettings() {
                             setShowAddModal(false);
                         }
                     }}>
-                        {selectedPlatform ? 'Back' : 'Cancel'}
+                        {selectedPlatform ? t('common.back') : t('common.cancel')}
                     </Button>
                     {selectedPlatform && (
                         <Button onClick={handleAddConnection} loading={connecting}>
                             <Link className="w-4 h-4" />
-                            Connect
+                            {t('ecommerce.connect')}
                         </Button>
                     )}
                 </ModalFooter>
@@ -439,12 +440,12 @@ export function EcommerceSettings() {
                         {/* Auto-map button */}
                         <div className="flex items-center justify-between p-4 bg-dark-tertiary rounded-lg">
                             <div>
-                                <h4 className="font-medium">Auto-Map by SKU</h4>
-                                <p className="text-sm text-zinc-500">Automatically match products with the same SKU</p>
+                                <h4 className="font-medium">{t('ecommerce.autoMapTitle')}</h4>
+                                <p className="text-sm text-zinc-500">{t('ecommerce.autoMapText')}</p>
                             </div>
                             <Button onClick={handleAutoMap} loading={autoMapping} variant="secondary">
                                 <ArrowLeftRight className="w-4 h-4" />
-                                Auto-Map Products
+                                {t('ecommerce.autoMapButton')}
                             </Button>
                         </div>
 
@@ -456,7 +457,7 @@ export function EcommerceSettings() {
                             </h4>
                             {mappings.length === 0 ? (
                                 <p className="text-sm text-zinc-500 p-4 bg-dark-tertiary rounded-lg">
-                                    No products mapped yet. Use Auto-Map or manually map products.
+                                    {t('ecommerce.noMappings')}
                                 </p>
                             ) : (
                                 <div className="space-y-2">
@@ -499,7 +500,7 @@ export function EcommerceSettings() {
                             </h4>
                             {unmappedProducts.length === 0 ? (
                                 <p className="text-sm text-zinc-500 p-4 bg-dark-tertiary rounded-lg">
-                                    All products with SKUs are mapped!
+                                    {t('ecommerce.allMapped')}
                                 </p>
                             ) : (
                                 <div className="space-y-2">
@@ -508,11 +509,11 @@ export function EcommerceSettings() {
                                             <div>
                                                 <div className="font-medium">{product.name}</div>
                                                 <div className="text-sm text-zinc-500">
-                                                    SKU: {product.sku || 'No SKU'} | Stock: {product.stock_quantity}
+                                                    SKU: {product.sku || t('barcode.noSku')} | Stock: {product.stock_quantity}
                                                 </div>
                                             </div>
                                             <span className="text-sm text-amber-400">
-                                                {product.sku ? 'Not found on platform' : 'Needs SKU'}
+                                                {product.sku ? t('ecommerce.notFound') : t('ecommerce.needsSku')}
                                             </span>
                                         </div>
                                     ))}
@@ -528,7 +529,7 @@ export function EcommerceSettings() {
                 </ModalBody>
                 <ModalFooter>
                     <Button variant="ghost" onClick={() => setShowMappingModal(false)}>
-                        Close
+                        {t('common.close')}
                     </Button>
                 </ModalFooter>
             </Modal>

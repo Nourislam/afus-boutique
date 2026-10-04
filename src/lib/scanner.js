@@ -10,8 +10,9 @@
  * OS produces are wrong (e.g. "&é" instead of "12", or Arabic letters). In the
  * default 'us' mode we therefore read the *physical* key (KeyboardEvent.code)
  * and translate it with a US table, which recovers the code exactly whatever
- * the active Windows layout is. The 'os' mode uses the produced characters
- * (for scanners configured for the same layout as Windows).
+ * the active Windows layout is. The 'azerty' mode does the same for scanners
+ * configured in French (AZERTY) mode, common in Algeria. The 'os' mode uses the
+ * produced characters (for scanners configured for the same layout as Windows).
  */
 
 const US_SHIFTED_DIGITS = ')!@#$%^&*(';
@@ -59,11 +60,44 @@ export function usCharFromCode({ code, shiftKey, capsLock = false }) {
     return null;
 }
 
+// French AZERTY keyboard, indexed by physical (US-named) key: [normal, shift]
+const AZERTY_LETTERS = { KeyQ: 'a', KeyW: 'z', KeyA: 'q', KeyZ: 'w', Semicolon: 'm' };
+const AZERTY_DIGIT_ROW = ['à', '&', 'é', '"', "'", '(', '-', 'è', '_', 'ç'];
+const AZERTY_PUNCTUATION = {
+    Minus: [')', '°'],
+    Equal: ['=', '+'],
+    BracketLeft: ['^', '¨'],
+    BracketRight: ['$', '£'],
+    Backslash: ['*', 'µ'],
+    Quote: ['ù', '%'],
+    KeyM: [',', '?'],
+    Comma: [';', '.'],
+    Period: [':', '/'],
+    Slash: ['!', '§'],
+    Backquote: ['²', '²'],
+    IntlBackslash: ['<', '>'],
+};
+
+/** Character a key would produce on a French AZERTY keyboard, or null. */
+export function azertyCharFromCode({ code, shiftKey, capsLock = false }) {
+    if (!code) return null;
+    const upper = shiftKey !== capsLock;
+    if (AZERTY_LETTERS[code]) return upper ? AZERTY_LETTERS[code].toUpperCase() : AZERTY_LETTERS[code];
+    const punct = AZERTY_PUNCTUATION[code];
+    if (punct) return shiftKey ? punct[1] : punct[0];
+    const m = /^Digit([0-9])$/.exec(code);
+    // On AZERTY the digits are the shifted symbols of the top row
+    if (m) return shiftKey !== capsLock ? m[1] : AZERTY_DIGIT_ROW[Number(m[1])];
+    if (/^Key[A-Z]$/.test(code)) return upper ? code[3] : code[3].toLowerCase();
+    return usCharFromCode({ code, shiftKey, capsLock });
+}
+
 /** Character for an event according to the chosen layout mode. */
 export function charFromEvent(event, layoutMode = 'us') {
-    if (layoutMode === 'us') {
+    if (layoutMode === 'us' || layoutMode === 'azerty') {
         const capsLock = typeof event.getModifierState === 'function' ? event.getModifierState('CapsLock') : !!event.capsLock;
-        const ch = usCharFromCode({ code: event.code, shiftKey: event.shiftKey, capsLock });
+        const fromCode = layoutMode === 'azerty' ? azertyCharFromCode : usCharFromCode;
+        const ch = fromCode({ code: event.code, shiftKey: event.shiftKey, capsLock });
         if (ch !== null) return ch;
     }
     return typeof event.key === 'string' && event.key.length === 1 ? event.key : null;

@@ -1,3 +1,6 @@
+import { t } from '../../i18n';
+import { currentLanguage } from '../../i18n';
+import { currencySymbolFor } from '../../i18n/format';
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -12,7 +15,7 @@ export default function OpeningCashDialog({ employee, onSuccess, onCancel }) {
 
     const handleSubmit = async () => {
         if (!amount || parseFloat(amount) < 0) {
-            toast.error('Please enter a valid amount');
+            toast.error(t('shift.enterValidAmount'));
             return;
         }
 
@@ -22,7 +25,7 @@ export default function OpeningCashDialog({ employee, onSuccess, onCancel }) {
             const result = await window.electronAPI.shifts.start({
                 employeeId: employee.id,
                 openingCash: parseFloat(amount),
-                notes: 'Shift started'
+                notes: t('shift.started')
             });
 
             if (result) {
@@ -31,7 +34,7 @@ export default function OpeningCashDialog({ employee, onSuccess, onCancel }) {
             }
         } catch (error) {
             console.error('Failed to start shift:', error);
-            toast.error(error.message || 'Failed to start shift');
+            toast.error(error.message || t('shift.startFailed'));
         } finally {
             setLoading(false);
         }
@@ -40,14 +43,14 @@ export default function OpeningCashDialog({ employee, onSuccess, onCancel }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="card w-full max-w-md p-6 animate-scale-in">
-                <h2 className="text-2xl font-bold mb-2">Opening Cash</h2>
+                <h2 className="text-2xl font-bold mb-2">{t('shift.openingCash')}</h2>
                 <p className="text-zinc-400 mb-6">
-                    Enter the starting cash amount for this shift.
+                    {t('shift.openingCashHint')}
                 </p>
 
                 <div className="mb-8">
                     <div className="flex items-center input w-full h-20 px-6 gap-3 bg-dark-tertiary focus-within:ring-2 focus-within:ring-accent-primary focus-within:border-transparent transition-all">
-                        <span className="text-zinc-400 text-xl font-medium whitespace-nowrap">{settings?.currencySymbol || '$'}</span>
+                        <span className="text-zinc-400 text-xl font-medium whitespace-nowrap">{currencySymbolFor(currentLanguage(), settings?.currency)}</span>
                         <input
                             type="number"
                             value={amount}
@@ -73,14 +76,14 @@ export default function OpeningCashDialog({ employee, onSuccess, onCancel }) {
                         className="btn btn-secondary flex-1"
                         disabled={loading}
                     >
-                        Cancel
+                        {t('common.cancel')}
                     </button>
                     <button
                         onClick={handleSubmit}
                         className="btn btn-primary flex-1 h-12 text-lg"
                         disabled={loading || !amount}
                     >
-                        {loading ? 'Starting Shift...' : 'Start Shift'}
+                        {loading ? t('shift.starting') : t('shift.start')}
                     </button>
                 </div>
             </div>

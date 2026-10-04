@@ -1,3 +1,6 @@
+import { t } from '../i18n';
+import { formatDate as formatLocalDate } from '../i18n/format';
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import {
     Plus,
@@ -54,25 +57,25 @@ export default function PurchaseOrdersPage() {
             setOrders(data);
         } catch (error) {
             console.error('Failed to fetch POs:', error);
-            toast.error('Failed to load purchase orders');
+            toast.error(t('po.loadFailed'));
         } finally {
             setIsLoading(false);
         }
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount || 0);
+        return formatMoney(amount || 0);
     };
 
     const handleDelete = async (poId) => {
-        if (!confirm('Are you sure you want to delete this purchase order? This cannot be undone.')) return;
+        if (!confirm(t('po.deleteConfirm'))) return;
         try {
             await window.electronAPI.purchaseOrders.delete(poId);
-            toast.success('Purchase Order deleted');
+            toast.success(t('po.deleted'));
             fetchOrders();
         } catch (error) {
             console.error(error);
-            toast.error(error.message || 'Failed to delete PO');
+            toast.error(error.message || t('po.deleteFailed'));
         }
     };
 
@@ -107,30 +110,30 @@ export default function PurchaseOrdersPage() {
 
     const handleSendEmail = async () => {
         if (!emailAddress) {
-            toast.error('Please enter an email address');
+            toast.error(t('receipt.enterEmail'));
             return;
         }
         setShowEmailModal(false);
-        toast.info('Sending email...');
+        toast.info(t('po.sending'));
         try {
             await window.electronAPI.email.sendPurchaseOrder({ to: emailAddress, po: emailPO });
-            toast.success('Email sent successfully');
+            toast.success(t('po.sent'));
         } catch (error) {
             console.error('Email error:', error);
-            toast.error('Failed to send email');
+            toast.error(t('receipt.emailFailed'));
         }
     };
 
     const handleSavePdf = async (po) => {
-        toast.info('Generating PDF...');
+        toast.info(t('po.generatingPdf'));
         try {
             const pdfPath = await window.electronAPI.purchaseOrders.savePdf(po);
             if (pdfPath) {
-                toast.success('PDF saved successfully');
+                toast.success(t('po.pdfSaved'));
             }
         } catch (error) {
             console.error('PDF error:', error);
-            toast.error('Failed to generate PDF');
+            toast.error(t('po.pdfFailed'));
         }
     };
 
@@ -138,21 +141,21 @@ export default function PurchaseOrdersPage() {
         <div className="h-full flex flex-col">
             <div className="p-6 border-b border-dark-border flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold mb-1">Purchase Orders</h1>
-                    <p className="text-zinc-400">Manage supplier orders and incoming stock</p>
+                    <h1 className="text-2xl font-bold mb-1">{t('po.title')}</h1>
+                    <p className="text-zinc-400">{t('po.subtitle')}</p>
                 </div>
                 <div className="flex gap-3">
                     <Button onClick={() => setShowReportsModal(true)} variant="secondary" className="border-blue-500/20 text-blue-500 hover:bg-blue-500/10">
-                        <BarChart3 className="w-5 h-5 mr-2" />
-                        Reports
+                        <BarChart3 className="w-5 h-5 me-2" />
+                        {t('reports.title')}
                     </Button>
                     <Button onClick={() => setShowReorderModal(true)} variant="secondary" className="border-amber-500/20 text-amber-500 hover:bg-amber-500/10">
-                        <Zap className="w-5 h-5 mr-2" />
-                        Smart Reorder
+                        <Zap className="w-5 h-5 me-2" />
+                        {t('po.smartReorder')}
                     </Button>
                     <Button onClick={() => setShowCreateModal(true)}>
-                        <Plus className="w-5 h-5 mr-2" />
-                        New Order
+                        <Plus className="w-5 h-5 me-2" />
+                        {t('po.new')}
                     </Button>
                 </div>
             </div>
@@ -168,7 +171,7 @@ export default function PurchaseOrdersPage() {
                                         <FileText className="w-6 h-6" />
                                     </div>
                                     <div className="min-w-0">
-                                        <h3 className="font-semibold text-lg truncate">{po.supplier_name || 'Unknown Supplier'}</h3>
+                                        <h3 className="font-semibold text-lg truncate">{po.supplier_name || t('po.unknownSupplier')}</h3>
                                         <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
                                             <span className="flex items-center gap-1">
                                                 <Package className="w-3 h-3" />
@@ -176,7 +179,7 @@ export default function PurchaseOrdersPage() {
                                             </span>
                                             <span className="flex items-center gap-1">
                                                 <Calendar className="w-3 h-3" />
-                                                {new Date(po.created_at).toLocaleDateString()}
+                                                {formatLocalDate(po.created_at, 'date')}
                                             </span>
                                         </div>
                                     </div>
@@ -184,8 +187,8 @@ export default function PurchaseOrdersPage() {
 
                                 {/* Center: Amount + Status */}
                                 <div className="flex items-center gap-6">
-                                    <div className="text-right">
-                                        <p className="text-xs text-zinc-500 uppercase tracking-wide">Total Amount</p>
+                                    <div className="text-end">
+                                        <p className="text-xs text-zinc-500 uppercase tracking-wide">{t('pos.totalAmount')}</p>
                                         <p className="font-bold text-lg">{formatCurrency(po.total)}</p>
                                         {po.amount_paid > 0 && (
                                             <p className="text-xs text-green-400">Paid: {formatCurrency(po.amount_paid)}</p>
@@ -206,21 +209,21 @@ export default function PurchaseOrdersPage() {
                                 </div>
 
                                 {/* Right: Action Buttons - Consistent Row */}
-                                <div className="flex items-center gap-2 border-l border-dark-border pl-4">
+                                <div className="flex items-center gap-2 border-s border-dark-border ps-4">
                                     {/* Delete - only if not received and no payments */}
                                     {po.status !== 'received' && (!po.amount_paid || po.amount_paid === 0) && (
-                                        <Button size="sm" variant="ghost" onClick={() => handleDelete(po.id)} title="Delete Order">
+                                        <Button size="sm" variant="ghost" onClick={() => handleDelete(po.id)} title={t('po.delete')}>
                                             <Trash2 className="w-4 h-4 text-red-400 hover:text-red-300" />
                                         </Button>
                                     )}
 
-                                    <Button size="sm" variant="ghost" onClick={() => handleSavePdf(po)} title="Save PDF">
+                                    <Button size="sm" variant="ghost" onClick={() => handleSavePdf(po)} title={t('gift.savePdf')}>
                                         <FileText className="w-4 h-4" />
                                     </Button>
-                                    <Button size="sm" variant="ghost" onClick={() => handleEmailClick(po)} title="Email PO">
+                                    <Button size="sm" variant="ghost" onClick={() => handleEmailClick(po)} title={t('po.email')}>
                                         <Mail className="w-4 h-4" />
                                     </Button>
-                                    <Button size="sm" variant="ghost" onClick={() => handleViewDetails(po)} title="View Details">
+                                    <Button size="sm" variant="ghost" onClick={() => handleViewDetails(po)} title={t('credit.view')}>
                                         <Eye className="w-4 h-4" />
                                     </Button>
 
@@ -228,22 +231,22 @@ export default function PurchaseOrdersPage() {
 
                                     {/* Pay Button - if not fully paid */}
                                     {po.payment_status !== 'paid' && (
-                                        <Button size="sm" variant="secondary" onClick={() => handlePayClick(po)} title="Record Payment">
-                                            <CreditCard className="w-4 h-4 mr-1.5" />
-                                            Pay
+                                        <Button size="sm" variant="secondary" onClick={() => handlePayClick(po)} title={t('credit.recordPayment')}>
+                                            <CreditCard className="w-4 h-4 me-1.5" />
+                                            {t('po.pay')}
                                         </Button>
                                     )}
 
                                     {/* Primary Status Action */}
                                     {po.status === 'received' ? (
                                         <Button size="sm" variant="secondary" onClick={() => handleReturnClick(po)}>
-                                            <RefreshCcw className="w-4 h-4 mr-1.5" />
-                                            Return
+                                            <RefreshCcw className="w-4 h-4 me-1.5" />
+                                            {t('po.return')}
                                         </Button>
                                     ) : (
                                         <Button size="sm" variant="primary" onClick={() => handleReceiveStock(po.id)}>
-                                            <CheckCircle className="w-4 h-4 mr-1.5" />
-                                            Receive
+                                            <CheckCircle className="w-4 h-4 me-1.5" />
+                                            {t('po.receive')}
                                         </Button>
                                     )}
                                 </div>
@@ -253,7 +256,7 @@ export default function PurchaseOrdersPage() {
 
                     {orders.length === 0 && !isLoading && (
                         <div className="text-center py-12 text-zinc-500">
-                            <p>No purchase orders found.</p>
+                            <p>{t('po.none')}</p>
                         </div>
                     )}
                 </div>
@@ -270,12 +273,12 @@ export default function PurchaseOrdersPage() {
             />
 
             {/* Email Modal */}
-            <Modal isOpen={showEmailModal} onClose={() => setShowEmailModal(false)} title="Send Purchase Order">
+            <Modal isOpen={showEmailModal} onClose={() => setShowEmailModal(false)} title={t('po.sendTitle')}>
                 <ModalBody>
                     <div className="space-y-4">
-                        <p className="text-zinc-400">Send this purchase order to the supplier via email.</p>
+                        <p className="text-zinc-400">{t('po.sendText')}</p>
                         <Input
-                            label="Supplier Email"
+                            label={t('po.supplierEmail')}
                             type="email"
                             value={emailAddress}
                             onChange={(e) => setEmailAddress(e.target.value)}
@@ -284,10 +287,10 @@ export default function PurchaseOrdersPage() {
                     </div>
                 </ModalBody>
                 <ModalFooter>
-                    <Button variant="secondary" onClick={() => setShowEmailModal(false)}>Cancel</Button>
+                    <Button variant="secondary" onClick={() => setShowEmailModal(false)}>{t('common.cancel')}</Button>
                     <Button onClick={handleSendEmail}>
-                        <Mail className="w-4 h-4 mr-2" />
-                        Send Email
+                        <Mail className="w-4 h-4 me-2" />
+                        {t('receipt.send')}
                     </Button>
                 </ModalFooter>
             </Modal>
@@ -308,7 +311,7 @@ export default function PurchaseOrdersPage() {
                 isOpen={showReturnModal}
                 onClose={() => setShowReturnModal(false)}
                 onComplete={() => {
-                    toast.success('Return Processed');
+                    toast.success(t('po.returnDone'));
                     fetchOrders();
                     setShowReturnModal(false);
                 }}

@@ -2,25 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { BrowserWindow } = require('electron');
+const { translator, formatMoney, formatDate, variantLabel, paymentLabel } = require('../i18n');
 
 class ReceiptService {
     constructor() {
         this.printWindow = null;
     }
 
-    formatCurrency(amount, currency = 'USD') {
-        try {
-            return new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: currency
-            }).format(amount || 0);
-        } catch (e) {
-            // Fallback if currency code is invalid
-            return new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD'
-            }).format(amount || 0);
-        }
+    formatCurrency(amount, currency = 'DZD', lang) {
+        return formatMoney(amount, lang, currency);
     }
 
     // ... (rest of methods until print)
@@ -130,70 +120,74 @@ class ReceiptService {
             return this.generateCreditPaymentReceiptHtml(data, storeSettings);
         }
 
+        const T = translator(storeSettings.defaultLanguage);
+        const esc = (v) => this.escapeHtml(v);
+        const money = (v) => formatMoney(v, T.lang, storeSettings.currency);
         const settings = {
-            name: storeSettings.businessName || 'Your Business Name',
-            address: storeSettings.businessAddress || '123 Business Street',
-            phone: storeSettings.businessPhone || '(555) 123-4567',
-            email: storeSettings.businessEmail || 'business@email.com',
+            ...storeSettings,
+            name: storeSettings.businessName || '',
+            address: [storeSettings.businessAddress, storeSettings.businessCity, storeSettings.businessWilaya].filter(Boolean).join(', '),
+            phone: storeSettings.businessPhone || '',
+            email: storeSettings.businessEmail || '',
             website: storeSettings.businessWebsite || '',
             poSignatureName: storeSettings.poSignatureName || '',
-            poSignatureTitle: storeSettings.poSignatureTitle || 'Authorized Signatory',
-            currencySymbol: storeSettings.currencySymbol || '$',
-            ...storeSettings
+            poSignatureTitle: storeSettings.poSignatureTitle || T('doc.signatory'),
         };
+        const legal = [
+            ['legal.rc', storeSettings.businessRc],
+            ['legal.nif', storeSettings.businessTaxId],
+            ['legal.nis', storeSettings.businessNis],
+            ['legal.ai', storeSettings.businessAi],
+        ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${T(k)}: ${esc(v)}`).join(' · ');
 
-        let dateStr;
-        try {
-            dateStr = data.created_at ? new Date(data.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-        } catch (e) {
-            dateStr = new Date().toLocaleDateString();
-        }
+        const dateStr = formatDate(data.created_at, T.lang, false);
 
         // Generate items table rows
         const itemsHtml = (data.items || []).map((item, index) => `
             <tr>
                 <td class="item-num">${index + 1}</td>
                 <td class="item-desc">
-                    <strong>${item.product_name}</strong>
-                    ${item.sku ? `<br><span class="sku">SKU: ${item.sku}</span>` : ''}
+                    <strong>${esc(item.product_name)}</strong>
+                    ${variantLabel(item, T.lang) ? ` — ${esc(variantLabel(item, T.lang))}` : ''}
+                    ${item.sku ? `<br><span class="sku">SKU: ${esc(item.sku)}</span>` : ''}
                 </td>
                 <td class="item-qty">${item.quantity}</td>
-                <td class="item-price">${this.formatCurrency(item.unit_price || item.unit_cost, settings.currency)}</td>
-                <td class="item-total">${this.formatCurrency(item.total || item.total_cost, settings.currency)}</td>
+                <td class="item-price">${money(item.unit_price || item.unit_cost)}</td>
+                <td class="item-total">${money(item.total || item.total_cost)}</td>
             </tr>
         `).join('');
 
         // Determine document type specifics
-        let docTitle = 'RECEIPT';
+        let docTitle = T('doc.receipt');
         let docNumber = data.receipt_number || data.id?.slice(0, 8);
         let supplierSection = '';
         let notesSection = '';
         let signatureSection = '';
 
         if (type === 'purchase_order') {
-            docTitle = 'PURCHASE ORDER';
+            docTitle = T('doc.purchaseOrder');
             docNumber = data.po_number || data.id?.slice(0, 8);
 
             supplierSection = `
                 <div class="info-grid">
                     <div class="info-box vendor">
-                        <div class="info-box-header">VENDOR</div>
+                        <div class="info-box-header">${T('doc.vendor')}</div>
                         <div class="info-box-content">
-                            <div class="company-name">${data.supplier_name || 'Supplier Name'}</div>
+                            <div class="company-name">${esc(data.supplier_name || T('doc.supplierDefault'))}</div>
                             ${data.supplier_address ? `<div class="detail">${data.supplier_address}</div>` : ''}
-                            ${data.supplier_phone ? `<div class="detail"><strong>Phone:</strong> ${data.supplier_phone}</div>` : ''}
-                            ${data.supplier_email ? `<div class="detail"><strong>Email:</strong> ${data.supplier_email}</div>` : ''}
-                            ${data.supplier_contact_person ? `<div class="detail"><strong>Contact:</strong> ${data.supplier_contact_person}</div>` : ''}
-                            ${data.supplier_website ? `<div class="detail"><strong>Website:</strong> ${data.supplier_website}</div>` : ''}
+                            ${data.supplier_phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> ${esc(data.supplier_phone)}</div>` : ''}
+                            ${data.supplier_email ? `<div class="detail"><strong>${T('doc.email')}:</strong> ${esc(data.supplier_email)}</div>` : ''}
+                            ${data.supplier_contact_person ? `<div class="detail"><strong>${T('doc.contact')}:</strong> ${esc(data.supplier_contact_person)}</div>` : ''}
+                            ${data.supplier_website ? `<div class="detail"><strong>${T('doc.website')}:</strong> ${esc(data.supplier_website)}</div>` : ''}
                         </div>
                     </div>
                     <div class="info-box ship-to">
-                        <div class="info-box-header">SHIP TO</div>
+                        <div class="info-box-header">${T('doc.shipTo')}</div>
                         <div class="info-box-content">
                             <div class="company-name">${settings.name}</div>
                             <div class="detail">${settings.address}</div>
-                            <div class="detail"><strong>Phone:</strong> ${settings.phone}</div>
-                            <div class="detail"><strong>Email:</strong> ${settings.email}</div>
+                            ${settings.phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> ${esc(settings.phone)}</div>` : ''}
+                            ${settings.email ? `<div class="detail"><strong>${T('doc.email')}:</strong> ${esc(settings.email)}</div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -201,8 +195,8 @@ class ReceiptService {
 
             notesSection = data.notes ? `
                 <div class="notes-section">
-                    <div class="notes-header">Notes / Special Instructions</div>
-                    <div class="notes-content">${data.notes}</div>
+                    <div class="notes-header">${T('doc.notes')}</div>
+                    <div class="notes-content">${esc(data.notes)}</div>
                 </div>
             ` : '';
 
@@ -232,35 +226,35 @@ class ReceiptService {
                         `}
                         <div class="signature-name">${settings.poSignatureName || '________________________'}</div>
                         <div class="signature-title">${settings.poSignatureTitle}</div>
-                        <div class="signature-date">Date: ${dateStr}</div>
+                        <div class="signature-date">${T('doc.date')}: ${dateStr}</div>
                     </div>
                     <div class="terms-box">
-                        <div class="terms-header">Terms & Conditions</div>
+                        <div class="terms-header">${T('doc.terms')}</div>
                         <ul class="terms-list">
-                            <li>Please send goods as per specifications above</li>
-                            <li>Invoice must quote this PO number</li>
-                            <li>Goods received subject to inspection</li>
+                            <li>${T('doc.term1')}</li>
+                            <li>${T('doc.term2')}</li>
+                            <li>${T('doc.term3')}</li>
                         </ul>
                     </div>
                 </div>
             `;
         } else if (type === 'quotation') {
-            docTitle = 'QUOTATION';
+            docTitle = T('doc.quotation');
             docNumber = data.quote_number || data.id?.slice(0, 8);
             supplierSection = `
                 <div class="info-grid">
                     <div class="info-box">
-                        <div class="info-box-header">PREPARED FOR</div>
+                        <div class="info-box-header">${T('doc.preparedFor')}</div>
                         <div class="info-box-content">
-                            <div class="company-name">${data.customer_name || 'Customer'}</div>
+                            <div class="company-name">${esc(data.customer_name || T('doc.customerDefault'))}</div>
                             ${data.customer_email ? `<div class="detail">${data.customer_email}</div>` : ''}
                             ${data.customer_phone ? `<div class="detail">${data.customer_phone}</div>` : ''}
                         </div>
                     </div>
                     <div class="info-box">
-                        <div class="info-box-header">VALID UNTIL</div>
+                        <div class="info-box-header">${T('doc.validUntil')}</div>
                         <div class="info-box-content">
-                            <div class="company-name">${data.valid_until ? new Date(data.valid_until).toLocaleDateString() : '30 Days'}</div>
+                            <div class="company-name">${data.valid_until ? formatDate(data.valid_until, T.lang, false) : T('doc.validDefault')}</div>
                         </div>
                     </div>
                 </div>
@@ -269,11 +263,10 @@ class ReceiptService {
 
         return `
             <!DOCTYPE html>
-            <html>
+            <html lang="${T.lang}" dir="${T.dir}">
             <head>
                 <meta charset="UTF-8">
                 <style>
-                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
                     
                     * {
                         margin: 0;
@@ -282,7 +275,7 @@ class ReceiptService {
                     }
                     
                     body {
-                        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                        font-family: ${T.lang === 'ar' ? 'Tahoma, Arial, sans-serif' : "'Segoe UI', Arial, sans-serif"};
                         font-size: 12px;
                         line-height: 1.5;
                         color: #1a1a2e;
@@ -321,7 +314,7 @@ class ReceiptService {
                     }
                     
                     .doc-info {
-                        text-align: right;
+                        text-align: end;
                     }
                     
                     .doc-title {
@@ -434,8 +427,8 @@ class ReceiptService {
                     .item-num { width: 40px; text-align: center; color: #94a3b8; }
                     .item-desc { }
                     .item-qty { width: 60px; text-align: center; }
-                    .item-price { width: 100px; text-align: right; }
-                    .item-total { width: 100px; text-align: right; font-weight: 600; color: #0f172a; }
+                    .item-price { width: 100px; text-align: end; }
+                    .item-total { width: 100px; text-align: end; font-weight: 600; color: #0f172a; }
                     
                     .sku { color: #94a3b8; font-size: 10px; }
                     
@@ -568,7 +561,7 @@ class ReceiptService {
                     
                     .terms-list li::before {
                         content: "•";
-                        margin-right: 8px;
+                        margin-inline-end: 8px;
                         color: #0ea5e9;
                     }
                     
@@ -586,29 +579,30 @@ class ReceiptService {
             <body>
                 <div class="header">
                     <div class="company-info">
-                        <div class="company-logo">${settings.name}</div>
+                        <div class="company-logo">${esc(settings.name)}</div>
                         <div class="company-details">
-                            ${settings.address}<br>
-                            Phone: ${settings.phone}<br>
-                            Email: ${settings.email}
-                            ${settings.website ? `<br>Web: ${settings.website}` : ''}
+                            ${settings.address ? `${esc(settings.address)}<br>` : ''}
+                            ${settings.phone ? `${T('doc.phone')}: ${esc(settings.phone)}<br>` : ''}
+                            ${settings.email ? `${T('doc.email')}: ${esc(settings.email)}` : ''}
+                            ${settings.website ? `<br>${T('doc.website')}: ${esc(settings.website)}` : ''}
+                            ${legal ? `<br>${legal}` : ''}
                         </div>
                     </div>
                     <div class="doc-info">
                         <div class="doc-title">${docTitle}</div>
                         <div class="doc-meta">
                             <div class="doc-meta-row">
-                                <span class="doc-meta-label">Document No:</span>
+                                <span class="doc-meta-label">${T('doc.number')}:</span>
                                 <span class="doc-meta-value">${docNumber}</span>
                             </div>
                             <div class="doc-meta-row">
-                                <span class="doc-meta-label">Date:</span>
+                                <span class="doc-meta-label">${T('doc.date')}:</span>
                                 <span class="doc-meta-value">${dateStr}</span>
                             </div>
                             ${data.expected_date ? `
                             <div class="doc-meta-row">
-                                <span class="doc-meta-label">Expected Delivery:</span>
-                                <span class="doc-meta-value">${new Date(data.expected_date).toLocaleDateString()}</span>
+                                <span class="doc-meta-label">${T('doc.expected')}:</span>
+                                <span class="doc-meta-value">${formatDate(data.expected_date, T.lang, false)}</span>
                             </div>
                             ` : ''}
                         </div>
@@ -621,10 +615,10 @@ class ReceiptService {
                     <thead>
                         <tr>
                             <th>#</th>
-                            <th>Description</th>
-                            <th style="text-align:center">Qty</th>
-                            <th style="text-align:right">Unit Price</th>
-                            <th style="text-align:right">Amount</th>
+                            <th>${T('doc.description')}</th>
+                            <th style="text-align:center">${T('doc.qty')}</th>
+                            <th style="text-align:end">${T('doc.unitPrice')}</th>
+                            <th style="text-align:end">${T('doc.amount')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -635,31 +629,31 @@ class ReceiptService {
                 <div class="summary-section">
                     <div class="summary-box">
                         <div class="summary-row">
-                            <span>Subtotal</span>
-                            <span>${this.formatCurrency(data.subtotal, settings.currency)}</span>
+                            <span>${T('receipt.subtotal')}</span>
+                            <span>${money(data.subtotal)}</span>
                         </div>
                         <div class="summary-row">
-                            <span>${settings.taxName || 'Tax'} ${settings.taxType === 'inclusive' ? '(Incl.)' : ''}</span>
-                            <div style="text-align:right">
-                                ${data.tax_exempt ? '<span style="font-size:10px;color:#d97706;margin-right:4px">EXEMPT</span>' : ''}
-                                <span>${this.formatCurrency(data.tax_amount || 0, settings.currency)}</span>
+                            <span>${esc(settings.taxName || 'TVA')} ${settings.taxType === 'inclusive' ? `(${T('receipt.taxIncluded')})` : ''}</span>
+                            <div style="text-align:end">
+                                ${data.tax_exempt ? `<span style="font-size:10px;color:#d97706;margin-inline-end:4px">${T('doc.exempt')}</span>` : ''}
+                                <span>${money(data.tax_amount || 0)}</span>
                             </div>
                         </div>
                          ${(data.service_charge && data.service_charge > 0) ? `
                         <div class="summary-row">
-                            <span>Service Charge</span>
-                            <span>${this.formatCurrency(data.service_charge, settings.currency)}</span>
+                            <span>${T('receipt.serviceCharge')}</span>
+                            <span>${money(data.service_charge)}</span>
                         </div>
                         ` : ''}
                         ${(data.discount_amount && data.discount_amount > 0) ? `
                         <div class="summary-row">
-                            <span>Discount</span>
-                            <span style="color:#ef4444">-${this.formatCurrency(data.discount_amount, settings.currency)}</span>
+                            <span>${T('receipt.discount')}</span>
+                            <span style="color:#ef4444">-${money(data.discount_amount)}</span>
                         </div>
                         ` : ''}
                         <div class="summary-row total">
-                            <span>TOTAL</span>
-                            <span>${this.formatCurrency(data.total, settings.currency)}</span>
+                            <span>${T('receipt.total')}</span>
+                            <span>${money(data.total)}</span>
                         </div>
                     </div>
                 </div>
@@ -669,7 +663,7 @@ class ReceiptService {
                 ${signatureSection}
                 
                 <div class="footer">
-                    Thank you for your business!
+                    ${T('doc.thanks')}
                 </div>
             </body>
             </html>
@@ -736,53 +730,62 @@ class ReceiptService {
     }
 
     /**
-     * Thermal receipt (58 mm / 80 mm roll). Uses the shop information from the
-     * first-launch setup / Shop Settings: logo, name, phone, address, footer.
+     * Thermal receipt (58 mm / 80 mm roll) in the shop's language, right to
+     * left in Arabic. Uses the shop information from the setup / Settings:
+     * logo, name, address, wilaya, phone, legal numbers, header and footer.
      * storeSettings.shopLogoDataUri is filled in by the caller (main process).
      */
     generateThermalReceiptHtml(data, storeSettings = {}) {
         const esc = (v) => this.escapeHtml(v);
-        const currency = storeSettings.currency;
-        const money = (v) => this.formatCurrency(v, currency);
+        const T = translator(storeSettings.defaultLanguage);
+        const money = (v) => formatMoney(v, T.lang, storeSettings.currency);
         const paperWidthMm = parseInt(storeSettings.receiptPaperWidthMm, 10) === 58 ? 58 : 80;
         // Printable width is a little smaller than the paper on most printers
         const contentWidthMm = paperWidthMm === 58 ? 48 : 72;
 
+        const legal = [
+            ['legal.rc', storeSettings.businessRc],
+            ['legal.nif', storeSettings.businessTaxId],
+            ['legal.nis', storeSettings.businessNis],
+            ['legal.ai', storeSettings.businessAi],
+        ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${T(k)}: ${esc(v)}`);
+
         const shop = {
             name: storeSettings.businessName || '',
-            address: [storeSettings.businessAddress, storeSettings.businessCity].filter(Boolean).join(', '),
+            address: storeSettings.businessAddress || '',
+            city: [storeSettings.businessCity, storeSettings.businessWilaya].filter(Boolean).join(' — '),
             phone: storeSettings.businessPhone || '',
-            email: storeSettings.businessEmail || '',
-            taxId: storeSettings.businessTaxId || '',
             header: storeSettings.receiptHeader || '',
-            footer: storeSettings.receiptFooter || 'Thank you for your purchase!',
+            footer: storeSettings.receiptFooter || T('receipt.footer'),
             logo: storeSettings.shopLogoDataUri || '',
         };
 
-        let dateStr;
-        try {
-            dateStr = data.created_at ? new Date(data.created_at).toLocaleString() : new Date().toLocaleString();
-        } catch {
-            dateStr = new Date().toLocaleString();
-        }
-
+        const itemCount = (data.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
         const itemsHtml = (data.items || []).map(item => {
             const lineDiscount = parseFloat(item.discount) || 0;
-            const details = [item.variant_label, item.sku].filter(Boolean).map(esc).join(' · ');
+            const variant = variantLabel(item, T.lang);
             return `
             <div class="item">
                 <div class="item-name">${esc(item.product_name)}</div>
-                ${details ? `<div class="item-variant">${details}</div>` : ''}
+                ${variant || item.sku ? `<div class="item-variant">${esc(variant)}${variant && item.sku ? ' · ' : ''}${item.sku ? `<span class="ltr">${esc(item.sku)}</span>` : ''}</div>` : ''}
                 <div class="row small">
-                    <span>${esc(item.quantity)} × ${money(item.unit_price)}</span>
-                    <span>${money(item.total)}</span>
+                    <span><span class="ltr">${esc(item.quantity)} × ${money(item.unit_price)}</span></span>
+                    <span class="ltr">${money(item.total)}</span>
                 </div>
-                ${lineDiscount > 0 ? `<div class="row small"><span>Discount</span><span>-${money(lineDiscount)}</span></div>` : ''}
+                ${lineDiscount > 0 ? `<div class="row small"><span>${T('receipt.discount')}</span><span class="ltr">-${money(lineDiscount)}</span></div>` : ''}
             </div>`;
         }).join('');
 
+        let tendered = 0;
         const paymentsHtml = (data.payments || []).map(p => {
-            let methodLabel = esc(String(p.method || '').toUpperCase().replace('_', ' '));
+            let methodLabel = esc(paymentLabel(p.method, T.lang));
+            let extra = '';
+            if (p.method === 'cash' && p.reference) {
+                try {
+                    const parsed = JSON.parse(p.reference);
+                    if (Number.isFinite(parsed.tendered) && parsed.tendered > 0) tendered += parsed.tendered;
+                } catch { /* plain text reference */ }
+            }
             if (p.method === 'gift_card' && p.reference) {
                 let code = p.reference;
                 let balance = null;
@@ -796,35 +799,39 @@ class ReceiptService {
                     // Not JSON, plain code
                 }
                 const masked = String(code).length > 4 ? '****' + String(code).slice(-4) : code;
-                methodLabel = `GIFT CARD (${esc(masked)})`;
+                methodLabel += ` (<span class="ltr">${esc(masked)}</span>)`;
                 if (balance !== null && balance !== undefined) {
-                    methodLabel += `<br><span class="muted">Bal: ${money(balance)}</span>`;
+                    extra = `<div class="row small muted"><span>${T('receipt.giftCardBalance')}</span><span class="ltr">${money(balance)}</span></div>`;
                 }
             }
-            return `<div class="row"><span>${methodLabel}</span><span>${money(p.amount)}</span></div>`;
+            return `<div class="row"><span>${methodLabel}</span><span class="ltr">${money(p.amount)}</span></div>${extra}`;
         }).join('');
 
-        const totalPaid = (data.payments || []).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-        const change = totalPaid - (data.total || 0);
+        const cashPaid = (data.payments || []).filter(p => p.method === 'cash').reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+        const change = tendered > 0 ? tendered - cashPaid : 0;
+        const showTax = (parseFloat(data.tax_amount) || 0) > 0;
 
         return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
+<html lang="${T.lang}" dir="${T.dir}"><head><meta charset="UTF-8">
 <style>
     @page { margin: 0; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-    body { width: ${contentWidthMm}mm; margin: 0 auto; padding: 3mm 0; font-family: "Courier New", monospace; font-size: ${paperWidthMm === 58 ? 10 : 11.5}px; }
+    body { width: ${contentWidthMm}mm; margin: 0 auto; padding: 3mm 0;
+        font-family: ${T.lang === 'ar' ? 'Tahoma, Arial, sans-serif' : '"Courier New", monospace'};
+        font-size: ${paperWidthMm === 58 ? 10 : 11.5}px; }
     .center { text-align: center; }
     .logo { display: block; margin: 0 auto 2mm; max-width: 60%; max-height: 22mm; object-fit: contain; }
     .shop-name { font-size: 1.5em; font-weight: bold; margin-bottom: 1mm; }
     .muted { color: #333; font-size: 0.9em; }
     .sep { border-top: 1px dashed #000; margin: 2mm 0; }
     .row { display: flex; justify-content: space-between; gap: 2mm; }
-    .row span:last-child { text-align: right; white-space: nowrap; }
+    .row span:last-child { text-align: end; white-space: nowrap; }
     .small { font-size: 0.92em; }
     .item { margin-bottom: 1.5mm; }
     .item-name { font-weight: bold; word-break: break-word; }
     .item-variant { font-size: 0.9em; }
+    .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
     .grand { font-size: 1.35em; font-weight: bold; border-top: 1px solid #000; margin-top: 1mm; padding-top: 1mm; }
     .footer { text-align: center; margin-top: 2mm; white-space: pre-line; }
 </style></head>
@@ -833,159 +840,104 @@ class ReceiptService {
         ${shop.logo ? `<img class="logo" src="${shop.logo}" alt="">` : ''}
         ${shop.name ? `<div class="shop-name">${esc(shop.name)}</div>` : ''}
         ${shop.address ? `<div class="muted">${esc(shop.address)}</div>` : ''}
-        ${shop.phone ? `<div class="muted">${esc(shop.phone)}</div>` : ''}
-        ${shop.email ? `<div class="muted">${esc(shop.email)}</div>` : ''}
-        ${shop.taxId ? `<div class="muted">${esc(shop.taxId)}</div>` : ''}
+        ${shop.city ? `<div class="muted">${esc(shop.city)}</div>` : ''}
+        ${shop.phone ? `<div class="muted ltr">${esc(shop.phone)}</div>` : ''}
+        ${legal.length ? `<div class="muted small">${legal.join(' · ')}</div>` : ''}
         ${shop.header ? `<div style="margin-top:1.5mm">${esc(shop.header)}</div>` : ''}
     </div>
     <div class="sep"></div>
-    <div class="row"><span>Receipt #</span><span>${esc(data.receipt_number || (data.id || '').slice(0, 8))}</span></div>
-    <div class="row"><span>Date</span><span>${esc(dateStr)}</span></div>
-    ${data.employee_name ? `<div class="row"><span>Cashier</span><span>${esc(data.employee_name)}</span></div>` : ''}
-    ${data.customer_name ? `<div class="row"><span>Customer</span><span>${esc(data.customer_name)}</span></div>` : ''}
-    ${data.due_date ? `<div class="row"><span>Due</span><span>${esc(new Date(data.due_date).toLocaleDateString())}</span></div>` : ''}
+    <div class="row"><span>${T('receipt.number')}</span><span class="ltr">${esc(data.receipt_number || (data.id || '').slice(0, 8))}</span></div>
+    <div class="row"><span>${T('receipt.date')}</span><span class="ltr">${esc(formatDate(data.created_at, T.lang))}</span></div>
+    ${data.employee_name ? `<div class="row"><span>${T('receipt.cashier')}</span><span>${esc(data.employee_name)}</span></div>` : ''}
+    ${data.customer_name ? `<div class="row"><span>${T('receipt.customer')}</span><span>${esc(data.customer_name)}</span></div>` : ''}
+    ${data.due_date ? `<div class="row"><span>${T('receipt.due')}</span><span class="ltr">${esc(formatDate(data.due_date, T.lang, false))}</span></div>` : ''}
     <div class="sep"></div>
     ${itemsHtml}
     <div class="sep"></div>
-    <div class="row"><span>Subtotal</span><span>${money(data.subtotal)}</span></div>
-    ${data.discount_amount > 0 ? `<div class="row"><span>Discount</span><span>-${money(data.discount_amount)}</span></div>` : ''}
-    ${(data.service_charge && data.service_charge > 0) ? `<div class="row"><span>Service charge</span><span>${money(data.service_charge)}</span></div>` : ''}
-    <div class="row"><span>${esc(storeSettings.taxName || 'Tax')}${storeSettings.taxType === 'inclusive' ? ' (incl.)' : ''}</span><span>${money(data.tax_amount || 0)}</span></div>
-    <div class="row grand"><span>TOTAL</span><span>${money(data.total)}</span></div>
+    <div class="row"><span>${T('receipt.subtotal')} (${T('receipt.items', { n: itemCount })})</span><span class="ltr">${money(data.subtotal)}</span></div>
+    ${data.discount_amount > 0 ? `<div class="row"><span>${T('receipt.discount')}</span><span class="ltr">-${money(data.discount_amount)}</span></div>` : ''}
+    ${(data.service_charge && data.service_charge > 0) ? `<div class="row"><span>${T('receipt.serviceCharge')}</span><span class="ltr">${money(data.service_charge)}</span></div>` : ''}
+    ${showTax ? `<div class="row"><span>${esc(storeSettings.taxName || 'TVA')}${storeSettings.taxType === 'inclusive' ? ` (${T('receipt.taxIncluded')})` : ''}</span><span class="ltr">${money(data.tax_amount)}</span></div>` : ''}
+    <div class="row grand"><span>${T('receipt.total')}</span><span class="ltr">${money(data.total)}</span></div>
     <div class="sep"></div>
     ${paymentsHtml}
-    ${change > 0.004 ? `<div class="row" style="font-weight:bold"><span>Change</span><span>${money(change)}</span></div>` : ''}
+    ${tendered > 0 ? `<div class="row"><span>${T('receipt.received')}</span><span class="ltr">${money(tendered)}</span></div>` : ''}
+    ${change > 0.004 ? `<div class="row" style="font-weight:bold"><span>${T('receipt.change')}</span><span class="ltr">${money(change)}</span></div>` : ''}
     <div class="sep"></div>
     <div class="footer">${esc(shop.footer)}</div>
 </body></html>`;
     }
 
     generateCreditPaymentReceiptHtml(data, storeSettings = {}) {
-        const settings = {
-            name: storeSettings.businessName || 'POS System',
-            address: storeSettings.businessAddress || '123 Main St',
-            phone: storeSettings.businessPhone || '(555) 123-4567',
-            email: storeSettings.businessEmail || '',
-            ...storeSettings
-        };
+        const esc = (v) => this.escapeHtml(v);
+        const T = translator(storeSettings.defaultLanguage);
+        const money = (v) => formatMoney(v, T.lang, storeSettings.currency);
+        const city = [storeSettings.businessCity, storeSettings.businessWilaya].filter(Boolean).join(' — ');
 
-        const dateStr = new Date().toLocaleString();
+        return `<!DOCTYPE html>
+<html lang="${T.lang}" dir="${T.dir}"><head><meta charset="UTF-8">
+<style>
+    body { font-family: ${T.lang === 'ar' ? 'Tahoma, Arial, sans-serif' : '"Courier New", monospace'}; font-size: 12px;
+        width: 280px; margin: 0 auto; padding: 10px; color: #000; background: white; }
+    .header { text-align: center; margin-bottom: 20px; border-bottom: 2px dashed #000; padding-bottom: 10px; }
+    .store-name { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+    .store-info { font-size: 11px; }
+    .title { text-align: center; font-size: 16px; font-weight: bold; margin: 15px 0; }
+    .info-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+    .amount-box { border: 2px solid #000; padding: 10px; margin: 15px 0; text-align: center; }
+    .amount-label { font-size: 12px; margin-bottom: 5px; }
+    .amount-value { font-size: 20px; font-weight: bold; }
+    .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+    .footer { text-align: center; margin-top: 20px; padding-top: 10px; border-top: 1px dashed #000; font-size: 11px; }
+</style></head>
+<body>
+    <div class="header">
+        <div class="store-name">${esc(storeSettings.businessName || '')}</div>
+        <div class="store-info">
+            ${storeSettings.businessAddress ? `${esc(storeSettings.businessAddress)}<br>` : ''}
+            ${city ? `${esc(city)}<br>` : ''}
+            ${storeSettings.businessPhone ? `<span class="ltr">${esc(storeSettings.businessPhone)}</span>` : ''}
+        </div>
+    </div>
 
-        return `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <style>
-                    body {
-                        font-family: 'Courier New', monospace;
-                        font-size: 12px;
-                        width: 280px;
-                        margin: 0 auto;
-                        padding: 10px;
-                        color: #000;
-                        background: white;
-                    }
-                    .header {
-                        text-align: center;
-                        margin-bottom: 20px;
-                        border-bottom: 2px dashed #000;
-                        padding-bottom: 10px;
-                    }
-                    .store-name { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
-                    .store-info { font-size: 11px; }
-                    .title { 
-                        text-align: center; 
-                        font-size: 16px; 
-                        font-weight: bold; 
-                        margin: 15px 0;
-                        text-transform: uppercase;
-                    }
-                    .info-row {
-                        display: flex;
-                        justify-content: space-between;
-                        margin-bottom: 5px;
-                    }
-                    .amount-box {
-                        border: 2px solid #000;
-                        padding: 10px;
-                        margin: 15px 0;
-                        text-align: center;
-                    }
-                    .amount-label { font-size: 12px; margin-bottom: 5px; }
-                    .amount-value { font-size: 20px; font-weight: bold; }
-                    .footer {
-                        text-align: center;
-                        margin-top: 20px;
-                        padding-top: 10px;
-                        border-top: 1px dashed #000;
-                        font-size: 11px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <div class="store-name">${settings.name}</div>
-                    <div class="store-info">
-                        ${settings.address}<br>
-                        ${settings.phone}
-                    </div>
-                </div>
+    <div class="title">${T('creditReceipt.title')}</div>
 
-                <div class="title">Payment Receipt</div>
+    <div class="info-row"><span>${T('receipt.date')}</span><span class="ltr">${esc(formatDate(new Date(), T.lang))}</span></div>
+    <div class="info-row"><span>${T('receipt.customer')}</span><span>${esc(data.customer_name)}</span></div>
+    <div class="info-row"><span>${T('creditReceipt.invoice')}</span><span class="ltr">${esc(data.invoice_number)}</span></div>
 
-                <div class="info-row">
-                    <span>Date:</span>
-                    <span>${dateStr}</span>
-                </div>
-                <div class="info-row">
-                    <span>Customer:</span>
-                    <span>${data.customer_name}</span>
-                </div>
-                <div class="info-row">
-                    <span>Invoice #:</span>
-                    <span>${data.invoice_number}</span>
-                </div>
+    <div class="amount-box">
+        <div class="amount-label">${T('creditReceipt.paid')}</div>
+        <div class="amount-value ltr">${money(data.amount)}</div>
+        <div style="margin-top:5px; font-size:11px">${T('creditReceipt.method')}: ${esc(paymentLabel(data.payment_method, T.lang))}</div>
+        ${data.tendered ? `
+            <div class="info-row" style="margin-top:5px; border-top:1px dashed #000; padding-top:5px; font-size:11px;">
+                <span>${T('receipt.received')}</span><span class="ltr">${money(data.tendered)}</span>
+            </div>
+            <div class="info-row" style="font-size:11px; font-weight:bold;">
+                <span>${T('receipt.change')}</span><span class="ltr">${money(data.change)}</span>
+            </div>
+        ` : ''}
+    </div>
 
-                <div class="amount-box">
-                    <div class="amount-label">AMOUNT PAID</div>
-                    <div class="amount-value">${this.formatCurrency(data.amount)}</div>
-                    <div style="margin-top:5px; font-size:11px">Method: ${data.payment_method}</div>
-                    ${data.tendered ? `
-                        <div style="margin-top:5px; border-top:1px dashed #000; padding-top:5px; display:flex; justify-content:space-between; font-size:11px;">
-                            <span>Tendered:</span>
-                            <span>${this.formatCurrency(data.tendered)}</span>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:bold;">
-                            <span>Change:</span>
-                            <span>${this.formatCurrency(data.change)}</span>
-                        </div>
-                    ` : ''}
-                </div>
+    <div class="info-row" style="margin-top:10px; font-weight:bold">
+        <span>${T('creditReceipt.remaining')}</span><span class="ltr">${money(data.remaining_balance)}</span>
+    </div>
 
-                <div class="info-row" style="margin-top:10px; font-weight:bold">
-                    <span>Remaining Balance:</span>
-                    <span>${this.formatCurrency(data.remaining_balance)}</span>
-                </div>
-
-                <div class="footer">
-                    Thank you for your payment!
-                </div>
-            </body>
-            </html>
-        `;
+    <div class="footer">${T('creditReceipt.thanks')}</div>
+</body></html>`;
     }
 
     generateGiftCardHtml(card, settings) {
         // Use passed barcode image or placeholder
         const barcodeSrc = card.barcodeImage || '';
+        const T = translator(settings.defaultLanguage);
 
         return `
         <!DOCTYPE html>
         <html>
         <head>
             <style>
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap');
                 
                 body { 
                     margin: 0;
@@ -1114,25 +1066,25 @@ class ReceiptService {
                         </svg>
                     </div>
                     <div class="title-section">
-                        <h1>Gift Card</h1>
-                        <p>${settings.name || 'POS System'}</p>
+                        <h1>${T('gift.title')}</h1>
+                        <p>${this.escapeHtml(settings.businessName || settings.name || T('app.name'))}</p>
                     </div>
                 </div>
-                <div class="amount">${this.formatCurrency(card.current_balance)}</div>
+                <div class="amount">${formatMoney(card.current_balance, T.lang, settings.currency)}</div>
             </div>
 
             <div class="content">
-                <div class="label">Card Number</div>
+                <div class="label">${T('gift.number')}</div>
                 <div class="code">${card.code}</div>
             </div>
 
             <div class="footer">
                 <div class="barcode-container">
-                    ${barcodeSrc ? `<img src="${barcodeSrc}" class="barcode-img" />` : '<span style="color:black">Barcode Error</span>'}
+                    ${barcodeSrc ? `<img src="${barcodeSrc}" class="barcode-img" />` : ''}
                 </div>
                 <div class="meta">
-                    <span>${card.expires_at ? 'Expires: ' + new Date(card.expires_at).toLocaleDateString() : 'No Expiration'}</span>
-                    <span>Terms & Conditions Apply</span>
+                    <span>${card.expires_at ? `${T('gift.expires')}: ${formatDate(card.expires_at, T.lang, false)}` : T('gift.noExpiry')}</span>
+                    <span>${T('gift.terms')}</span>
                 </div>
             </div>
         </body>

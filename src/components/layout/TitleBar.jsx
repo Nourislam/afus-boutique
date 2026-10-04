@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { Minus, Square, X, Maximize2, Cloud, CloudOff, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { ShopLogo } from '../shop/ShopLogo';
-import { APP_NAME } from '../../lib/appInfo';
+import { useT } from '../../i18n';
+import { formatDate as formatLocalDate } from '../../i18n/format';
 
 export function TitleBar() {
     const [time, setTime] = useState(new Date());
     // Sync is optional and off unless a sync transport is configured
     const [syncStatus, setSyncStatus] = useState({ status: 'idle', enabled: false, details: null });
     const { settings } = useSettingsStore();
+    const { t } = useT();
 
     useEffect(() => {
         const timer = setInterval(() => setTime(new Date()), 1000);
@@ -31,21 +33,8 @@ export function TitleBar() {
     const handleMaximize = () => window.electronAPI?.maximize();
     const handleClose = () => window.electronAPI?.close();
 
-    const formatTime = (date) => {
-        return date.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true,
-        });
-    };
-
-    const formatDate = (date) => {
-        return date.toLocaleDateString('en-US', {
-            weekday: 'short',
-            month: 'short',
-            day: 'numeric',
-        });
-    };
+    const formatTime = (date) => formatLocalDate(date, 'time');
+    const formatDate = (date) => formatLocalDate(date, 'long');
 
     const getSyncIcon = () => {
         const currentStatus = syncStatus?.status || 'idle';
@@ -72,14 +61,13 @@ export function TitleBar() {
         const currentStatus = syncStatus?.status || 'idle';
         const enabled = syncStatus?.enabled !== false;
         
-        if (!enabled) return 'Local';
-        
+        if (!enabled) return t('titlebar.local');
+
         switch (currentStatus) {
-            case 'syncing': return 'Syncing';
-            case 'error': return 'Error';
-            case 'offline': return 'Offline';
-            case 'idle': return 'Synced';
-            default: return currentStatus;
+            case 'syncing': return t('titlebar.syncing');
+            case 'error': return t('titlebar.syncError');
+            case 'offline': return t('titlebar.offline');
+            default: return t('titlebar.synced');
         }
     };
 
@@ -89,16 +77,16 @@ export function TitleBar() {
             <div className="flex items-center gap-3 titlebar-no-drag">
                 <ShopLogo fileName={settings.shopLogo} size={24} />
                 <div className="flex flex-col leading-none">
-                    <span className="font-bold text-sm text-white truncate max-w-[240px]">{settings.businessName || APP_NAME}</span>
-                    <span className="text-[9px] text-zinc-500 font-medium">{APP_NAME}</span>
+                    <span className="font-bold text-sm text-white truncate max-w-[240px]">{settings.businessName || t('app.name')}</span>
+                    <span className="text-[9px] text-zinc-500 font-medium">{t('app.name')}</span>
                 </div>
             </div>
 
             {/* Center - Date/Time & Sync */}
             <div className="flex items-center gap-4 text-sm text-zinc-400">
-                <div className="flex items-center gap-2 px-3 py-1 bg-dark-tertiary rounded-full" title={`Sync Status: ${getSyncText()}`}>
+                <div className="flex items-center gap-2 px-3 py-1 bg-dark-tertiary rounded-full" title={getSyncText()}>
                     {getSyncIcon()}
-                    <span className="text-xs uppercase tracking-wider font-medium">
+                    <span className="text-xs tracking-wider font-medium">
                         {getSyncText()}
                     </span>
                 </div>

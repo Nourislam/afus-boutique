@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useState, useEffect } from 'react';
 import { PinPad } from '../ui/NumPad';
 import { useAuthStore } from '../../stores/authStore';
@@ -5,7 +6,6 @@ import { toast } from '../ui/Toast';
 import { TitleBar } from '../layout/TitleBar';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { ShopLogo } from '../shop/ShopLogo';
-import { APP_NAME } from '../../lib/appInfo';
 import OpeningCashDialog from '../shifts/OpeningCashDialog';
 
 export default function LoginScreen() {
@@ -34,10 +34,10 @@ export default function LoginScreen() {
          try {
             const result = await login(employeeId, enteredPin);
             if (!result.success) {
-                toast.error(result.error || 'Invalid PIN');
+                toast.error(result.error || t('login.invalidPin'));
             }
          } catch (error) {
-             toast.error('Login failed');
+             toast.error(t('login.failed'));
          }
     };
 
@@ -53,7 +53,7 @@ export default function LoginScreen() {
             });
 
             if (!verified) {
-                toast.error('Invalid PIN');
+                toast.error(t('login.invalidPin'));
                 setPin('');
                 setLoading(false);
                 return;
@@ -72,7 +72,7 @@ export default function LoginScreen() {
             }
         } catch (error) {
             console.error('Login error:', error);
-            toast.error('Login failed');
+            toast.error(t('login.failed'));
             setPin('');
         } finally {
             setLoading(false);
@@ -99,7 +99,7 @@ export default function LoginScreen() {
                             }}
                             className="mb-8 text-zinc-400 hover:text-white transition-colors flex items-center gap-2"
                         >
-                            ← Back to employees
+                            <span className="flip-rtl">←</span> {t('login.back')}
                         </button>
 
                         {/* Selected employee */}
@@ -110,12 +110,12 @@ export default function LoginScreen() {
                                 </span>
                             </div>
                             <h2 className="text-xl font-semibold">{selectedEmployee.name}</h2>
-                            <p className="text-zinc-500 capitalize">{selectedEmployee.role}</p>
+                            <p className="text-zinc-500">{t(`role.${selectedEmployee.role}`)}</p>
                         </div>
 
                         {/* PIN Entry */}
                         <div className="card p-6">
-                            <p className="text-center text-zinc-400 mb-6">Enter your PIN</p>
+                            <p className="text-center text-zinc-400 mb-6">{t('login.enterPin')}</p>
                             <PinPad
                                 value={pin}
                                 onChange={setPin}
@@ -148,17 +148,17 @@ export default function LoginScreen() {
                     <div className="mx-auto mb-4 w-fit">
                         <ShopLogo fileName={settings.shopLogo} size={80} rounded="rounded-2xl" />
                     </div>
-                    <h1 className="text-3xl font-bold mb-2">{settings.businessName || APP_NAME}</h1>
-                    <p className="text-zinc-500">Select your profile to login</p>
+                    <h1 className="text-3xl font-bold mb-2">{settings.businessName || t('app.name')}</h1>
+                    <p className="text-zinc-500">{t('login.selectProfile')}</p>
                 </div>
 
                 {/* Employee Grid */}
                 <div className="w-full max-w-2xl">
                     {employees.length === 0 ? (
                         <div className="text-center py-12">
-                            <p className="text-zinc-400 mb-2">No employees found</p>
+                            <p className="text-zinc-400 mb-2">{t('login.noEmployees')}</p>
                             <p className="text-zinc-500 text-sm">
-                                Restore a backup or reset the shop setup to create an administrator.
+                                {t('login.noEmployeesHint')}
                             </p>
                         </div>
                     ) : (
@@ -175,7 +175,7 @@ export default function LoginScreen() {
                                         </span>
                                     </div>
                                     <p className="font-medium truncate">{employee.name}</p>
-                                    <p className="text-xs text-zinc-500 capitalize">{employee.role}</p>
+                                    <p className="text-xs text-zinc-500">{t(`role.${employee.role}`)}</p>
                                 </button>
                             ))}
                         </div>

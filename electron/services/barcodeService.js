@@ -1,111 +1,64 @@
 /**
  * Barcode Service
  * 
- * Comprehensive barcode generation with support for multiple industries
- * and international standards (GS1 compliant).
+ * Barcode generation (EAN, Code 128, QR…) for clothing labels.
  */
 
 const bwipjs = require('bwip-js');
 const path = require('path');
 const fs = require('fs');
 
-// Industry-specific label templates
+// Label templates for clothing and fashion-accessory shops (names are
+// translated in the interface by key)
 const INDUSTRY_PRESETS = {
-    retail: {
-        name: 'Retail',
-        barcodeType: 'code128',
-        labelWidth: 50,
-        labelHeight: 25,
-        showPrice: true,
-        showName: true,
-        description: 'Standard retail product labels',
-    },
-    grocery: {
-        name: 'Grocery',
-        barcodeType: 'code128',
-        labelWidth: 38,
-        labelHeight: 25,
-        showPrice: true,
-        showName: true,
-        showWeight: true,
-        showExpiry: true,
-        description: 'Grocery labels with weight and expiry date',
-    },
-    pharmaceutical: {
-        name: 'Pharmaceutical',
-        barcodeType: 'datamatrix',
-        labelWidth: 40,
-        labelHeight: 20,
-        showLot: true,
-        showExpiry: true,
-        showNDC: true,
-        description: 'GS1 DataMatrix for pharmaceutical tracking'
-    },
-    warehouse: {
-        name: 'Warehouse',
-        barcodeType: 'code128',
-        labelWidth: 100,
-        labelHeight: 50,
-        showSKU: true,
-        showLocation: true,
-        description: 'Large warehouse labels with Code128',
-    },
-    assets: {
-        name: 'Assets',
-        barcodeType: 'qrcode',
-        labelWidth: 30,
-        labelHeight: 30,
-        showAssetId: true,
-        showURL: true,
-        description: 'QR code asset tracking labels',
-    },
-    hotel: {
-        name: 'Hotel',
-        barcodeType: 'qrcode',
-        labelWidth: 40,
-        labelHeight: 40,
-        showName: true,
-        showPrice: true,
-        description: 'Hotel amenities and minibar items',
-    },
-    jewelry: {
-        name: 'Jewelry',
-        barcodeType: 'code128',
-        labelWidth: 25,
-        labelHeight: 15,
-        showPrice: true,
-        showName: true,
-        showSKU: true,
-        description: 'Small jewelry price tags',
-    },
-    electronics: {
-        name: 'Electronics',
-        barcodeType: 'code128',
-        labelWidth: 60,
-        labelHeight: 30,
-        showPrice: true,
-        showName: true,
-        showSKU: true,
-        description: 'Electronics with serial/model info',
-    },
-    restaurant: {
-        name: 'Restaurant',
-        barcodeType: 'qrcode',
-        labelWidth: 35,
-        labelHeight: 35,
-        showName: true,
-        showPrice: true,
-        description: 'Menu items and kitchen labels',
-    },
     fashion: {
-        name: 'Fashion',
+        name: 'Hang tag',
         barcodeType: 'code128',
         labelWidth: 45,
         labelHeight: 80,
         showPrice: true,
         showName: true,
         showSize: true,
-        description: 'Clothing hang tags with size info',
+        description: 'Clothing hang tags with size',
+    },
+    retail: {
+        name: 'Price sticker',
+        barcodeType: 'code128',
+        labelWidth: 50,
+        labelHeight: 25,
+        showPrice: true,
+        showName: true,
+        description: 'Standard price sticker',
+    },
+    accessories: {
+        name: 'Accessories',
+        barcodeType: 'code128',
+        labelWidth: 25,
+        labelHeight: 15,
+        showPrice: true,
+        showName: true,
+        showSKU: true,
+        description: 'Small tags for jewellery, belts, sunglasses',
+    },
+    shoebox: {
+        name: 'Shoe box',
+        barcodeType: 'code128',
+        labelWidth: 60,
+        labelHeight: 30,
+        showPrice: true,
+        showName: true,
+        showSKU: true,
+        showSize: true,
+        description: 'Shoe and bag box labels',
+    },
+    qr: {
+        name: 'QR tag',
+        barcodeType: 'qrcode',
+        labelWidth: 30,
+        labelHeight: 30,
+        showName: true,
+        showPrice: true,
+        description: 'Square QR labels',
     },
 };
 

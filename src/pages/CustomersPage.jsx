@@ -1,3 +1,6 @@
+import { t } from '../i18n';
+import { formatDate as formatLocalDate } from '../i18n/format';
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { Plus, Search, Edit2, Trash2, Users, Star, ShoppingBag, Phone, Mail } from 'lucide-react';
 import { Button } from '../components/ui/Button';
@@ -34,7 +37,7 @@ export default function CustomersPage() {
             const data = await window.electronAPI.customers.getAll();
             setCustomers(data);
         } catch (error) {
-            toast.error('Failed to load customers');
+            toast.error(t('customers.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -51,17 +54,17 @@ export default function CustomersPage() {
     const totalSpent = customers.reduce((sum, c) => sum + (c.total_spent || 0), 0);
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount);
+        return formatMoney(amount);
     };
 
     const handleDelete = async (customer) => {
-        if (confirm(`Delete customer "${customer.name}"?`)) {
+        if (confirm(t('common.deleteConfirm', { name: customer.name }))) {
             try {
                 await window.electronAPI.customers.delete(customer.id);
-                toast.success('Customer deleted');
+                toast.success(t('customers.deleted'));
                 loadData();
             } catch (error) {
-                toast.error('Failed to delete customer');
+                toast.error(t('customers.deleteFailed'));
             }
         }
     };
@@ -101,17 +104,17 @@ export default function CustomersPage() {
             <div className="p-6 border-b border-dark-border">
                 <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-2xl font-bold">Customers</h1>
-                        <p className="text-zinc-500">Manage your customer database</p>
+                        <h1 className="text-2xl font-bold">{t('customers.title')}</h1>
+                        <p className="text-zinc-500">{t('customers.subtitle')}</p>
                     </div>
                     <div className="flex gap-2">
                         <Button variant="secondary" onClick={() => setShowImportModal(true)}>
                             <FileSpreadsheet className="w-4 h-4" />
-                            Import Excel
+                            {t('common.importExcel')}
                         </Button>
                         <Button onClick={() => { setEditingCustomer(null); setShowModal(true); }}>
                             <Plus className="w-4 h-4" />
-                            Add Customer
+                            {t('customers.add')}
                         </Button>
                     </div>
                 </div>
@@ -119,19 +122,19 @@ export default function CustomersPage() {
                 {/* Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <StatCard
-                        label="Total Customers"
+                        label={t('customers.total')}
                         value={totalCustomers}
                         icon={Users}
                         color="primary"
                     />
                     <StatCard
-                        label="Total Loyalty Points"
+                        label={t('customers.points')}
                         value={totalLoyaltyPoints.toLocaleString()}
                         icon={Star}
                         color="warning"
                     />
                     <StatCard
-                        label="Total Spent"
+                        label={t('customers.spent')}
                         value={formatCurrency(totalSpent)}
                         icon={ShoppingBag}
                         color="success"
@@ -141,7 +144,7 @@ export default function CustomersPage() {
                 <SearchInput
                     value={searchQuery}
                     onChange={setSearchQuery}
-                    placeholder="Search customers..."
+                    placeholder={t('customers.search')}
                     className="max-w-md"
                 />
             </div>
@@ -155,12 +158,12 @@ export default function CustomersPage() {
                 ) : filteredCustomers.length === 0 ? (
                     <EmptyState
                         icon={Users}
-                        title="No customers found"
-                        description={searchQuery ? 'Try a different search term' : 'Add your first customer to get started'}
+                        title={t('customers.none')}
+                        description={searchQuery ? t('customers.tryOther') : t('customers.addFirst')}
                         action={
                             <Button onClick={() => { setEditingCustomer(null); setShowModal(true); }}>
                                 <Plus className="w-4 h-4" />
-                                Add Customer
+                                {t('customers.add')}
                             </Button>
                         }
                     />
@@ -168,12 +171,12 @@ export default function CustomersPage() {
                     <Table>
                         <TableHead>
                             <TableRow>
-                                <TableHeader>Customer</TableHeader>
-                                <TableHeader>Contact</TableHeader>
-                                <TableHeader>Loyalty Points</TableHeader>
-                                <TableHeader>Total Spent</TableHeader>
-                                <TableHeader>Joined</TableHeader>
-                                <TableHeader>Actions</TableHeader>
+                                <TableHeader>{t('tx.customer')}</TableHeader>
+                                <TableHeader>{t('customers.contact')}</TableHeader>
+                                <TableHeader>{t('customers.loyalty')}</TableHeader>
+                                <TableHeader>{t('customers.spent')}</TableHeader>
+                                <TableHeader>{t('customers.joined')}</TableHeader>
+                                <TableHeader>{t('inventory.actions')}</TableHeader>
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -219,7 +222,7 @@ export default function CustomersPage() {
                                         {formatCurrency(customer.total_spent || 0)}
                                     </TableCell>
                                     <TableCell className="text-zinc-400">
-                                        {format(new Date(customer.created_at), 'MMM d, yyyy')}
+                                        {formatLocalDate(customer.created_at, 'date')}
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
@@ -260,14 +263,14 @@ export default function CustomersPage() {
                 onClose={() => setShowImportModal(false)}
                 dataType="customers"
                 onImport={handleExcelImport}
-                title="Import Customers"
+                title={t('customers.import')}
             />
 
             {/* Customer Details Modal */}
             <Modal
                 isOpen={showDetailsModal}
                 onClose={() => setShowDetailsModal(false)}
-                title="Customer Details"
+                title={t('customers.details')}
                 size="lg"
             >
                 <ModalBody>
@@ -306,27 +309,27 @@ export default function CustomersPage() {
                                         <Star className="w-5 h-5" />
                                     </div>
                                     <p className="text-2xl font-bold">{selectedCustomer.loyalty_points || 0}</p>
-                                    <p className="text-sm text-zinc-400">Loyalty Points</p>
+                                    <p className="text-sm text-zinc-400">{t('customers.loyalty')}</p>
                                 </div>
                                 <div className="p-4 rounded-lg bg-dark-tertiary text-center">
                                     <div className="flex items-center justify-center gap-1 text-green-400 mb-1">
                                         <ShoppingBag className="w-5 h-5" />
                                     </div>
                                     <p className="text-2xl font-bold">{formatCurrency(selectedCustomer.total_spent || 0)}</p>
-                                    <p className="text-sm text-zinc-400">Total Spent</p>
+                                    <p className="text-sm text-zinc-400">{t('customers.spent')}</p>
                                 </div>
                                 <div className="p-4 rounded-lg bg-dark-tertiary text-center">
                                     <p className="text-2xl font-bold">
-                                        {format(new Date(selectedCustomer.created_at), 'MMM yyyy')}
+                                        {formatLocalDate(selectedCustomer.created_at, 'month')}
                                     </p>
-                                    <p className="text-sm text-zinc-400">Member Since</p>
+                                    <p className="text-sm text-zinc-400">{t('customers.since')}</p>
                                 </div>
                             </div>
 
                             {/* Notes */}
                             {selectedCustomer.notes && (
                                 <div>
-                                    <h4 className="text-sm font-medium text-zinc-400 mb-2">Notes</h4>
+                                    <h4 className="text-sm font-medium text-zinc-400 mb-2">{t('customers.notes')}</h4>
                                     <p className="p-3 rounded-lg bg-dark-tertiary">{selectedCustomer.notes}</p>
                                 </div>
                             )}
@@ -334,7 +337,7 @@ export default function CustomersPage() {
                             {/* Address */}
                             {selectedCustomer.address && (
                                 <div>
-                                    <h4 className="text-sm font-medium text-zinc-400 mb-2">Address</h4>
+                                    <h4 className="text-sm font-medium text-zinc-400 mb-2">{t('shop.address')}</h4>
                                     <p className="p-3 rounded-lg bg-dark-tertiary">{selectedCustomer.address}</p>
                                 </div>
                             )}
@@ -343,7 +346,7 @@ export default function CustomersPage() {
                 </ModalBody>
                 <ModalFooter>
                     <Button variant="secondary" onClick={() => setShowDetailsModal(false)}>
-                        Close
+                        {t('common.close')}
                     </Button>
                     <Button onClick={() => {
                         setEditingCustomer(selectedCustomer);
@@ -351,7 +354,7 @@ export default function CustomersPage() {
                         setShowModal(true);
                     }}>
                         <Edit2 className="w-4 h-4" />
-                        Edit Customer
+                        {t('customers.edit')}
                     </Button>
                 </ModalFooter>
             </Modal>
@@ -400,7 +403,7 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
         e.preventDefault();
 
         if (!formData.name) {
-            toast.error('Name is required');
+            toast.error(t('customers.nameRequired'));
             return;
         }
 
@@ -418,10 +421,10 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
 
             if (customer) {
                 await window.electronAPI.customers.update(data);
-                toast.success('Customer updated');
+                toast.success(t('customers.updated'));
             } else {
                 await window.electronAPI.customers.create(data);
-                toast.success('Customer created');
+                toast.success(t('customers.created'));
             }
             onSave();
         } catch (error) {
@@ -432,45 +435,45 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={customer ? 'Edit Customer' : 'Add Customer'} size="md">
+        <Modal isOpen={isOpen} onClose={onClose} title={customer ? t('customers.edit') : t('customers.add')} size="md">
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
                 <ModalBody>
                     <div className="space-y-4">
                         <Input
-                            label="Name *"
+                            label={t('setup.adminName')}
                             value={formData.name}
                             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            placeholder="Customer name"
+                            placeholder={t('customers.namePlaceholder')}
                         />
                         <Input
-                            label="Email"
+                            label={t('shop.email')}
                             type="email"
                             value={formData.email}
                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                             placeholder="email@example.com"
                         />
                         <Input
-                            label="Phone"
+                            label={t('customers.phone')}
                             value={formData.phone}
                             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                            placeholder="Phone number"
+                            placeholder={t('customers.phonePlaceholder')}
                         />
                         <TextArea
-                            label="Address"
+                            label={t('shop.address')}
                             value={formData.address}
                             onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                            placeholder="Customer address"
+                            placeholder={t('customers.addressPlaceholder')}
                         />
                         <TextArea
-                            label="Notes"
+                            label={t('customers.notes')}
                             value={formData.notes}
                             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                            placeholder="Additional notes"
+                            placeholder={t('customers.notesPlaceholder')}
                         />
 
                         {/* Credit Settings Section */}
                         <div className="pt-4 border-t border-dark-border">
-                            <h4 className="text-sm font-medium text-zinc-400 mb-3">Credit Settings</h4>
+                            <h4 className="text-sm font-medium text-zinc-400 mb-3">{t('customers.creditSettings')}</h4>
                             <div className="space-y-3">
                                 <label className="flex items-center gap-3 cursor-pointer">
                                     <input
@@ -479,12 +482,12 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
                                         onChange={(e) => setFormData({ ...formData, credit_enabled: e.target.checked })}
                                         className="w-5 h-5 rounded border-dark-border bg-dark-tertiary accent-accent-primary"
                                     />
-                                    <span>Enable credit for this customer</span>
+                                    <span>{t('customers.enableCredit')}</span>
                                 </label>
 
                                 {formData.credit_enabled && (
                                     <Input
-                                        label={`Credit Limit (${settings.currencySymbol || '$'})`}
+                                        label={t('customers.creditLimitDa')}
                                         type="number"
                                         step="0.01"
                                         min="0"
@@ -506,9 +509,9 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
                     </div>
                 </ModalBody>
                 <ModalFooter>
-                    <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+                    <Button type="button" variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
                     <Button type="submit" loading={loading}>
-                        {customer ? 'Update Customer' : 'Add Customer'}
+                        {customer ? t('customers.update') : t('customers.add')}
                     </Button>
                 </ModalFooter>
             </form>

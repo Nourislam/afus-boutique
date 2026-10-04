@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useEffect, useState } from 'react';
 import { Store } from 'lucide-react';
 
@@ -33,7 +34,7 @@ export function ShopLogo({ fileName, size = 24, className = '', rounded = 'round
     const style = { width: size, height: size };
 
     if (src) {
-        return <img src={src} alt="Shop logo" style={style} className={`object-contain ${rounded} ${className}`} />;
+        return <img src={src} alt={t('shop.logo')} style={style} className={`object-contain ${rounded} ${className}`} />;
     }
     return (
         <div style={style} className={`${rounded} bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center ${className}`}>

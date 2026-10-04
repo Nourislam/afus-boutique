@@ -33,11 +33,32 @@ body,
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  /* System fonts only (works offline). Segoe UI and Tahoma include Arabic on Windows. */
+  font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, Tahoma, 'Noto Sans Arabic', sans-serif;
   background-color: #0f0f0f;
   color: #ffffff;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html.lang-ar body {
+  font-family: 'Segoe UI', Tahoma, 'Noto Sans Arabic', 'Noto Naskh Arabic', 'Arial', sans-serif;
+}
+
+/* Codes, phone numbers and amounts stay left-to-right inside Arabic text */
+.ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+input.ltr,
+textarea.ltr {
+  text-align: left;
+}
+
+/* Icons that point in the reading direction (arrows, chevrons) */
+[dir='rtl'] .flip-rtl {
+  transform: scaleX(-1);
 }
 
 /* Custom Scrollbar */
@@ -147,7 +168,7 @@ body {
   }
 
   .table th {
-    @apply px-4 py-3 text-left font-medium text-zinc-400 bg-zinc-800 border-b border-zinc-700;
+    @apply px-4 py-3 text-start font-medium text-zinc-400 bg-zinc-800 border-b border-zinc-700;
   }
 
   .table td {

@@ -1,5 +1,7 @@
+import { t } from '../i18n';
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { PackageOpen, Plus, Search, Edit2, Trash2, Package, DollarSign, Tag, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { PackageOpen, Plus, Search, Edit2, Trash2, Package, Banknote, Tag, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal, ModalBody } from '../components/ui/Modal';
@@ -57,7 +59,7 @@ export default function BundlesPage() {
             setBundles(bundlesWithItems);
         } catch (error) {
             console.error('Failed to load bundles:', error);
-            toast.error('Failed to load bundles');
+            toast.error(t('bundles.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -101,7 +103,7 @@ export default function BundlesPage() {
 
     const handleAddItem = () => {
         if (!selectedProduct) {
-            toast.error('Please select a product');
+            toast.error(t('bundles.selectProduct'));
             return;
         }
 
@@ -110,7 +112,7 @@ export default function BundlesPage() {
 
         // Check if already added
         if (bundleItems.find(item => item.product_id === selectedProduct)) {
-            toast.error('Product already in bundle');
+            toast.error(t('bundles.already'));
             return;
         }
 
@@ -137,15 +139,15 @@ export default function BundlesPage() {
 
     const handleSave = async () => {
         if (!formData.name.trim()) {
-            toast.error('Please enter a bundle name');
+            toast.error(t('bundles.nameRequired'));
             return;
         }
         if (bundleItems.length === 0) {
-            toast.error('Please add at least one product');
+            toast.error(t('bundles.needProduct'));
             return;
         }
         if (!formData.bundle_price || parseFloat(formData.bundle_price) <= 0) {
-            toast.error('Please enter a valid bundle price');
+            toast.error(t('bundles.validPrice'));
             return;
         }
 
@@ -167,17 +169,17 @@ export default function BundlesPage() {
 
             if (editingBundle) {
                 await window.electronAPI.bundles.update({ bundle, items });
-                toast.success('Bundle updated successfully');
+                toast.success(t('bundles.updated'));
             } else {
                 await window.electronAPI.bundles.create({ bundle, items });
-                toast.success('Bundle created successfully');
+                toast.success(t('bundles.created'));
             }
 
             setShowFormModal(false);
             resetForm();
             loadBundles();
         } catch (error) {
-            toast.error('Failed to save bundle');
+            toast.error(t('bundles.saveFailed'));
             console.error(error);
         }
     };
@@ -190,10 +192,10 @@ export default function BundlesPage() {
     const confirmDelete = async () => {
         try {
             await window.electronAPI.bundles.delete(deletingId);
-            toast.success('Bundle deleted and items returned to stock (if applicable)');
+            toast.success(t('bundles.deleted'));
             loadBundles();
         } catch (error) {
-            toast.error('Failed to delete bundle');
+            toast.error(t('bundles.deleteFailed'));
             console.error(error);
         }
         setDeletingId(null);
@@ -209,7 +211,7 @@ export default function BundlesPage() {
     const handleAssemblySubmit = async () => {
         try {
             if (assemblyQuantity <= 0) {
-                toast.error('Quantity must be greater than 0');
+                toast.error(t('bundles.qtyPositive'));
                 return;
             }
 
@@ -232,7 +234,7 @@ export default function BundlesPage() {
     );
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount || 0);
+        return formatMoney(amount || 0);
     };
 
     if (loading) {
@@ -250,13 +252,13 @@ export default function BundlesPage() {
                 <div>
                     <h1 className="text-2xl font-bold flex items-center gap-3">
                         <PackageOpen className="w-7 h-7 text-purple-500" />
-                        Product Bundles
+                        {t('bundles.title')}
                     </h1>
-                    <p className="text-zinc-400 mt-1">Create product bundles with discounted pricing</p>
+                    <p className="text-zinc-400 mt-1">{t('bundles.subtitle')}</p>
                 </div>
                 <Button onClick={handleOpenCreate}>
                     <Plus className="w-4 h-4" />
-                    Create Bundle
+                    {t('bundles.create')}
                 </Button>
             </div>
 
@@ -268,7 +270,7 @@ export default function BundlesPage() {
                     </div>
                     <div>
                         <p className="text-2xl font-bold">{bundles.length}</p>
-                        <p className="text-zinc-400 text-sm">Total Bundles</p>
+                        <p className="text-zinc-400 text-sm">{t('bundles.total')}</p>
                     </div>
                 </div>
                 <div className="card flex items-center gap-4">
@@ -277,18 +279,18 @@ export default function BundlesPage() {
                     </div>
                     <div>
                         <p className="text-2xl font-bold">{bundles.filter(b => b.is_active).length}</p>
-                        <p className="text-zinc-400 text-sm">Active Bundles</p>
+                        <p className="text-zinc-400 text-sm">{t('bundles.active')}</p>
                     </div>
                 </div>
                 <div className="card flex items-center gap-4">
                     <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                        <DollarSign className="w-6 h-6 text-amber-400" />
+                        <Banknote className="w-6 h-6 text-amber-400" />
                     </div>
                     <div>
                         <p className="text-2xl font-bold">
                             {formatCurrency(bundles.reduce((sum, b) => sum + (b.savings || 0), 0))}
                         </p>
-                        <p className="text-zinc-400 text-sm">Total Savings</p>
+                        <p className="text-zinc-400 text-sm">{t('bundles.savings')}</p>
                     </div>
                 </div>
             </div>
@@ -297,7 +299,7 @@ export default function BundlesPage() {
             <div className="max-w-md">
                 <Input
                     icon={Search}
-                    placeholder="Search bundles..."
+                    placeholder={t('bundles.search')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -308,7 +310,7 @@ export default function BundlesPage() {
                 {filteredBundles.length === 0 ? (
                     <div className="text-center py-12 text-zinc-400">
                         <PackageOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                        <p>No bundles found</p>
+                        <p>{t('bundles.none')}</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -322,7 +324,7 @@ export default function BundlesPage() {
                                         <div>
                                             <h3 className="font-semibold">{bundle.name}</h3>
                                             <span className={`text-xs px-2 py-0.5 rounded-full ${bundle.is_active ? 'bg-green-500/20 text-green-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
-                                                {bundle.is_active ? 'Active' : 'Inactive'}
+                                                {bundle.is_active ? t('status.active') : t('status.inactive')}
                                             </span>
                                         </div>
                                     </div>
@@ -350,14 +352,14 @@ export default function BundlesPage() {
                                             className="flex-1 flex items-center justify-center gap-2 py-1.5 px-3 bg-green-500/10 hover:bg-green-500/20 text-green-400 rounded-lg transition-colors text-xs font-medium"
                                         >
                                             <ArrowDownCircle className="w-3.5 h-3.5" />
-                                            Assemble
+                                            {t('bundles.assemble')}
                                         </button>
                                         <button
                                             onClick={() => handleOpenAssembly(bundle, 'disassemble')}
                                             className="flex-1 flex items-center justify-center gap-2 py-1.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-lg transition-colors text-xs font-medium"
                                         >
                                             <ArrowUpCircle className="w-3.5 h-3.5" />
-                                            Break
+                                            {t('bundles.break')}
                                         </button>
                                     </div>
                                 )}
@@ -379,15 +381,15 @@ export default function BundlesPage() {
                                 {/* Pricing */}
                                 <div className="pt-3 border-t border-zinc-700 space-y-1">
                                     <div className="flex justify-between text-sm">
-                                        <span className="text-zinc-400">Original:</span>
+                                        <span className="text-zinc-400">{t('bundles.original')}</span>
                                         <span className="line-through text-zinc-500">{formatCurrency(bundle.original_price)}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="font-medium">Bundle Price:</span>
+                                        <span className="font-medium">{t('bundles.price')}</span>
                                         <span className="text-xl font-bold text-purple-400">{formatCurrency(bundle.bundle_price)}</span>
                                     </div>
                                     <div className="flex justify-between text-sm">
-                                        <span className="text-green-400">Savings:</span>
+                                        <span className="text-green-400">{t('bundles.saving')}</span>
                                         <span className="text-green-400 font-medium">{formatCurrency(bundle.savings)}</span>
                                     </div>
                                 </div>
@@ -401,7 +403,7 @@ export default function BundlesPage() {
             {showFormModal && (
                 <Modal
                     isOpen={true}
-                    title={editingBundle ? 'Edit Bundle' : 'Create Bundle'}
+                    title={editingBundle ? t('bundles.edit') : t('bundles.create')}
                     onClose={() => { setShowFormModal(false); resetForm(); }}
                     size="lg"
                 >
@@ -411,14 +413,14 @@ export default function BundlesPage() {
                                 <Input
                                     autoFocus // Ensure focus on open
                                     name="name"
-                                    label="Bundle Name"
-                                    placeholder="e.g., Coffee Combo"
+                                    label={t('bundles.name')}
+                                    placeholder={t('bundles.namePlaceholder')}
                                     value={formData.name}
                                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                                 />
                                 <Input
                                     name="bundle_price"
-                                    label="Bundle Price ($)"
+                                    label={t('bundles.priceDa')}
                                     type="number"
                                     step="0.01"
                                     min="0"
@@ -430,8 +432,8 @@ export default function BundlesPage() {
 
                             <Input
                                 name="description"
-                                label="Description (optional)"
-                                placeholder="Bundle description..."
+                                label={t('bundles.description')}
+                                placeholder={t('bundles.descriptionPlaceholder')}
                                 value={formData.description}
                                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                             />
@@ -446,7 +448,7 @@ export default function BundlesPage() {
                                             onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                                             className="w-4 h-4 rounded border-zinc-600 text-indigo-500 focus:ring-indigo-500"
                                         />
-                                        <label htmlFor="is_active" className="text-sm text-zinc-300">Active</label>
+                                        <label htmlFor="is_active" className="text-sm text-zinc-300">{t('status.active')}</label>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <input
@@ -456,26 +458,26 @@ export default function BundlesPage() {
                                             onChange={(e) => setFormData({ ...formData, deduct_component_stock: e.target.checked })}
                                             className="w-4 h-4 rounded border-zinc-600 text-indigo-500 focus:ring-indigo-500"
                                         />
-                                        <label htmlFor="deduct_component_stock" className="text-sm text-zinc-300">Track Component Stock (No Assembly)</label>
+                                        <label htmlFor="deduct_component_stock" className="text-sm text-zinc-300">{t('bundles.trackStock')}</label>
                                     </div>
                                 </div>
 
                                 {!formData.deduct_component_stock && (
                                     <div className="p-4 bg-purple-500/10 rounded-lg text-sm text-purple-300">
-                                        This bundle will have its own inventory. Use the "Assemble" button on the main page to create stock from components.
+                                        {t('bundles.trackHint')}
                                     </div>
                                 )}
                             </div>
 
                             {/* Add Product to Bundle */}
                             <div className="p-4 bg-zinc-800/50 rounded-lg space-y-3">
-                                <p className="text-sm font-medium">Add Products to Bundle</p>
+                                <p className="text-sm font-medium">{t('bundles.addProducts')}</p>
                                 <div className="flex gap-2">
                                     <Select
                                         className="flex-1"
                                         value={selectedProduct}
                                         onChange={setSelectedProduct}
-                                        placeholder="Select a product..."
+                                        placeholder={t('bundles.selectPlaceholder')}
                                         options={products.map(p => ({
                                             value: p.id,
                                             label: `${p.name} - ${formatCurrency(p.price)}`
@@ -499,7 +501,7 @@ export default function BundlesPage() {
                                 <p className="text-sm font-medium">Bundle Items ({bundleItems.length})</p>
                                 {bundleItems.length === 0 ? (
                                     <p className="text-sm text-zinc-500 p-4 text-center bg-zinc-800/30 rounded-lg">
-                                        No products added yet
+                                        {t('bundles.noProducts')}
                                     </p>
                                 ) : (
                                     <div className="space-y-2 max-h-40 overflow-auto">
@@ -528,15 +530,15 @@ export default function BundlesPage() {
                             {bundleItems.length > 0 && (
                                 <div className="p-4 bg-zinc-800/50 rounded-lg space-y-2">
                                     <div className="flex justify-between text-sm">
-                                        <span>Original Total:</span>
+                                        <span>{t('bundles.originalTotal')}</span>
                                         <span>{formatCurrency(calculateOriginalPrice())}</span>
                                     </div>
                                     <div className="flex justify-between font-medium">
-                                        <span>Bundle Price:</span>
+                                        <span>{t('bundles.price')}</span>
                                         <span className="text-purple-400">{formatCurrency(parseFloat(formData.bundle_price) || 0)}</span>
                                     </div>
                                     <div className="flex justify-between text-green-400">
-                                        <span>Customer Savings:</span>
+                                        <span>{t('bundles.customerSaving')}</span>
                                         <span>{formatCurrency(calculateOriginalPrice() - (parseFloat(formData.bundle_price) || 0))}</span>
                                     </div>
                                 </div>
@@ -544,10 +546,10 @@ export default function BundlesPage() {
 
                             <div className="flex gap-3 pt-4">
                                 <Button variant="secondary" className="flex-1" onClick={() => { setShowFormModal(false); resetForm(); }}>
-                                    Cancel
+                                    {t('common.cancel')}
                                 </Button>
                                 <Button className="flex-1" onClick={handleSave}>
-                                    {editingBundle ? 'Update Bundle' : 'Create Bundle'}
+                                    {editingBundle ? t('bundles.update') : t('bundles.create')}
                                 </Button>
                             </div>
                         </div>
@@ -559,7 +561,7 @@ export default function BundlesPage() {
             {showAssemblyModal && (
                 <Modal
                     isOpen={true}
-                    title={assemblyType === 'assemble' ? 'Assemble Bundles' : 'Disassemble Bundles'}
+                    title={assemblyType === 'assemble' ? t('bundles.assembleTitle') : t('bundles.disassembleTitle')}
                     onClose={() => setShowAssemblyModal(false)}
                     size="sm"
                 >
@@ -573,7 +575,7 @@ export default function BundlesPage() {
                             </p>
 
                             <Input
-                                label="Quantity"
+                                label={t('inventory.quantity')}
                                 type="number"
                                 min="1"
                                 value={assemblyQuantity}
@@ -582,10 +584,10 @@ export default function BundlesPage() {
 
                             <div className="flex gap-3 pt-4">
                                 <Button variant="secondary" className="flex-1" onClick={() => setShowAssemblyModal(false)}>
-                                    Cancel
+                                    {t('common.cancel')}
                                 </Button>
                                 <Button className="flex-1" onClick={handleAssemblySubmit} variant={assemblyType === 'assemble' ? 'success' : 'warning'}>
-                                    {assemblyType === 'assemble' ? 'Assemble' : 'Disassemble'}
+                                    {assemblyType === 'assemble' ? t('bundles.assemble') : t('bundles.disassemble')}
                                 </Button>
                             </div>
                         </div>
@@ -598,9 +600,9 @@ export default function BundlesPage() {
                 isOpen={showDeleteConfirm}
                 onClose={() => { setShowDeleteConfirm(false); setDeletingId(null); }}
                 onConfirm={confirmDelete}
-                title="Delete Bundle"
-                message="Are you sure you want to delete this bundle? This action cannot be undone."
-                confirmText="Delete"
+                title={t('bundles.delete')}
+                message={t('bundles.deleteConfirm')}
+                confirmText={t('common.delete')}
                 variant="danger"
             />
         </div>

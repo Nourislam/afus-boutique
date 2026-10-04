@@ -1,6 +1,7 @@
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ShoppingCart, Pause, Trash2, Plus, Minus, CreditCard, Banknote, Wallet, Printer, Mail, Check, Download, FileText, Gift, SlidersHorizontal } from 'lucide-react';
+import { Search, ShoppingCart, Pause, Trash2, Plus, Minus, CreditCard, Banknote, FileText, Gift, SlidersHorizontal, Shirt, Smartphone } from 'lucide-react';
 import { useCartStore } from '../stores/cartStore';
 import { useAuthStore } from '../stores/authStore';
 import { toast } from '../components/ui/Toast';
@@ -13,6 +14,10 @@ import { DatePicker } from '../components/ui/DatePicker';
 import CartOptionsModal from '../components/modals/CartOptionsModal';
 import { VariantPickerModal } from '../components/pos/VariantPickerModal';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
+import { useSettingsStore } from '../stores/settingsStore';
+import { variantLabel } from '../lib/clothing';
+import { paymentLabel, quickCashAmounts } from '../lib/payments';
+import { t } from '../i18n';
 
 export default function POSPage() {
     const [products, setProducts] = useState([]);
@@ -33,6 +38,7 @@ export default function POSPage() {
 
     const cart = useCartStore();
     const { currentEmployee, hasPermission } = useAuthStore();
+    const features = useSettingsStore(state => state.settings.features);
 
     useEffect(() => {
         loadData();
@@ -66,12 +72,14 @@ export default function POSPage() {
                 image_path: b.image_path
             }));
 
-            setProducts([...productsData.filter(p => p.is_active), ...normalizedBundles]);
-            setCategories([...categoriesData, { id: 'bundles', name: 'Bundles', color: '#8b5cf6' }]); // Add virtual Bundles category
+            const showBundles = features?.bundles !== false && normalizedBundles.length > 0;
+            setProducts([...productsData.filter(p => p.is_active), ...(showBundles ? normalizedBundles : [])]);
+            // Packs appear as a virtual category
+            setCategories([...categoriesData, ...(showBundles ? [{ id: 'bundles', name: t('pos.bundles'), color: '#8b5cf6' }] : [])]);
             setHeldTransactions(heldData);
         } catch (error) {
             console.error('Failed to load data:', error);
-            toast.error('Failed to load products');
+            toast.error(t('pos.loadFailed'));
         }
     };
 
@@ -81,7 +89,7 @@ export default function POSPage() {
             toast.error(result.message);
             return false;
         }
-        const label = variant ? ` (${[variant.color, variant.size].filter(Boolean).join(' / ')})` : '';
+        const label = variant ? ` (${variantLabel(variant)})` : '';
         toast.success(`${product.name}${label}${result.quantity > 1 ? ` × ${result.quantity}` : ''}`);
         return true;
     };
@@ -100,7 +108,7 @@ export default function POSPage() {
                     setSearchQuery('');
                     handleProductClick(filteredProducts[0]);
                 } else if (filteredProducts.length === 0) {
-                    toast.error(`No product matches "${code}"`);
+                    toast.error(t('pos.noMatch', { code }));
                 }
                 return;
             }
@@ -115,7 +123,7 @@ export default function POSPage() {
             }
         } catch (error) {
             console.error('Code lookup failed:', error);
-            toast.error('Lookup failed');
+            toast.error(t('pos.lookupFailed'));
         }
     };
 
@@ -139,10 +147,7 @@ export default function POSPage() {
     });
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: cart.currency || 'USD',
-        }).format(amount);
+        return formatMoney(amount);
     };
 
     const handleHoldTransaction = async () => {
@@ -150,9 +155,9 @@ export default function POSPage() {
             await cart.holdTransaction(currentEmployee?.id);
             const heldData = await window.electronAPI.held.getAll();
             setHeldTransactions(heldData);
-            toast.success('Transaction held');
+            toast.success(t('pos.held'));
         } catch (error) {
-            toast.error('Failed to hold transaction');
+            toast.error(t('pos.holdFailed'));
         }
     };
 
@@ -164,7 +169,7 @@ export default function POSPage() {
         const heldData = await window.electronAPI.held.getAll();
         setHeldTransactions(heldData);
         setShowHeldModal(false);
-        toast.success('Transaction recalled');
+        toast.success(t('pos.recalled'));
     };
 
     return (
@@ -178,7 +183,7 @@ export default function POSPage() {
                             ? 'border-accent-primary text-accent-primary'
                             : 'border-transparent text-zinc-400 hover:text-white'}`}
                 >
-                    Products
+                    {t('pos.products')}
                 </button>
                 <button
                     onClick={() => setActiveMobileTab('cart')}
@@ -187,7 +192,7 @@ export default function POSPage() {
                             ? 'border-accent-primary text-accent-primary'
                             : 'border-transparent text-zinc-400 hover:text-white'}`}
                 >
-                    <span>Cart</span>
+                    <span>{t('pos.cart')}</span>
                     {cart.items.length > 0 && (
                         <span className="bg-accent-primary text-white text-xs px-1.5 py-0.5 rounded-full">
                             {cart.getItemCount()}
@@ -197,12 +202,12 @@ export default function POSPage() {
             </div>
 
             {/* Products Section */}
-            <div className={`flex-1 flex flex-col border-r border-dark-border min-h-0 min-w-0
+            <div className={`flex-1 flex flex-col border-e border-dark-border min-h-0 min-w-0
                 ${activeMobileTab === 'products' ? 'flex' : 'hidden lg:flex'}`}>
                 {/* Search Bar */}
                 <div className="p-4 border-b border-dark-border">
                     <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
                         <input
                             ref={searchRef}
                             type="text"
@@ -215,8 +220,8 @@ export default function POSPage() {
                                     handleCode(searchQuery);
                                 }
                             }}
-                            placeholder="Search by name, or type/scan a SKU, barcode or QR code…"
-                            className="input pl-10"
+                            placeholder={t('pos.searchPlaceholder')}
+                            className="input ps-10"
                         />
                     </div>
                 </div>
@@ -232,7 +237,7 @@ export default function POSPage() {
                                     : 'bg-dark-tertiary text-zinc-400 hover:text-white'
                                 }`}
                         >
-                            All Products
+                            {t('pos.allProducts')}
                         </button>
                         {categories.map(cat => (
                             <button
@@ -261,7 +266,7 @@ export default function POSPage() {
                         <div className="h-full flex items-center justify-center text-zinc-500">
                             <div className="text-center">
                                 <ShoppingCart className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                                <p>No products found</p>
+                                <p>{t('pos.noProducts')}</p>
                             </div>
                         </div>
                     ) : (
@@ -270,7 +275,7 @@ export default function POSPage() {
                                 <button
                                     key={product.id}
                                     onClick={() => handleProductClick(product)}
-                                    className="product-card text-left"
+                                    className="product-card text-start"
                                     disabled={product.stock_quantity <= 0}
                                 >
                                     <div className="aspect-square bg-dark-tertiary rounded-lg mb-2 flex items-center justify-center overflow-hidden">
@@ -281,12 +286,12 @@ export default function POSPage() {
                                                 className="w-full h-full object-cover"
                                             />
                                         ) : (
-                                            <span className="text-3xl">📦</span>
+                                            <Shirt className="w-10 h-10 text-zinc-600" />
                                         )}
                                     </div>
                                     <p className="font-medium text-sm truncate">{product.name}</p>
                                     {product.variant_count > 0 && (
-                                        <p className="text-[11px] text-zinc-500">{product.variant_count} colours/sizes</p>
+                                        <p className="text-[11px] text-zinc-500">{t('pos.variantCount', { n: product.variant_count })}</p>
                                     )}
                                     <div className="flex items-center justify-between mt-1">
                                         <p className="text-accent-primary font-semibold truncate">
@@ -295,7 +300,7 @@ export default function POSPage() {
                                                 : formatCurrency(product.variant_count > 0 ? product.min_variant_price : product.price)}
                                         </p>
                                         <span className={`text-xs ${product.stock_quantity <= product.min_stock_level ? 'text-amber-400' : 'text-zinc-500'}`}>
-                                            {product.stock_quantity} left
+                                            {t('pos.left', { n: product.stock_quantity })}
                                         </span>
                                     </div>
                                 </button>
@@ -306,13 +311,13 @@ export default function POSPage() {
             </div>
 
             {/* Cart Section */}
-            <div className={`w-full lg:w-96 lg:flex-none lg:shrink-0 flex-1 flex-col bg-dark-secondary border-t lg:border-t-0 lg:border-l border-dark-border min-h-0
+            <div className={`w-full lg:w-96 lg:flex-none lg:shrink-0 flex-1 flex-col bg-dark-secondary border-t lg:border-t-0 lg:border-s border-dark-border min-h-0
                 ${activeMobileTab === 'cart' ? 'flex' : 'hidden lg:flex'}`}>
                 {/* Cart Header */}
                 <div className="p-4 border-b border-dark-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <ShoppingCart className="w-5 h-5 text-accent-primary" />
-                        <h2 className="font-semibold">Cart</h2>
+                        <h2 className="font-semibold">{t('pos.cart')}</h2>
                         {cart.items.length > 0 && (
                             <span className="px-2 py-0.5 rounded-full bg-accent-primary text-xs">
                                 {cart.getItemCount()}
@@ -339,8 +344,8 @@ export default function POSPage() {
                         <div className="h-full flex items-center justify-center text-zinc-500">
                             <div className="text-center">
                                 <ShoppingCart className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                                <p>Cart is empty</p>
-                                <p className="text-sm">Add products to get started</p>
+                                <p>{t('pos.cartEmpty')}</p>
+                                <p className="text-sm">{t('pos.cartEmptyHint')}</p>
                             </div>
                         </div>
                     ) : (
@@ -350,7 +355,7 @@ export default function POSPage() {
                                     <p className="font-medium truncate">{item.product_name}</p>
                                     {(item.variant_label || item.sku) && (
                                         <p className="text-xs text-accent-primary truncate">
-                                            {item.variant_label}{item.variant_label && item.sku ? ' · ' : ''}<span className="font-mono text-zinc-500">{item.sku}</span>
+                                            {(item.color || item.size) ? variantLabel(item) : item.variant_label}{(item.variant_label || item.color || item.size) && item.sku ? ' · ' : ''}<span className="font-mono text-zinc-500 ltr inline-block">{item.sku}</span>
                                         </p>
                                     )}
                                     <p className="text-sm text-zinc-400">
@@ -392,32 +397,32 @@ export default function POSPage() {
                 <div className="p-4 border-t border-dark-border space-y-3">
                     <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                            <span className="text-zinc-400">Subtotal</span>
+                            <span className="text-zinc-400">{t('pos.subtotal')}</span>
                             <span>{formatCurrency(cart.getSubtotal())}</span>
                         </div>
                         <div className="flex justify-between items-center mb-1">
-                            <span className="text-zinc-400">Tax</span>
+                            <span className="text-zinc-400">{t('pos.tax')}</span>
                             <div className="flex items-center gap-2">
                                 {cart.taxExempt && (
-                                    <span className="text-xs text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">Exempt</span>
+                                    <span className="text-xs text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">{t('pos.exempt')}</span>
                                 )}
                                 <span>{formatCurrency(cart.getTaxAmount())}</span>
                             </div>
                         </div>
                         {cart.serviceCharge > 0 && (
                             <div className="flex justify-between">
-                                <span className="text-zinc-400">Service Fee</span>
+                                <span className="text-zinc-400">{t('pos.serviceFee')}</span>
                                 <span>{formatCurrency(cart.serviceCharge)}</span>
                             </div>
                         )}
                         {cart.discount > 0 && (
                             <div className="flex justify-between text-green-400">
-                                <span>Discount</span>
+                                <span>{t('pos.discount')}</span>
                                 <span>-{formatCurrency(cart.getDiscountAmount())}</span>
                             </div>
                         )}
                         <div className="flex justify-between text-lg font-bold pt-2 border-t border-dark-border">
-                            <span>Total</span>
+                            <span>{t('pos.total')}</span>
                             <span className="text-accent-primary">{formatCurrency(cart.getTotal())}</span>
                         </div>
                     </div>
@@ -428,7 +433,7 @@ export default function POSPage() {
                             variant="secondary"
                             onClick={() => setShowOptionsModal(true)}
                             className="col-span-1"
-                            title="Options"
+                            title={t('pos.options')}
                         >
                             <SlidersHorizontal className="w-4 h-4" />
                         </Button>
@@ -439,7 +444,7 @@ export default function POSPage() {
                             className="col-span-2" // Span 2 wide
                         >
                             <Pause className="w-4 h-4" />
-                            Hold
+                            {t('pos.hold')}
                         </Button>
                         <Button
                             variant="danger"
@@ -458,7 +463,7 @@ export default function POSPage() {
                         disabled={cart.items.length === 0}
                     >
                         <CreditCard className="w-5 h-5" />
-                        Pay {formatCurrency(cart.getTotal())}
+                        {t('pos.pay', { amount: formatCurrency(cart.getTotal()) })}
                     </Button>
                 </div>
             </div>
@@ -482,20 +487,20 @@ export default function POSPage() {
                                     amount_paid: 0,
                                     status: 'pending',
                                     due_date: dueDate ? new Date(dueDate).toISOString() : undefined,
-                                    notes: `Credit sale for receipt ${sale.receipt_number}`
+                                    notes: t('pos.creditNote', { n: sale.receipt_number })
                                 });
 
                                 // UPDATE: Attach credit info to sale object for receipt generation
                                 sale.due_date = dueDate ? new Date(dueDate).toISOString() : undefined;
                                 sale.customer_name = creditCustomer.name;
 
-                                toast.success(`Credit sale created! Invoice #${creditSale.invoice_number}`);
+                                toast.success(t('pos.creditCreated', { n: creditSale.invoice_number }));
                             } catch (creditError) {
                                 console.error('Failed to create credit sale:', creditError);
-                                toast.error('Sale completed but credit record failed');
+                                toast.error(t('pos.creditFailed'));
                             }
                         } else {
-                            toast.success(`Sale completed! Receipt #${sale.receipt_number}`);
+                            toast.success(t('pos.saleCompleted', { n: sale.receipt_number }));
                         }
 
                         try {
@@ -503,8 +508,8 @@ export default function POSPage() {
                             if (printerSettings?.receipt?.autoPrint) {
                                 // Print straight away on the configured receipt printer
                                 window.electronAPI.receipts.print(sale)
-                                    .then((ok) => ok && toast.success('Receipt sent to printer'))
-                                    .catch((printError) => toast.error(`Receipt not printed: ${printError.message}`));
+                                    .then((ok) => ok && toast.success(t('pos.printed')))
+                                    .catch((printError) => toast.error(t('pos.notPrinted', { error: printError.message })));
                             } else {
                                 setReceiptData(sale);
                                 setShowReceiptModal(true);
@@ -533,21 +538,21 @@ export default function POSPage() {
             />
 
             {/* Unknown scanned code */}
-            <Modal isOpen={!!unknownCode} onClose={() => setUnknownCode(null)} title="Code not found" size="sm">
+            <Modal isOpen={!!unknownCode} onClose={() => setUnknownCode(null)} title={t('pos.codeNotFound')} size="sm">
                 <ModalBody>
-                    <p className="text-zinc-300">No product or variant uses this code:</p>
+                    <p className="text-zinc-300">{t('pos.codeNotFoundText')}</p>
                     <p className="font-mono text-lg mt-2 break-all text-amber-400">{unknownCode}</p>
                     <p className="text-sm text-zinc-500 mt-3">
-                        Check that the label belongs to this shop. If it is a new item, create it and assign this code.
+                        {t('pos.codeNotFoundHint')}
                     </p>
                 </ModalBody>
                 <ModalFooter>
                     <Button variant="secondary" onClick={() => { setSearchQuery(unknownCode); setUnknownCode(null); searchRef.current?.focus(); }}>
-                        Search instead
+                        {t('pos.searchInstead')}
                     </Button>
                     {hasPermission('products.create') && (
                         <Button onClick={() => { const code = unknownCode; setUnknownCode(null); navigate(`/products?newCode=${encodeURIComponent(code)}`); }}>
-                            Create product with this code
+                            {t('pos.createWithCode')}
                         </Button>
                     )}
                 </ModalFooter>
@@ -557,27 +562,27 @@ export default function POSPage() {
             <Modal
                 isOpen={showHeldModal}
                 onClose={() => setShowHeldModal(false)}
-                title="Held Transactions"
+                title={t('pos.heldTitle')}
                 size="md"
             >
                 <ModalBody>
                     {heldTransactions.length === 0 ? (
-                        <p className="text-center text-zinc-500 py-8">No held transactions</p>
+                        <p className="text-center text-zinc-500 py-8">{t('pos.noHeld')}</p>
                     ) : (
                         <div className="space-y-2">
                             {heldTransactions.map(held => (
                                 <button
                                     key={held.id}
                                     onClick={() => handleRecallTransaction(held)}
-                                    className="w-full p-4 rounded-lg bg-dark-tertiary hover:bg-zinc-700 text-left transition-colors"
+                                    className="w-full p-4 rounded-lg bg-dark-tertiary hover:bg-zinc-700 text-start transition-colors"
                                 >
                                     <div className="flex justify-between items-start">
                                         <div>
                                             <p className="font-medium">
-                                                {held.customer_name || 'Walk-in Customer'}
+                                                {held.customer_name || t('pos.walkIn')}
                                             </p>
                                             <p className="text-sm text-zinc-400">
-                                                {JSON.parse(held.items_json).length} items • {held.employee_name}
+                                                {t('pos.itemCount', { n: JSON.parse(held.items_json).length })} • {held.employee_name}
                                             </p>
                                         </div>
                                         <p className="font-semibold text-accent-primary">
@@ -609,6 +614,7 @@ export default function POSPage() {
 }
 
 function PaymentModal({ isOpen, onClose, total, onComplete }) {
+    const features = useSettingsStore(state => state.settings.features);
     const [paymentMethod, setPaymentMethod] = useState('cash');
     const [cashAmount, setCashAmount] = useState('');
     const [loading, setLoading] = useState(false);
@@ -695,21 +701,18 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                     // Just informational, allowing partial payment now
                 }
             } else {
-                setGiftCardError('Invalid or inactive Gift Card');
+                setGiftCardError(t('pos.giftInvalid'));
                 setGiftCardBalance(null);
             }
         } catch (err) {
-            setGiftCardError('Error checking balance');
+            setGiftCardError(t('pos.giftCheckFailed'));
         } finally {
             setCheckingGiftCard(false);
         }
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: cart.currency || 'USD',
-        }).format(amount);
+        return formatMoney(amount);
     };
 
     const cashValue = parseFloat(cashAmount) || 0;
@@ -755,27 +758,27 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                 setGiftCardCode('');
                 setGiftCardBalance(null);
                 setPaymentMethod('cash');
-                toast.success(`Applied ${formatCurrency(amountToPay)} from Gift Card`);
+                toast.success(t('pos.giftApplied', { amount: formatCurrency(amountToPay) }));
             }
             return;
         }
 
         if (paymentMethod === 'cash' && cashValue < remainingDue) {
-            toast.error('Insufficient cash amount');
+            toast.error(t('pos.insufficientCash'));
             return;
         }
 
         if (paymentMethod === 'credit') {
             if (!selectedCustomer) {
-                toast.error('Please select a customer for credit sale');
+                toast.error(t('pos.selectCustomerCredit'));
                 return;
             }
             if (!creditInfo?.credit_enabled) {
-                toast.error('Customer does not have credit enabled');
+                toast.error(t('pos.noCreditEnabled'));
                 return;
             }
             if (creditInfo.available_credit < remainingDue) {
-                toast.error('Insufficient credit limit');
+                toast.error(t('pos.creditLimit'));
                 return;
             }
         }
@@ -786,8 +789,8 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                 method: paymentMethod,
                 // For cash: record the SALE amount (what stays in drawer), not the tendered amount
                 amount: remainingDue,
-                reference: paymentMethod === 'card' ? 'Card Payment' :
-                    paymentMethod === 'credit' ? 'Credit Sale' : null
+                // Cash keeps the amount handed over, printed on the receipt with the change
+                reference: paymentMethod === 'cash' ? JSON.stringify({ tendered: cashValue }) : null
             };
 
             const allPayments = [...splitPayments, finalPayment];
@@ -815,70 +818,44 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
         setSplitPayments([]);
     };
 
-    const quickCashValues = [20, 50, 100];
+    const quickCashValues = quickCashAmounts(remainingDue);
+    const methods = [
+        { id: 'cash', icon: Banknote, label: t('pay.cash'), active: 'border-accent-primary bg-accent-primary/10' },
+        { id: 'card', icon: CreditCard, label: t('pay.cardCib'), active: 'border-accent-primary bg-accent-primary/10' },
+        { id: 'transfer', icon: Smartphone, label: t('pay.transferShort'), active: 'border-accent-primary bg-accent-primary/10' },
+        ...(features?.credit !== false ? [{ id: 'credit', icon: FileText, label: t('pay.credit'), active: 'border-amber-500 bg-amber-500/10' }] : []),
+        ...(features?.giftCards ? [{ id: 'gift_card', icon: Gift, label: t('pay.giftCard'), active: 'border-purple-500 bg-purple-500/10' }] : []),
+    ];
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Payment" size="lg">
+        <Modal isOpen={isOpen} onClose={onClose} title={t('pos.payment')} size="lg">
             <ModalBody>
                 <div className="grid grid-cols-2 gap-6">
                     {/* Payment Method Selection */}
                     <div className="space-y-4">
-                        <p className="text-sm text-zinc-400">Payment Method</p>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                            <button
-                                onClick={() => setPaymentMethod('cash')}
-                                className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2
-                                    ${paymentMethod === 'cash'
-                                        ? 'border-accent-primary bg-accent-primary/10'
-                                        : 'border-dark-border hover:border-zinc-600'
-                                    }`}
-                            >
-                                <Banknote className="w-5 h-5" />
-                                <span className="text-xs font-medium">Cash</span>
-                            </button>
-                            <button
-                                onClick={() => setPaymentMethod('card')}
-                                className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2
-                                    ${paymentMethod === 'card'
-                                        ? 'border-accent-primary bg-accent-primary/10'
-                                        : 'border-dark-border hover:border-zinc-600'
-                                    }`}
-                            >
-                                <CreditCard className="w-5 h-5" />
-                                <span className="text-xs font-medium">Card</span>
-                            </button>
-                            <button
-                                onClick={() => setPaymentMethod('credit')}
-                                className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2
-                                    ${paymentMethod === 'credit'
-                                        ? 'border-amber-500 bg-amber-500/10'
-                                        : 'border-dark-border hover:border-zinc-600'
-                                    }`}
-                            >
-                                <FileText className="w-5 h-5" />
-                                <span className="text-xs font-medium">Credit</span>
-                            </button>
-                            <button
-                                onClick={() => setPaymentMethod('gift_card')}
-                                className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2
-                                    ${paymentMethod === 'gift_card'
-                                        ? 'border-purple-500 bg-purple-500/10'
-                                        : 'border-dark-border hover:border-zinc-600'
-                                    }`}
-                            >
-                                <Gift className="w-5 h-5" />
-                                <span className="text-xs font-medium">Gift Card</span>
-                            </button>
+                        <p className="text-sm text-zinc-400">{t('pos.paymentMethod')}</p>
+                        <div className="grid grid-cols-3 gap-2">
+                            {methods.map(m => (
+                                <button
+                                    key={m.id}
+                                    onClick={() => setPaymentMethod(m.id)}
+                                    className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2
+                                        ${paymentMethod === m.id ? m.active : 'border-dark-border hover:border-zinc-600'}`}
+                                >
+                                    <m.icon className="w-5 h-5" />
+                                    <span className="text-xs font-medium text-center">{m.label}</span>
+                                </button>
+                            ))}
                         </div>
 
                         {/* Total Display */}
                         <div className="p-6 rounded-xl bg-dark-tertiary text-center">
                             {splitPayments.length > 0 && (
                                 <div className="mb-4 space-y-2">
-                                    <p className="text-sm text-zinc-400">Payments Applied</p>
+                                    <p className="text-sm text-zinc-400">{t('pos.paymentsApplied')}</p>
                                     {splitPayments.map((p, i) => (
                                         <div key={i} className="flex justify-between text-sm px-4 py-2 bg-dark-secondary rounded-lg">
-                                            <span className="capitalize">{p.method.replace('_', ' ')}</span>
+                                            <span>{paymentLabel(p.method)}</span>
                                             <span className="font-medium text-green-400">{formatCurrency(p.amount)}</span>
                                         </div>
                                     ))}
@@ -886,7 +863,7 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                 </div>
                             )}
                             <p className="text-sm text-zinc-400 mb-1">
-                                {splitPayments.length > 0 ? 'Remaining Due' : 'Total Amount'}
+                                {splitPayments.length > 0 ? t('pos.remaining') : t('pos.totalAmount')}
                             </p>
                             <p className="text-4xl font-bold text-accent-primary">
                                 {formatCurrency(remainingDue)}
@@ -896,18 +873,18 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                         {/* Gift Card Input */}
                         {paymentMethod === 'gift_card' && (
                             <div className="space-y-3">
-                                <p className="text-sm text-zinc-400">Scan Gift Card</p>
+                                <p className="text-sm text-zinc-400">{t('pos.scanGift')}</p>
                                 <div className="flex gap-2">
                                     <Input
                                         value={giftCardCode}
                                         onChange={(e) => setGiftCardCode(e.target.value)}
-                                        placeholder="Scan or enter code..."
+                                        placeholder={t('pos.scanOrEnter')}
                                         className="flex-1"
                                         data-scan-passthrough
                                         autoFocus
                                     />
                                     <Button onClick={checkGiftCardBalance} disabled={!giftCardCode || checkingGiftCard}>
-                                        {checkingGiftCard ? 'Checking...' : 'Check'}
+                                        {checkingGiftCard ? t('pos.checking') : t('pos.check')}
                                     </Button>
                                 </div>
                                 {giftCardError && (
@@ -917,10 +894,10 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                 )}
                                 {giftCardBalance !== null && !giftCardError && (
                                     <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-                                        <p className="text-sm text-purple-300">Available Balance</p>
+                                        <p className="text-sm text-purple-300">{t('pos.availableBalance')}</p>
                                         <p className="text-2xl font-bold text-purple-400">{formatCurrency(giftCardBalance)}</p>
                                         {giftCardBalance < total && (
-                                            <p className="text-xs text-red-400 mt-2">Insufficient to cover total</p>
+                                            <p className="text-xs text-red-400 mt-2">{t('pos.insufficientGift')}</p>
                                         )}
                                     </div>
                                 )}
@@ -930,11 +907,11 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                         {/* Credit Sale - Customer Selection */}
                         {paymentMethod === 'credit' && (
                             <div className="space-y-3">
-                                <p className="text-sm text-zinc-400">Select Customer *</p>
+                                <p className="text-sm text-zinc-400">{t('pos.selectCustomer')}</p>
                                 <div className="relative">
                                     <input
                                         type="text"
-                                        placeholder="Search customer..."
+                                        placeholder={t('pos.searchCustomer')}
                                         value={selectedCustomer ? selectedCustomer.name : customerSearch}
                                         onChange={(e) => {
                                             setCustomerSearch(e.target.value);
@@ -954,14 +931,14 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                                         setCustomerSearch('');
                                                         setShowCustomerDropdown(false);
                                                     }}
-                                                    className="w-full px-4 py-3 text-left hover:bg-dark-tertiary flex items-center justify-between"
+                                                    className="w-full px-4 py-3 text-start hover:bg-dark-tertiary flex items-center justify-between"
                                                 >
                                                     <div>
                                                         <p className="font-medium">{customer.name}</p>
                                                         <p className="text-xs text-zinc-500">{customer.phone || customer.email}</p>
                                                     </div>
                                                     {customer.credit_enabled ? (
-                                                        <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded">Credit OK</span>
+                                                        <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded">{t('pos.creditOk')}</span>
                                                     ) : null}
                                                 </button>
                                             ))}
@@ -973,34 +950,34 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                 {selectedCustomer && (
                                     <div className={`p-4 rounded-xl ${creditInfo?.credit_enabled ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
                                         {loadingCredit ? (
-                                            <p className="text-center text-zinc-400">Loading credit info...</p>
+                                            <p className="text-center text-zinc-400">{t('pos.loadingCredit')}</p>
                                         ) : creditInfo ? (
                                             <div className="space-y-2">
                                                 <div className="flex justify-between items-center">
-                                                    <span className="text-sm text-zinc-400">Credit Status</span>
+                                                    <span className="text-sm text-zinc-400">{t('pos.creditStatus')}</span>
                                                     <span className={`text-sm font-medium ${creditInfo.credit_enabled ? 'text-green-400' : 'text-red-400'}`}>
-                                                        {creditInfo.credit_enabled ? 'Enabled' : 'Not Enabled'}
+                                                        {creditInfo.credit_enabled ? t('pos.enabled') : t('pos.notEnabled')}
                                                     </span>
                                                 </div>
                                                 {creditInfo.credit_enabled && (
                                                     <>
                                                         <div className="flex justify-between items-center">
-                                                            <span className="text-sm text-zinc-400">Credit Limit</span>
+                                                            <span className="text-sm text-zinc-400">{t('pos.creditLimitLabel')}</span>
                                                             <span className="font-medium">{formatCurrency(creditInfo.credit_limit)}</span>
                                                         </div>
                                                         <div className="flex justify-between items-center">
-                                                            <span className="text-sm text-zinc-400">Current Balance</span>
+                                                            <span className="text-sm text-zinc-400">{t('pos.currentBalance')}</span>
                                                             <span className="font-medium text-amber-400">{formatCurrency(creditInfo.credit_balance)}</span>
                                                         </div>
                                                         <div className="flex justify-between items-center pt-2 border-t border-dark-border">
-                                                            <span className="text-sm font-medium">Available Credit</span>
+                                                            <span className="text-sm font-medium">{t('pos.availableCredit')}</span>
                                                             <span className={`font-bold ${creditInfo.available_credit >= total ? 'text-green-400' : 'text-red-400'}`}>
                                                                 {formatCurrency(creditInfo.available_credit)}
                                                             </span>
                                                         </div>
 
                                                         <div className="flex justify-between items-center pt-2">
-                                                            <span className="text-sm text-zinc-400">Due Date</span>
+                                                            <span className="text-sm text-zinc-400">{t('pos.dueDate')}</span>
                                                             <div className="w-40">
                                                                 <DatePicker
                                                                     value={dueDate}
@@ -1011,14 +988,14 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                                         </div>
                                                         {creditInfo.available_credit < total && (
                                                             <p className="text-xs text-red-400 mt-2">
-                                                                ⚠️ Insufficient credit for this sale
+                                                                {t('pos.insufficientCredit')}
                                                             </p>
                                                         )}
                                                     </>
                                                 )}
                                             </div>
                                         ) : (
-                                            <p className="text-center text-zinc-400">No credit info available</p>
+                                            <p className="text-center text-zinc-400">{t('pos.noCreditInfo')}</p>
                                         )}
                                     </div>
                                 )}
@@ -1030,10 +1007,10 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                 {/* Quick Cash Buttons */}
                                 <div className="flex gap-2">
                                     <button
-                                        onClick={() => setCashAmount(total.toFixed(2))}
+                                        onClick={() => setCashAmount(String(Math.round(remainingDue * 100) / 100))}
                                         className="flex-1 py-2 rounded-lg bg-accent-primary/20 text-accent-primary font-medium hover:bg-accent-primary/30 transition-colors"
                                     >
-                                        Exact
+                                        {t('pos.exact')}
                                     </button>
                                     {quickCashValues.map(val => (
                                         <button
@@ -1050,7 +1027,7 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                 {cashValue > 0 && (
                                     <div className={`p-4 rounded-xl text-center ${change >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
                                         <p className="text-sm text-zinc-400 mb-1">
-                                            {change >= 0 ? 'Change Due' : 'Amount Due'}
+                                            {change >= 0 ? t('pos.change') : t('pos.amountDue')}
                                         </p>
                                         <p className={`text-2xl font-bold ${change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                             {formatCurrency(Math.abs(change))}
@@ -1064,9 +1041,9 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                     {/* Numpad / Right Side */}
                     {paymentMethod === 'cash' && (
                         <div>
-                            <p className="text-sm text-zinc-400 mb-4">Cash Received</p>
+                            <p className="text-sm text-zinc-400 mb-4">{t('pos.cashReceived')}</p>
                             <div className="p-4 rounded-xl bg-dark-tertiary mb-4">
-                                <p className="text-3xl font-bold text-right font-mono">
+                                <p className="text-3xl font-bold text-end font-mono">
                                     {formatCurrency(parseFloat(cashAmount) || 0)}
                                 </p>
                             </div>
@@ -1078,11 +1055,13 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                         </div>
                     )}
 
-                    {paymentMethod === 'card' && (
+                    {(paymentMethod === 'card' || paymentMethod === 'transfer') && (
                         <div className="flex items-center justify-center">
                             <div className="text-center">
-                                <CreditCard className="w-20 h-20 mx-auto mb-4 text-zinc-600" />
-                                <p className="text-zinc-400">Ready for card payment</p>
+                                {paymentMethod === 'card'
+                                    ? <CreditCard className="w-20 h-20 mx-auto mb-4 text-zinc-600" />
+                                    : <Smartphone className="w-20 h-20 mx-auto mb-4 text-zinc-600" />}
+                                <p className="text-zinc-400">{paymentMethod === 'card' ? t('pos.cardReady') : t('pos.transferReady')}</p>
                             </div>
                         </div>
                     )}
@@ -1094,13 +1073,13 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                 <p className="text-zinc-400">
                                     {selectedCustomer
                                         ? canProcessCredit()
-                                            ? 'Ready to create credit sale'
-                                            : 'Cannot process credit sale'
-                                        : 'Select a customer to continue'}
+                                            ? t('pos.creditReady')
+                                            : t('pos.creditCannot')
+                                        : t('pos.selectCustomerContinue')}
                                 </p>
                                 {selectedCustomer && canProcessCredit() && (
                                     <p className="text-sm text-amber-400 mt-2">
-                                        Invoice will be generated automatically
+                                        {t('pos.invoiceAuto')}
                                     </p>
                                 )}
                             </div>
@@ -1113,12 +1092,12 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                 <Gift className="w-20 h-20 mx-auto mb-4 text-purple-500/50" />
                                 <p className="text-zinc-400">
                                     {giftCardBalance !== null
-                                        ? `Balance: ${formatCurrency(giftCardBalance)}`
-                                        : 'Scan card to check balance'}
+                                        ? t('pos.giftBalance', { amount: formatCurrency(giftCardBalance) })
+                                        : t('pos.scanToCheck')}
                                 </p>
                                 {giftCardBalance !== null && giftCardBalance < remainingDue && (
                                     <p className="text-sm text-amber-400 mt-2">
-                                        Partial payment available
+                                        {t('pos.partialAvailable')}
                                     </p>
                                 )}
                             </div>
@@ -1128,7 +1107,7 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
             </ModalBody>
             <ModalFooter>
                 <Button variant="secondary" onClick={onClose}>
-                    Cancel
+                    {t('common.cancel')}
                 </Button>
                 <Button
                     variant={paymentMethod === 'credit' ? 'primary' : paymentMethod === 'gift_card' ? 'primary' : 'success'}
@@ -1140,9 +1119,9 @@ function PaymentModal({ isOpen, onClose, total, onComplete }) {
                         (paymentMethod === 'gift_card' && !giftCardBalance)
                     }
                 >
-                    {paymentMethod === 'credit' ? 'Create Credit Sale' :
-                        paymentMethod === 'gift_card' ? (giftCardBalance < remainingDue ? 'Apply Partial Payment' : 'Redeem Gift Card') :
-                            'Complete Payment'}
+                    {paymentMethod === 'credit' ? t('pos.createCredit') :
+                        paymentMethod === 'gift_card' ? (giftCardBalance < remainingDue ? t('pos.applyPartial') : t('pos.redeemGift')) :
+                            t('pos.complete')}
                 </Button>
             </ModalFooter>
         </Modal>

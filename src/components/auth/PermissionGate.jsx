@@ -1,3 +1,4 @@
+import { useT } from '../../i18n';
 /**
  * PermissionGate Component
  * 
@@ -50,13 +51,14 @@ export function PermissionDisable({
     disabledClassName = 'opacity-50 pointer-events-none'
 }) {
     const { hasPermission } = useAuthStore();
+    const { t } = useT();
 
     const permissions = Array.isArray(permission) ? permission : [permission];
     const hasAccess = permissions.some(p => hasPermission(p));
 
     if (!hasAccess) {
         return (
-            <div className={disabledClassName} title="You don't have permission for this action">
+            <div className={disabledClassName} title={t('common.noPermission')}>
                 {children}
             </div>
         );

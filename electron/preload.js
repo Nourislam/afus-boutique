@@ -25,6 +25,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         delete: (id) => ipcRenderer.invoke('db:categories:delete', id),
     },
 
+    // Brands
+    brands: {
+        getAll: () => ipcRenderer.invoke('db:brands:getAll'),
+        create: (brand) => ipcRenderer.invoke('db:brands:create', brand),
+        update: (brand) => ipcRenderer.invoke('db:brands:update', brand),
+        delete: (id) => ipcRenderer.invoke('db:brands:delete', id),
+    },
+
     // Products
     products: {
         getAll: () => ipcRenderer.invoke('db:products:getAll'),
@@ -134,6 +142,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     reports: {
         salesByDate: (params) => ipcRenderer.invoke('db:reports:salesByDate', params),
         topProducts: (params) => ipcRenderer.invoke('db:reports:topProducts', params),
+        clothingDashboard: (params) => ipcRenderer.invoke('db:reports:clothingDashboard', params),
         salesByCategory: (params) => ipcRenderer.invoke('db:reports:salesByCategory', params),
         paymentMethods: (params) => ipcRenderer.invoke('db:reports:paymentMethods', params),
         getLowStock: () => ipcRenderer.invoke('db:reports:getLowStock'),

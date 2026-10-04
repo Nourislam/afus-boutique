@@ -12,7 +12,22 @@
  *   api.uuid()            -> new id
  */
 
+const CLOTHING = require('../shared/clothing.json');
+
 const IDENTIFIER_PATTERN = /^[A-Z0-9][A-Z0-9._-]*$/;
+
+/**
+ * User-facing errors are sent to the interface as "CODE|{json params}" so they
+ * can be shown in the shop's language (see src/i18n/errors.js).
+ */
+function coded(code, params = {}) {
+    return `${code}|${JSON.stringify(params)}`;
+}
+function codedError(code, params) {
+    const error = new Error(coded(code, params));
+    error.code = code;
+    return error;
+}
 const MAX_IDENTIFIER_LENGTH = 64;
 
 // Short codes for common colour names (English, French, Arabic) used when
@@ -47,13 +62,11 @@ function normalizeCode(code) {
 }
 
 /** Returns null if valid, otherwise an error message. */
-function validateIdentifier(code, label = 'SKU') {
+function validateIdentifier(code, label = 'sku') {
     const normalized = normalizeCode(code);
-    if (!normalized) return `${label} is required`;
-    if (normalized.length > MAX_IDENTIFIER_LENGTH) return `${label} must be at most ${MAX_IDENTIFIER_LENGTH} characters`;
-    if (!IDENTIFIER_PATTERN.test(normalized)) {
-        return `${label} may only contain letters A-Z, digits 0-9, "-", "_" and "." (got "${code}")`;
-    }
+    if (!normalized) return coded('ID_REQUIRED', { field: label });
+    if (normalized.length > MAX_IDENTIFIER_LENGTH) return coded('ID_TOO_LONG', { field: label, max: MAX_IDENTIFIER_LENGTH });
+    if (!IDENTIFIER_PATTERN.test(normalized)) return coded('ID_INVALID_CHARS', { field: label, value: String(code) });
     return null;
 }
 
@@ -73,8 +86,25 @@ function productCode(product, settings = {}) {
     return (asciiLetters(settings.prefix) + code).slice(0, 8);
 }
 
-function colorCode(color, index = 0) {
+// Palette colours (by code or by name in any language) -> short SKU code
+const PALETTE_SKU = {};
+// Any palette name (en/fr/ar) or code -> stable palette code ("Noir" -> "black")
+const PALETTE_CODE = {};
+for (const c of CLOTHING.colors) {
+    for (const name of [c.code, c.en, c.fr, c.ar]) PALETTE_CODE[String(name).trim().toLowerCase()] = c.code;
+}
+function paletteCode(color, code = null) {
+    if (code && PALETTE_CODE[String(code).toLowerCase()]) return PALETTE_CODE[String(code).toLowerCase()];
+    return color ? PALETTE_CODE[String(color).trim().toLowerCase()] || null : null;
+}
+for (const c of CLOTHING.colors) {
+    for (const name of [c.code, c.en, c.fr, c.ar]) PALETTE_SKU[String(name).toLowerCase()] = c.sku;
+}
+
+function colorCode(color, index = 0, code = null) {
+    if (code && PALETTE_SKU[String(code).toLowerCase()]) return PALETTE_SKU[String(code).toLowerCase()];
     if (!color) return '';
+    if (PALETTE_SKU[String(color).trim().toLowerCase()]) return PALETTE_SKU[String(color).trim().toLowerCase()];
     const key = String(color).trim().toLowerCase();
     if (COLOR_CODES[key]) return COLOR_CODES[key];
     const letters = asciiLetters(color);
@@ -147,7 +177,7 @@ function generateSkus(api, product, variants, settings = {}, reserved = new Set(
     const taken = new Set([...reserved].map(normalizeCode));
 
     return variants.map((variant, index) => {
-        const parts = [base, colorCode(variant.color, index), sizeCode(variant.size, index)].filter(Boolean);
+        const parts = [base, colorCode(variant.color, index, variant.color_code), sizeCode(variant.size, index)].filter(Boolean);
         const stem = parts.join(separator);
         for (let seq = 1; seq < 10 ** digits; seq++) {
             const candidate = normalizeCode(`${stem}${separator}${String(seq).padStart(digits, '0')}`);
@@ -156,7 +186,7 @@ function generateSkus(api, product, variants, settings = {}, reserved = new Set(
             taken.add(candidate);
             return candidate;
         }
-        throw new Error(`Could not generate a free SKU for ${stem}`);
+        throw codedError('SKU_EXHAUSTED', { stem });
     });
 }
 
@@ -218,7 +248,7 @@ function adjustStock(api, { productId, variantId = null, delta, type, reason = n
     const product = api.get('SELECT id, stock_quantity, has_variants, name FROM products WHERE id = ?', [productId]);
     if (!product) throw new Error(`Product ${productId} not found`);
     if (product.has_variants) {
-        throw new Error(`"${product.name}" has sizes/colours: please choose a variant`);
+        throw codedError('VARIANT_REQUIRED', { product: product.name });
     }
     const before = product.stock_quantity || 0;
     const after = before + change;
@@ -241,36 +271,37 @@ function validateVariants(api, productId, variants) {
     const combos = new Set();
 
     variants.forEach((variant, index) => {
-        const row = `Variant ${index + 1}${variantLabel(variant) ? ` (${variantLabel(variant)})` : ''}`;
+        const row = { row: index + 1, variant: variantLabel(variant) };
         const combo = `${(variant.color || '').trim().toLowerCase()}|${(variant.size || '').trim().toLowerCase()}`;
         if (variant.is_active !== false && variant.is_active !== 0) {
-            if (combos.has(combo)) errors.push(`${row}: the same colour/size combination appears twice`);
+            if (combos.has(combo)) errors.push(coded('VARIANT_DUPLICATE_COMBO', row));
             combos.add(combo);
         }
 
         const identifiers = [
-            ['SKU', variant.sku],
-            ['QR code', variant.qr_code],
-            ['Barcode', variant.barcode],
+            ['sku', variant.sku],
+            ['qr', variant.qr_code],
+            ['barcode', variant.barcode],
         ];
         for (const [label, value] of identifiers) {
-            if (label === 'Barcode' && !value) continue;
+            if (label === 'barcode' && !value) continue;
             const message = validateIdentifier(value, label);
             if (message) {
-                errors.push(`${row}: ${message}`);
+                const [code, params] = message.split('|');
+                errors.push(coded(code, { ...JSON.parse(params), ...row }));
                 continue;
             }
             const normalized = normalizeCode(value);
             // The QR code of a variant is normally its own SKU: that is fine.
             const previous = seen.get(normalized);
             if (previous && previous.index !== index) {
-                errors.push(`${row}: ${label} "${normalized}" is also used by variant ${previous.index + 1}`);
+                errors.push(coded('ID_DUPLICATE_IN_FORM', { ...row, field: label, value: normalized, other: previous.index + 1 }));
             } else if (!previous) {
                 seen.set(normalized, { index });
             }
             const owner = findIdentifierOwner(api, normalized, { excludeVariantId: variant.id || null, excludeProductId: productId });
             if (owner && !(owner.type === 'variant' && owner.product_id === productId && variants.some(v => v.id === owner.id))) {
-                errors.push(`${row}: ${label} "${normalized}" is already used by ${describeOwner(owner)}`);
+                errors.push(coded('ID_TAKEN', { ...row, field: label, value: normalized, owner: describeOwner(owner) }));
             }
         }
     });
@@ -289,7 +320,7 @@ function validateVariants(api, productId, variants) {
  */
 function saveProduct(api, product, variants = [], { employeeId = null, isNew = false } = {}) {
     if (!product || !product.id) throw new Error('Product id is required');
-    if (!product.name || !String(product.name).trim()) throw new Error('Product name is required');
+    if (!product.name || !String(product.name).trim()) throw codedError('PRODUCT_NAME_REQUIRED');
 
     const hasVariants = Array.isArray(variants) && variants.length > 0;
 
@@ -308,13 +339,13 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
     if (productSku) {
         const owner = findIdentifierOwner(api, productSku, { excludeProductId: product.id });
         if (owner && !(owner.type === 'variant' && owner.product_id === product.id)) {
-            throw new Error(`SKU "${productSku}" is already used by ${describeOwner(owner)}`);
+            throw codedError('ID_TAKEN', { field: 'sku', value: productSku, owner: describeOwner(owner) });
         }
     }
     if (productBarcode) {
         const owner = findIdentifierOwner(api, productBarcode, { excludeProductId: product.id });
         if (owner && !(owner.type === 'variant' && owner.product_id === product.id)) {
-            throw new Error(`Barcode "${productBarcode}" is already used by ${describeOwner(owner)}`);
+            throw codedError('ID_TAKEN', { field: 'barcode', value: productBarcode, owner: describeOwner(owner) });
         }
     }
 
@@ -333,8 +364,8 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
             Number(product.price) || 0, Number(product.cost) || 0,
             parseInt(product.min_stock_level, 10) || 0, Number(product.tax_rate) || 0,
             product.is_active === false || product.is_active === 0 ? 0 : 1,
-            product.image_path || null, product.brand || null, product.gender || null,
-            product.season || null, hasVariants ? 1 : 0,
+            product.image_path || null, product.brand ? String(product.brand).trim() : null, product.gender || null,
+            product.season || null, product.collection ? String(product.collection).trim() : null, hasVariants ? 1 : 0,
         ];
 
         if (existing && !isNew) {
@@ -342,7 +373,7 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
                 UPDATE products SET
                     sku = ?, barcode = ?, name = ?, description = ?, category_id = ?, supplier_id = ?,
                     price = ?, cost = ?, min_stock_level = ?, tax_rate = ?, is_active = ?, image_path = ?,
-                    brand = ?, gender = ?, season = ?, has_variants = ?,
+                    brand = ?, gender = ?, season = ?, collection = ?, has_variants = ?,
                     updated_at = CURRENT_TIMESTAMP, is_synced = 0
                 WHERE id = ?
             `, [...fields, product.id]);
@@ -352,8 +383,8 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
                 INSERT INTO products (
                     sku, barcode, name, description, category_id, supplier_id,
                     price, cost, min_stock_level, tax_rate, is_active, image_path,
-                    brand, gender, season, has_variants, id, stock_quantity, is_synced
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+                    brand, gender, season, collection, has_variants, id, stock_quantity, is_synced
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
             `, [...fields, product.id]);
         }
 
@@ -383,6 +414,7 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
             const cost = variant.cost === '' || variant.cost === null || variant.cost === undefined ? null : Number(variant.cost);
             const values = [
                 variant.color ? String(variant.color).trim() : null,
+                paletteCode(variant.color, variant.color_code),
                 variant.size ? String(variant.size).trim() : null,
                 variant.sku, variant.barcode, variant.qr_code, price, cost,
                 parseInt(variant.min_stock_level, 10) || 0, variant.is_active, variant.sort_order,
@@ -392,7 +424,7 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
                 if (current.product_id !== product.id) throw new Error(`Variant ${id} belongs to another product`);
                 api.run(`
                     UPDATE product_variants SET
-                        color = ?, size = ?, sku = ?, barcode = ?, qr_code = ?, price = ?, cost = ?,
+                        color = ?, color_code = ?, size = ?, sku = ?, barcode = ?, qr_code = ?, price = ?, cost = ?,
                         min_stock_level = ?, is_active = ?, sort_order = ?,
                         updated_at = CURRENT_TIMESTAMP, is_synced = 0
                     WHERE id = ?
@@ -400,9 +432,9 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
             } else {
                 api.run(`
                     INSERT INTO product_variants (
-                        color, size, sku, barcode, qr_code, price, cost, min_stock_level, is_active, sort_order,
+                        color, color_code, size, sku, barcode, qr_code, price, cost, min_stock_level, is_active, sort_order,
                         id, product_id, stock_quantity, is_synced
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
                 `, [...values, id, product.id]);
             }
 
@@ -495,7 +527,7 @@ function regenerateQrCode(api, variantId) {
     const variant = api.get('SELECT * FROM product_variants WHERE id = ?', [variantId]);
     if (!variant) throw new Error('Variant not found');
     const owner = findIdentifierOwner(api, variant.sku, { excludeVariantId: variantId });
-    if (owner) throw new Error(`SKU "${variant.sku}" is already used by ${describeOwner(owner)}`);
+    if (owner) throw codedError('ID_TAKEN', { field: 'sku', value: variant.sku, owner: describeOwner(owner) });
     api.run('UPDATE product_variants SET qr_code = ?, updated_at = CURRENT_TIMESTAMP, is_synced = 0 WHERE id = ?', [normalizeCode(variant.sku), variantId]);
     return api.get('SELECT * FROM product_variants WHERE id = ?', [variantId]);
 }
@@ -533,6 +565,8 @@ function getLowStock(api) {
 }
 
 module.exports = {
+    coded,
+    codedError,
     normalizeCode,
     validateIdentifier,
     generateSkus,
@@ -550,4 +584,5 @@ module.exports = {
     searchVariants,
     getLowStock,
     COLOR_CODES,
+    paletteCode,
 };

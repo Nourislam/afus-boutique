@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useEffect, useState } from 'react';
 import { RefreshCw, Printer, Tag } from 'lucide-react';
 import { Input } from '../ui/Input';
@@ -49,8 +50,8 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
 
     useEffect(() => {
         loadPrinters();
-        window.electronAPI.labels.getTemplates().then(({ templates: t, defaults: d }) => {
-            setTemplates(t);
+        window.electronAPI.labels.getTemplates().then(({ templates: tpls, defaults: d }) => {
+            setTemplates(tpls);
             setDefaults(d);
         });
     }, []);
@@ -61,13 +62,15 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
     const setLayout = (patch) => onLabelsChange({ ...labels, ...patch });
 
     const printerOptions = [
-        { value: '', label: 'Ask every time (system print dialog)' },
-        ...printerList.map(p => ({ value: p.name, label: `${p.displayName}${p.isDefault ? ' (default)' : ''}` })),
+        { value: '', label: t('printers.askDialog') },
+        ...printerList.map(p => ({ value: p.name, label: `${p.displayName}${p.isDefault ? ` (${t('common.default')})` : ''}` })),
     ];
 
     const templateOptions = [
-        ...Object.entries(templates).map(([id, t]) => ({ value: id, label: t.name })),
-        { value: 'custom', label: 'Custom size…' },
+        ...Object.entries(templates).map(([id, tpl]) => ({ value: id, label: tpl.mode === 'sheet'
+            ? t('labels.sheetTemplate', { paper: tpl.paper || 'A4', cols: tpl.columns, rows: tpl.rows, w: tpl.widthMm, h: tpl.heightMm })
+            : t('labels.rollTemplate', { w: tpl.widthMm, h: tpl.heightMm }) })),
+        { value: 'custom', label: t('labels.custom') },
     ];
 
     const chooseTemplate = (id) => {
@@ -75,8 +78,8 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
             setLayout({ template: 'custom' });
             return;
         }
-        const t = templates[id] || {};
-        setLayout({ template: id, ...t, name: undefined });
+        const tpl = templates[id] || {};
+        setLayout({ template: id, ...tpl, name: undefined });
     };
 
     const isCustom = layout.template === 'custom';
@@ -86,32 +89,32 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
             {/* Receipt printer */}
             <section className="space-y-4">
                 <div className="flex items-center justify-between">
-                    <h4 className="font-semibold flex items-center gap-2"><Printer className="w-4 h-4" /> Receipt printer</h4>
+                    <h4 className="font-semibold flex items-center gap-2"><Printer className="w-4 h-4" /> {t('printers.receipt')}</h4>
                     <Button type="button" variant="ghost" size="sm" onClick={loadPrinters} loading={loadingPrinters}>
-                        <RefreshCw className="w-4 h-4" /> Refresh printers
+                        <RefreshCw className="w-4 h-4" /> {t('printers.refresh')}
                     </Button>
                 </div>
                 {printerList.length === 0 && !loadingPrinters && (
-                    <p className="text-xs text-amber-400">No printers were found. Install the printer in Windows (with its driver), then click Refresh.</p>
+                    <p className="text-xs text-amber-400">{t('printers.none')}</p>
                 )}
                 <div className="grid grid-cols-2 gap-4">
                     <Select
-                        label="Printer"
+                        label={t('printers.printer')}
                         value={printers.receipt.printerName || ''}
                         onChange={(v) => setReceipt('printerName', v)}
                         options={printerOptions}
                     />
                     <Select
-                        label="Paper width"
+                        label={t('printers.paperWidth')}
                         value={String(printers.receipt.paperWidthMm || 80)}
                         onChange={(v) => setReceipt('paperWidthMm', parseInt(v, 10))}
                         options={[
-                            { value: '80', label: '80 mm roll' },
-                            { value: '58', label: '58 mm roll' },
+                            { value: '80', label: t('printers.roll80') },
+                            { value: '58', label: t('printers.roll58') },
                         ]}
                     />
                     <Input
-                        label="Copies"
+                        label={t('printers.copies')}
                         type="number"
                         min="1"
                         max="5"
@@ -123,12 +126,12 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
                     <Toggle
                         checked={printers.receipt.autoPrint}
                         onChange={(v) => setReceipt('autoPrint', v)}
-                        label="Print the receipt automatically after each sale"
+                        label={t('printers.autoPrint')}
                     />
                     <Toggle
                         checked={printers.receipt.silent}
                         onChange={(v) => setReceipt('silent', v)}
-                        label="Print directly without showing the print dialog"
+                        label={t('printers.silent')}
                         hint="Only applies when a printer is selected above."
                     />
                 </div>
@@ -136,21 +139,21 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
 
             {/* Label printer */}
             <section className="space-y-4">
-                <h4 className="font-semibold flex items-center gap-2"><Tag className="w-4 h-4" /> QR label printer</h4>
+                <h4 className="font-semibold flex items-center gap-2"><Tag className="w-4 h-4" /> {t('printers.label')}</h4>
                 <div className="grid grid-cols-2 gap-4">
                     <Select
-                        label="Printer"
+                        label={t('printers.printer')}
                         value={printers.label.printerName || ''}
                         onChange={(v) => setLabelPrinter('printerName', v)}
                         options={printerOptions}
                     />
                     <Select
-                        label="Print quality (DPI)"
+                        label={t('printers.dpi')}
                         value={String(printers.label.dpi || 0)}
                         onChange={(v) => setLabelPrinter('dpi', parseInt(v, 10))}
                         options={[
-                            { value: '0', label: 'Printer default' },
-                            { value: '203', label: '203 dpi (most thermal label printers)' },
+                            { value: '0', label: t('printers.dpiDefault') },
+                            { value: '203', label: t('printers.dpi203') },
                             { value: '300', label: '300 dpi' },
                             { value: '600', label: '600 dpi' },
                         ]}
@@ -159,28 +162,28 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
                 <Toggle
                     checked={printers.label.silent}
                     onChange={(v) => setLabelPrinter('silent', v)}
-                    label="Print labels directly without the print dialog"
+                    label={t('printers.labelSilent')}
                     hint="Only applies when a printer is selected above. Print density/darkness is set in the printer's Windows driver."
                 />
 
                 <div className="grid grid-cols-2 gap-4">
                     <Select
-                        label="Label size"
+                        label={t('labels.size')}
                         value={layout.template || 'roll-40x30'}
                         onChange={chooseTemplate}
                         options={templateOptions}
                     />
                     <Select
-                        label="Layout"
+                        label={t('labels.layout')}
                         value={layout.mode || 'roll'}
                         onChange={(v) => setLayout({ mode: v, template: 'custom' })}
                         options={[
-                            { value: 'roll', label: 'Label roll (one label per page)' },
-                            { value: 'sheet', label: 'Sticker sheet (several labels per page)' },
+                            { value: 'roll', label: t('labels.rollMode') },
+                            { value: 'sheet', label: t('labels.sheetMode') },
                         ]}
                     />
                     <Input
-                        label="Label width (mm)"
+                        label={t('labels.width')}
                         type="number"
                         step="0.1"
                         value={layout.widthMm ?? ''}
@@ -188,7 +191,7 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
                         onChange={(e) => setLayout({ widthMm: parseFloat(e.target.value) || '' })}
                     />
                     <Input
-                        label="Label height (mm)"
+                        label={t('labels.height')}
                         type="number"
                         step="0.1"
                         value={layout.heightMm ?? ''}
@@ -196,7 +199,7 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
                         onChange={(e) => setLayout({ heightMm: parseFloat(e.target.value) || '' })}
                     />
                     <Input
-                        label="Inner margin (mm)"
+                        label={t('labels.padding')}
                         type="number"
                         step="0.1"
                         value={layout.paddingMm ?? 1.5}
@@ -205,38 +208,39 @@ export function PrinterSettingsForm({ printers, onPrintersChange, labels, onLabe
                     {layout.mode === 'sheet' && (
                         <>
                             <Select
-                                label="Sheet paper"
+                                label={t('labels.paper')}
                                 value={layout.paper || 'A4'}
                                 onChange={(v) => setLayout({ paper: v, template: 'custom' })}
                                 options={[{ value: 'A4', label: 'A4' }, { value: 'A5', label: 'A5' }, { value: 'Letter', label: 'Letter' }]}
                             />
-                            <Input label="Labels per row" type="number" min="1" value={layout.columns ?? 3}
+                            <Input label={t('labels.columns')} type="number" min="1" value={layout.columns ?? 3}
                                 disabled={!isCustom} onChange={(e) => setLayout({ columns: parseInt(e.target.value, 10) || 1 })} />
-                            <Input label="Rows per sheet" type="number" min="1" value={layout.rows ?? 8}
+                            <Input label={t('labels.rows')} type="number" min="1" value={layout.rows ?? 8}
                                 disabled={!isCustom} onChange={(e) => setLayout({ rows: parseInt(e.target.value, 10) || 1 })} />
-                            <Input label="Top page margin (mm)" type="number" step="0.1" value={layout.pageMarginTopMm ?? 0}
+                            <Input label={t('labels.marginTop')} type="number" step="0.1" value={layout.pageMarginTopMm ?? 0}
                                 onChange={(e) => setLayout({ pageMarginTopMm: parseFloat(e.target.value) || 0 })} />
-                            <Input label="Left page margin (mm)" type="number" step="0.1" value={layout.pageMarginLeftMm ?? 0}
+                            <Input label={t('labels.marginLeft')} type="number" step="0.1" value={layout.pageMarginLeftMm ?? 0}
                                 onChange={(e) => setLayout({ pageMarginLeftMm: parseFloat(e.target.value) || 0 })} />
-                            <Input label="Horizontal gap (mm)" type="number" step="0.1" value={layout.gapXMm ?? 0}
+                            <Input label={t('labels.gapX')} type="number" step="0.1" value={layout.gapXMm ?? 0}
                                 onChange={(e) => setLayout({ gapXMm: parseFloat(e.target.value) || 0 })} />
-                            <Input label="Vertical gap (mm)" type="number" step="0.1" value={layout.gapYMm ?? 0}
+                            <Input label={t('labels.gapY')} type="number" step="0.1" value={layout.gapYMm ?? 0}
                                 onChange={(e) => setLayout({ gapYMm: parseFloat(e.target.value) || 0 })} />
                         </>
                     )}
                 </div>
-                {!isCustom && <p className="text-xs text-zinc-500">Choose “Custom size…” to enter your own label dimensions.</p>}
+                {!isCustom && <p className="text-xs text-zinc-500">{t('labels.customHint')}</p>}
 
                 {!compact && (
                     <div className="grid grid-cols-2 gap-3 pt-2">
-                        <Toggle checked={layout.showShopName} onChange={(v) => setLayout({ showShopName: v })} label="Shop name" />
-                        <Toggle checked={layout.showLogo} onChange={(v) => setLayout({ showLogo: v })} label="Shop logo" />
-                        <Toggle checked={layout.showProductName} onChange={(v) => setLayout({ showProductName: v })} label="Product name" />
-                        <Toggle checked={layout.showVariant} onChange={(v) => setLayout({ showVariant: v })} label="Colour / size" />
+                        <Toggle checked={layout.showShopName} onChange={(v) => setLayout({ showShopName: v })} label={t('labels.showShopName')} />
+                        <Toggle checked={layout.showLogo} onChange={(v) => setLayout({ showLogo: v })} label={t('labels.showLogo')} />
+                        <Toggle checked={layout.showProductName} onChange={(v) => setLayout({ showProductName: v })} label={t('labels.showProductName')} />
+                        <Toggle checked={layout.showVariant} onChange={(v) => setLayout({ showVariant: v })} label={t('labels.showVariant')} />
                         <Toggle checked={layout.showSku} onChange={(v) => setLayout({ showSku: v })} label="SKU" />
-                        <Toggle checked={layout.showPrice} onChange={(v) => setLayout({ showPrice: v })} label="Selling price" />
+                        <Toggle checked={layout.showPrice} onChange={(v) => setLayout({ showPrice: v })} label={t('labels.showPrice')} />
+                        <Toggle checked={layout.showBarcode} onChange={(v) => setLayout({ showBarcode: v })} label={t('labels.showBarcode')} />
                         <Input
-                            label="Extra text (optional, e.g. phone or website)"
+                            label={t('labels.extraText')}
                             value={layout.extraText || ''}
                             onChange={(e) => setLayout({ extraText: e.target.value })}
                             containerClassName="col-span-2"

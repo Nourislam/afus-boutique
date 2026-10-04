@@ -109,6 +109,74 @@ const MIGRATIONS = [
             }
         },
     },
+    {
+        version: '2025_03_brands_and_color_codes',
+        description: 'Brands list and language-independent colour codes on variants',
+        up(db) {
+            const clothing = require('../shared/clothing.json');
+            addColumnIfMissing(db, 'products', 'collection', 'TEXT');
+
+            db.run(`
+                CREATE TABLE IF NOT EXISTS brands (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    is_active INTEGER DEFAULT 1,
+                    sort_order INTEGER DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    is_synced INTEGER DEFAULT 0,
+                    remote_id TEXT
+                )
+            `);
+            db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_brands_name ON brands(name COLLATE NOCASE)');
+
+            // Default brands well known in Algerian shops, plus every brand
+            // already typed on existing products
+            const names = [...clothing.brands];
+            const used = db.exec("SELECT DISTINCT TRIM(brand) FROM products WHERE brand IS NOT NULL AND TRIM(brand) <> ''");
+            if (used.length) used[0].values.forEach(([b]) => names.push(b));
+            const seen = new Set();
+            names.forEach((name, index) => {
+                const key = String(name).toLowerCase();
+                if (seen.has(key)) return;
+                seen.add(key);
+                db.run('INSERT OR IGNORE INTO brands (id, name, sort_order) VALUES (?, ?, ?)',
+                    [`brand-${index}-${key.replace(/[^a-z0-9]+/g, '-')}`, name, index]);
+            });
+
+            // Colour code: the stored colour text stays as it is (and SKUs never
+            // change); the code lets the interface show the colour in any language.
+            if (addColumnIfMissing(db, 'product_variants', 'color_code', 'TEXT')) {
+                for (const color of clothing.colors) {
+                    for (const name of [color.en, color.fr, color.ar, color.code]) {
+                        db.run(
+                            'UPDATE product_variants SET color_code = ? WHERE color_code IS NULL AND LOWER(TRIM(color)) = LOWER(?)',
+                            [color.code, name]
+                        );
+                    }
+                }
+            }
+        },
+    },
+    {
+        version: '2025_04_language_defaults',
+        description: 'Receipts in the shop language: drop the untouched English default footer',
+        up(db) {
+            // Only the exact defaults written by earlier versions are cleared; a
+            // footer typed by the shop is kept. An empty footer prints the
+            // thank-you line in the shop's language.
+            const OLD_DEFAULTS = ['Thank you for your purchase!', 'Thank you for shopping with us!', 'Please come again!'];
+            const result = db.exec("SELECT value FROM settings WHERE key = 'store_config'");
+            if (result.length === 0) return;
+            let config;
+            try { config = JSON.parse(result[0].values[0][0]); } catch { return; }
+            if (!config || typeof config !== 'object') return;
+            if (OLD_DEFAULTS.includes(String(config.receiptFooter || '').trim())) {
+                config.receiptFooter = '';
+                db.run("UPDATE settings SET value = ? WHERE key = 'store_config'", [JSON.stringify(config)]);
+            }
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

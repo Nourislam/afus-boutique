@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import React, { useState, useEffect } from 'react';
 import { Package, X, Trash2 } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
@@ -50,7 +51,7 @@ export default function CreatePurchaseReturnModal({ isOpen, onClose, onComplete,
         const itemsToReturn = returnItems.filter(item => item.returnQuantity > 0);
 
         if (itemsToReturn.length === 0) {
-            toast.error('Please select at least one item to return');
+            toast.error(t('purchaseReturn.selectItem'));
             return;
         }
 
@@ -68,11 +69,11 @@ export default function CreatePurchaseReturnModal({ isOpen, onClose, onComplete,
                 })),
                 notes
             });
-            toast.success('Return created successfully');
+            toast.success(t('purchaseReturn.created'));
             onComplete();
         } catch (error) {
             console.error('Return error:', error);
-            toast.error('Failed to create return');
+            toast.error(t('purchaseReturn.failed'));
         } finally {
             setIsSubmitting(false);
         }
@@ -83,19 +84,19 @@ export default function CreatePurchaseReturnModal({ isOpen, onClose, onComplete,
     const totalReturnAmount = returnItems.reduce((sum, item) => sum + (item.returnQuantity * item.unit_cost), 0);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Create Return for PO #${purchaseOrder.po_number || 'Draft'}`}>
+        <Modal isOpen={isOpen} onClose={onClose} title={`Create Return for PO #${purchaseOrder.po_number || t('supplierPay.draft')}`}>
             <ModalBody>
                 <div className="flex flex-col h-full">
                     {/* Item List Header */}
                     <div className="grid grid-cols-12 gap-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2 px-3">
-                        <div className="col-span-5">Item Details</div>
-                        <div className="col-span-2">Return Qty</div>
-                        <div className="col-span-3">Reason</div>
-                        <div className="col-span-2 text-right">Refund</div>
+                        <div className="col-span-5">{t('purchaseReturn.item')}</div>
+                        <div className="col-span-2">{t('return.qty')}</div>
+                        <div className="col-span-3">{t('inventory.reason')}</div>
+                        <div className="col-span-2 text-end">{t('return.refund')}</div>
                     </div>
 
                     {/* Scrollable Items */}
-                    <div className="flex-1 overflow-y-auto min-h-[200px] max-h-[40vh] space-y-1 mb-4 pr-1">
+                    <div className="flex-1 overflow-y-auto min-h-[200px] max-h-[40vh] space-y-1 mb-4 pe-1">
                         {returnItems.map((item, index) => (
                             <div key={item.id || index} className="grid grid-cols-12 gap-3 items-center p-3 bg-dark-tertiary/50 hover:bg-dark-tertiary rounded-lg border border-dark-border transition-colors">
                                 
@@ -129,16 +130,16 @@ export default function CreatePurchaseReturnModal({ isOpen, onClose, onComplete,
                                         value={item.reason}
                                         onChange={(val) => handleReasonChange(index, val)}
                                         options={[
-                                            { value: 'damaged', label: 'Damaged' },
-                                            { value: 'wrong_item', label: 'Wrong Item' },
-                                            { value: 'expired', label: 'Expired' },
-                                            { value: 'other', label: 'Other' }
+                                            { value: 'damaged', label: t('return.damaged') },
+                                            { value: 'wrong_item', label: t('purchaseReturn.wrongItem') },
+                                            { value: 'wrong_size', label: t('purchaseReturn.wrongSize') },
+                                            { value: 'other', label: t('stock.reason.other') }
                                         ]}
                                     />
                                 </div>
 
                                 {/* Line Total */}
-                                <div className="col-span-2 text-right">
+                                <div className="col-span-2 text-end">
                                     <p className={`font-semibold text-sm ${item.returnQuantity > 0 ? 'text-red-400' : 'text-zinc-600'}`}>
                                         ${(item.returnQuantity * item.unit_cost).toFixed(2)}
                                     </p>
@@ -151,17 +152,17 @@ export default function CreatePurchaseReturnModal({ isOpen, onClose, onComplete,
                     <div className="space-y-4 pt-4 border-t border-dark-border">
                         <div className="flex justify-between items-start gap-4">
                             <div className="flex-1">
-                                <label className="text-sm font-medium text-zinc-400 mb-1.5 block">Return Notes</label>
+                                <label className="text-sm font-medium text-zinc-400 mb-1.5 block">{t('purchaseReturn.notes')}</label>
                                 <textarea
                                     className="w-full bg-dark-tertiary border border-dark-border rounded-lg p-3 text-sm text-white focus:outline-none focus:border-accent-primary min-h-[80px] resize-none"
                                     value={notes}
                                     onChange={(e) => setNotes(e.target.value)}
-                                    placeholder="Describe the reason for return..."
+                                    placeholder={t('purchaseReturn.notesPlaceholder')}
                                 />
                             </div>
                             
                             <div className="w-48 flex flex-col items-end pt-7">
-                                <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Total Refund</p>
+                                <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">{t('return.total')}</p>
                                 <p className="text-3xl font-bold text-red-400">${totalReturnAmount.toFixed(2)}</p>
                             </div>
                         </div>
@@ -169,9 +170,9 @@ export default function CreatePurchaseReturnModal({ isOpen, onClose, onComplete,
                 </div>
             </ModalBody>
             <ModalFooter>
-                <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+                <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>{t('common.cancel')}</Button>
                 <Button onClick={handleSubmit} loading={isSubmitting} variant="destructive">
-                    Create Return
+                    {t('purchaseReturn.create')}
                 </Button>
             </ModalFooter>
         </Modal>

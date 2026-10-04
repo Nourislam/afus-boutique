@@ -46,6 +46,44 @@ describe('versioned migrations', () => {
         expect(JSON.parse(api.get("SELECT value FROM settings WHERE key = 'store_config'").value).businessName).toBe('My Shop');
     });
 
+    it('creates the brands list (defaults + brands already used) and colour codes for existing variants', async () => {
+        const db = await createLegacyDb();
+        // Bring the database to the state just before the brands migration
+        applyMigrations(db);
+        db.run("DELETE FROM schema_migrations WHERE version = '2025_03_brands_and_color_codes'");
+        db.run('DROP TABLE brands');
+        db.run('ALTER TABLE product_variants DROP COLUMN color_code');
+        db.run("INSERT INTO products (id, name, price, brand, has_variants) VALUES ('p1', 'Tee', 10, 'Marque Locale', 1)");
+        db.run("INSERT INTO product_variants (id, product_id, color, size, sku, qr_code) VALUES ('v1', 'p1', 'Noir', 'M', 'A-1', 'A-1'), ('v2', 'p1', 'أبيض', 'L', 'A-2', 'A-2'), ('v3', 'p1', 'Fuchsia', 'L', 'A-3', 'A-3')");
+
+        applyMigrations(db);
+        const api = createApi(db);
+        const brands = api.all('SELECT name FROM brands').map(b => b.name);
+        expect(brands).toEqual(expect.arrayContaining(['Nike', 'LC Waikiki', 'Marque Locale']));
+        const codes = Object.fromEntries(api.all('SELECT id, color_code, color, sku FROM product_variants').map(v => [v.id, v]));
+        expect(codes.v1.color_code).toBe('black');
+        expect(codes.v2.color_code).toBe('white');
+        expect(codes.v3.color_code).toBeNull();
+        // Original text and SKUs are untouched
+        expect(codes.v1.color).toBe('Noir');
+        expect(codes.v1.sku).toBe('A-1');
+    });
+
+    it('clears only the untouched English default receipt footer', async () => {
+        const db = await createLegacyDb();
+        db.run("INSERT INTO settings (key, value) VALUES ('store_config', ?)", [JSON.stringify({ businessName: 'A', receiptFooter: 'Thank you for your purchase!', taxRate: 0 })]);
+        applyMigrations(db);
+        const api = createApi(db);
+        const config = JSON.parse(api.get("SELECT value FROM settings WHERE key = 'store_config'").value);
+        expect(config).toMatchObject({ businessName: 'A', receiptFooter: '', taxRate: 0 });
+
+        const db2 = await createLegacyDb();
+        db2.run("INSERT INTO settings (key, value) VALUES ('store_config', ?)", [JSON.stringify({ receiptFooter: 'Échange sous 7 jours' })]);
+        applyMigrations(db2);
+        const kept = JSON.parse(createApi(db2).get("SELECT value FROM settings WHERE key = 'store_config'").value);
+        expect(kept.receiptFooter).toBe('Échange sous 7 jours');
+    });
+
     it('is idempotent', async () => {
         const db = await createLegacyDb();
         applyMigrations(db);
@@ -113,20 +151,20 @@ describe('catalog service', () => {
             { color: 'Black', size: 'M', sku: 'DUP-1', stock_quantity: 1 },
             { color: 'Black', size: 'L', sku: 'dup-1', stock_quantity: 1 },
         ];
-        expect(() => catalog.saveProduct(api, { id: 'p1', name: 'A', price: 1 }, dup, { isNew: true })).toThrow(/also used by variant 1/);
+        expect(() => catalog.saveProduct(api, { id: 'p1', name: 'A', price: 1 }, dup, { isNew: true })).toThrow(/ID_DUPLICATE_IN_FORM/);
 
         catalog.saveProduct(api, { id: 'p1', name: 'A', price: 1 }, [{ color: 'Black', size: 'M', sku: 'AAA-1', stock_quantity: 1 }], { isNew: true });
         expect(() => catalog.saveProduct(api, { id: 'p2', name: 'B', price: 1 }, [{ color: 'Red', size: 'M', sku: 'aaa-1', stock_quantity: 1 }], { isNew: true }))
-            .toThrow(/already used by A/);
+            .toThrow(/ID_TAKEN\|.*"owner":"A \(/);
         // A simple product cannot take a variant SKU either
-        expect(() => catalog.saveProduct(api, { id: 'p3', name: 'C', price: 1, sku: 'AAA-1' }, [], { isNew: true })).toThrow(/already used/);
+        expect(() => catalog.saveProduct(api, { id: 'p3', name: 'C', price: 1, sku: 'AAA-1' }, [], { isNew: true })).toThrow(/ID_TAKEN/);
         // Nothing was half-written by the failed saves
         expect(api.get("SELECT COUNT(*) AS n FROM products WHERE id IN ('p2','p3')").n).toBe(0);
     });
 
     it('rejects identifiers that scanners cannot type reliably', () => {
-        expect(catalog.validateIdentifier('TSH BLK')).toMatch(/may only contain/);
-        expect(catalog.validateIdentifier('تيشيرت')).toMatch(/may only contain/);
+        expect(catalog.validateIdentifier('TSH BLK')).toMatch(/^ID_INVALID_CHARS\|/);
+        expect(catalog.validateIdentifier('تيشيرت')).toMatch(/^ID_INVALID_CHARS\|/);
         expect(catalog.validateIdentifier('tsh-blk-m-001')).toBeNull();
     });
 
@@ -177,7 +215,7 @@ describe('catalog service', () => {
 
     it('refuses product-level stock moves on products with variants', () => {
         catalog.saveProduct(api, { id: 'p1', name: 'Tee', price: 10 }, [{ color: 'Black', size: 'M', sku: 'X-1', stock_quantity: 1 }], { isNew: true });
-        expect(() => catalog.adjustStock(api, { productId: 'p1', delta: -1, type: 'sale' })).toThrow(/choose a variant/);
+        expect(() => catalog.adjustStock(api, { productId: 'p1', delta: -1, type: 'sale' })).toThrow(/VARIANT_REQUIRED/);
     });
 
     it('keeps simple products (no variants) working as before', () => {

@@ -1,3 +1,6 @@
+import { t } from '../../i18n';
+import { formatDate as formatLocalDate } from '../../i18n/format';
+import { formatMoney } from '../../i18n/format';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -22,7 +25,7 @@ export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrd
             setDetails(data);
         } catch (error) {
             console.error('Failed to load PO details:', error);
-            toast.error('Failed to load PO details');
+            toast.error(t('po.detailsFailed'));
         } finally {
             setLoading(false);
         }
@@ -30,7 +33,7 @@ export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrd
 
     const handleSendEmail = async () => {
         if (!details?.supplier_email) {
-            toast.error('Supplier has no email address');
+            toast.error(t('po.noSupplierEmail'));
             return;
         }
 
@@ -40,35 +43,35 @@ export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrd
                 to: details.supplier_email,
                 po: details
             });
-            toast.success('Purchase Order emailed successfully');
+            toast.success(t('po.emailed'));
         } catch (error) {
             console.error('Email failed:', error);
-            toast.error('Failed to send email');
+            toast.error(t('receipt.emailFailed'));
         } finally {
             setSending(false);
         }
     };
 
-    const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
-    const formatDate = (dateString) => new Date(dateString).toLocaleString();
+    const formatCurrency = (val) => formatMoney(val);
+    const formatDate = (dateString) => formatLocalDate(dateString, 'datetime');
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Purchase Order #${purchaseOrder?.po_number}`} size="lg">
             <ModalBody>
                 {loading ? (
-                    <div className="p-8 text-center text-zinc-500">Loading details...</div>
+                    <div className="p-8 text-center text-zinc-500">{t('po.loadingDetails')}</div>
                 ) : details ? (
                     <div className="space-y-6">
                         {/* Header */}
                         <div className="grid grid-cols-2 gap-4 text-sm">
                             <div className="p-3 bg-dark-tertiary rounded-lg">
-                                <p className="text-zinc-400">Supplier</p>
-                                <p className="font-medium">{details.supplier_name || 'Unknown'}</p>
+                                <p className="text-zinc-400">{t('po.supplier')}</p>
+                                <p className="font-medium">{details.supplier_name || t('tx.unknown')}</p>
                                 {details.supplier_email && <p className="text-xs text-zinc-500">{details.supplier_email}</p>}
                                 {details.supplier_phone && <p className="text-xs text-zinc-500">{details.supplier_phone}</p>}
                             </div>
                             <div className="p-3 bg-dark-tertiary rounded-lg">
-                                <p className="text-zinc-400">Status</p>
+                                <p className="text-zinc-400">{t('inventory.status')}</p>
                                 <div className="flex gap-2 mt-1">
                                     <span className={`px-2 py-0.5 rounded text-xs font-semibold uppercase ${details.status === 'received' ? 'bg-green-500/10 text-green-500' : 'bg-blue-500/10 text-blue-500'
                                         }`}>
@@ -83,24 +86,24 @@ export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrd
                                 </div>
                             </div>
                             <div className="p-3 bg-dark-tertiary rounded-lg">
-                                <p className="text-zinc-400">Date Created</p>
+                                <p className="text-zinc-400">{t('po.dateCreated')}</p>
                                 <p className="font-medium">{formatDate(details.created_at)}</p>
                             </div>
                             <div className="p-3 bg-dark-tertiary rounded-lg">
-                                <p className="text-zinc-400">Expected Date</p>
-                                <p className="font-medium">{details.expected_date ? new Date(details.expected_date).toLocaleDateString() : 'N/A'}</p>
+                                <p className="text-zinc-400">{t('po.expected')}</p>
+                                <p className="font-medium">{details.expected_date ? formatLocalDate(details.expected_date, 'date') : t('po.na')}</p>
                             </div>
                         </div>
 
                         {/* Items */}
                         <div className="border border-dark-border rounded-lg overflow-hidden">
-                            <table className="w-full text-left text-sm">
+                            <table className="w-full text-start text-sm">
                                 <thead className="bg-dark-tertiary text-zinc-400">
                                     <tr>
-                                        <th className="p-3">Product</th>
-                                        <th className="p-3 text-center">Qty</th>
-                                        <th className="p-3 text-right">Unit Cost</th>
-                                        <th className="p-3 text-right">Total</th>
+                                        <th className="p-3">{t('inventory.product')}</th>
+                                        <th className="p-3 text-center">{t('credit.qty')}</th>
+                                        <th className="p-3 text-end">{t('po.unitCost')}</th>
+                                        <th className="p-3 text-end">{t('pos.total')}</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-dark-border">
@@ -111,31 +114,31 @@ export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrd
                                                 <div className="text-xs text-zinc-500">{item.sku}</div>
                                             </td>
                                             <td className="p-3 text-center">{item.quantity}</td>
-                                            <td className="p-3 text-right">{formatCurrency(item.unit_cost)}</td>
-                                            <td className="p-3 text-right">{formatCurrency(item.total_cost)}</td>
+                                            <td className="p-3 text-end">{formatCurrency(item.unit_cost)}</td>
+                                            <td className="p-3 text-end">{formatCurrency(item.total_cost)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                                 <tfoot className="bg-dark-tertiary font-bold">
                                     <tr>
-                                        <td colSpan="3" className="p-3 text-right font-normal text-zinc-400">Subtotal</td>
-                                        <td className="p-3 text-right">{formatCurrency(details.subtotal)}</td>
+                                        <td colSpan="3" className="p-3 text-end font-normal text-zinc-400">{t('pos.subtotal')}</td>
+                                        <td className="p-3 text-end">{formatCurrency(details.subtotal)}</td>
                                     </tr>
                                     {details.tax_amount > 0 && (
                                         <tr>
-                                            <td colSpan="3" className="p-3 text-right font-normal text-zinc-400">Tax</td>
-                                            <td className="p-3 text-right">{formatCurrency(details.tax_amount)}</td>
+                                            <td colSpan="3" className="p-3 text-end font-normal text-zinc-400">{t('pos.tax')}</td>
+                                            <td className="p-3 text-end">{formatCurrency(details.tax_amount)}</td>
                                         </tr>
                                     )}
                                     {details.shipping_cost > 0 && (
                                         <tr>
-                                            <td colSpan="3" className="p-3 text-right font-normal text-zinc-400">Shipping</td>
-                                            <td className="p-3 text-right">{formatCurrency(details.shipping_cost)}</td>
+                                            <td colSpan="3" className="p-3 text-end font-normal text-zinc-400">{t('po.shipping')}</td>
+                                            <td className="p-3 text-end">{formatCurrency(details.shipping_cost)}</td>
                                         </tr>
                                     )}
                                     <tr>
-                                        <td colSpan="3" className="p-3 text-right">Total</td>
-                                        <td className="p-3 text-right text-accent-primary">{formatCurrency(details.total)}</td>
+                                        <td colSpan="3" className="p-3 text-end">{t('pos.total')}</td>
+                                        <td className="p-3 text-end text-accent-primary">{formatCurrency(details.total)}</td>
                                     </tr>
                                 </tfoot>
                             </table>
@@ -143,7 +146,7 @@ export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrd
 
                         {details.notes && (
                             <div className="p-3 bg-dark-tertiary rounded-lg text-sm">
-                                <p className="text-zinc-400 mb-1">Notes</p>
+                                <p className="text-zinc-400 mb-1">{t('customers.notes')}</p>
                                 <p>{details.notes}</p>
                             </div>
                         )}
@@ -152,22 +155,22 @@ export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrd
                         <div className="flex justify-end gap-3 mt-4">
                             {details.supplier_email && (
                                 <Button size="sm" variant="outline" onClick={handleSendEmail} loading={sending}>
-                                    <Mail className="w-4 h-4 mr-2" />
-                                    Email Supplier
+                                    <Mail className="w-4 h-4 me-2" />
+                                    {t('po.emailSupplier')}
                                 </Button>
                             )}
                             <Button size="sm" variant="outline" onClick={() => window.electronAPI.purchaseOrders.savePdf(details)}>
-                                <FileText className="w-4 h-4 mr-2" />
-                                Download PDF
+                                <FileText className="w-4 h-4 me-2" />
+                                {t('po.downloadPdf')}
                             </Button>
                         </div>
                     </div>
                 ) : (
-                    <div className="p-8 text-center text-zinc-500">Failed to load details</div>
+                    <div className="p-8 text-center text-zinc-500">{t('po.detailsError')}</div>
                 )}
             </ModalBody>
             <ModalFooter>
-                <Button variant="secondary" onClick={onClose}>Close</Button>
+                <Button variant="secondary" onClick={onClose}>{t('common.close')}</Button>
             </ModalFooter>
         </Modal>
     );

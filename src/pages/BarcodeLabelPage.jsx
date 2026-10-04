@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+import { formatMoney } from '../i18n/format';
 /**
  * Barcode Label Page
  * 
@@ -6,10 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-    Barcode, Printer, Download, Plus, Settings2, Package,
-    ShoppingCart, Pill, Warehouse, Tag, RefreshCw, Check,
-    ChevronDown, Grid, List, QrCode, Hotel, Gem, Laptop,
-    UtensilsCrossed, Shirt
+    Barcode, Printer, Download, Plus, Settings2, Package, Tag, RefreshCw, Check, ChevronDown, Grid, List, QrCode, Gem, Shirt,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, SearchInput } from '../components/ui/Input';
@@ -20,18 +19,13 @@ import { PermissionGate } from '../components/auth/PermissionGate';
 import { PERMISSIONS } from '../stores/authStore';
 import { useSettingsStore } from '../stores/settingsStore';
 
-// Industry icons
+// Label template icons
 const INDUSTRY_ICONS = {
-    retail: ShoppingCart,
-    grocery: Package,
-    pharmaceutical: Pill,
-    warehouse: Warehouse,
-    assets: Tag,
-    hotel: Hotel,
-    jewelry: Gem,
-    electronics: Laptop,
-    restaurant: UtensilsCrossed,
     fashion: Shirt,
+    retail: Tag,
+    accessories: Gem,
+    shoebox: Package,
+    qr: QrCode,
 };
 
 // Fallback barcode types if API fails
@@ -47,16 +41,11 @@ const FALLBACK_BARCODE_TYPES = {
 };
 
 const FALLBACK_PRESETS = {
-    retail: { name: 'Retail', barcodeType: 'code128', labelWidth: 50, labelHeight: 25, showPrice: true, showName: true, description: 'Standard retail labels' },
-    grocery: { name: 'Grocery', barcodeType: 'code128', labelWidth: 38, labelHeight: 25, showPrice: true, showName: true, description: 'Grocery with weight/expiry' },
-    pharmaceutical: { name: 'Pharmaceutical', barcodeType: 'datamatrix', labelWidth: 40, labelHeight: 20, description: 'GS1 DataMatrix for pharma' },
-    warehouse: { name: 'Warehouse', barcodeType: 'code128', labelWidth: 100, labelHeight: 50, description: 'Large warehouse labels' },
-    assets: { name: 'Assets', barcodeType: 'qrcode', labelWidth: 30, labelHeight: 30, description: 'QR code asset tracking' },
-    hotel: { name: 'Hotel', barcodeType: 'qrcode', labelWidth: 40, labelHeight: 40, showPrice: true, showName: true, description: 'Hotel amenities' },
-    jewelry: { name: 'Jewelry', barcodeType: 'code128', labelWidth: 25, labelHeight: 15, showPrice: true, showName: true, description: 'Small jewelry tags' },
-    electronics: { name: 'Electronics', barcodeType: 'code128', labelWidth: 60, labelHeight: 30, showPrice: true, showName: true, description: 'Electronics labels' },
-    restaurant: { name: 'Restaurant', barcodeType: 'qrcode', labelWidth: 35, labelHeight: 35, showPrice: true, showName: true, description: 'Menu/kitchen labels' },
-    fashion: { name: 'Fashion', barcodeType: 'code128', labelWidth: 45, labelHeight: 80, showPrice: true, showName: true, description: 'Clothing hang tags' },
+    fashion: { name: 'Hang tag', barcodeType: 'code128', labelWidth: 45, labelHeight: 80, showPrice: true, showName: true, showSize: true },
+    retail: { name: 'Price sticker', barcodeType: 'code128', labelWidth: 50, labelHeight: 25, showPrice: true, showName: true },
+    accessories: { name: 'Accessories', barcodeType: 'code128', labelWidth: 25, labelHeight: 15, showPrice: true, showName: true },
+    shoebox: { name: 'Shoe box', barcodeType: 'code128', labelWidth: 60, labelHeight: 30, showPrice: true, showName: true },
+    qr: { name: 'QR tag', barcodeType: 'qrcode', labelWidth: 30, labelHeight: 30, showPrice: true, showName: true },
 };
 
 export default function BarcodeLabelPage() {
@@ -64,7 +53,7 @@ export default function BarcodeLabelPage() {
     const [selectedProducts, setSelectedProducts] = useState([]);
     const [barcodeTypes, setBarcodeTypes] = useState(FALLBACK_BARCODE_TYPES);
     const [industryPresets, setIndustryPresets] = useState(FALLBACK_PRESETS);
-    const [selectedPreset, setSelectedPreset] = useState('retail');
+    const [selectedPreset, setSelectedPreset] = useState('fashion');
     const [generatedLabels, setGeneratedLabels] = useState([]);
     const [loading, setLoading] = useState(true);
     const [generating, setGenerating] = useState(false);
@@ -92,7 +81,7 @@ export default function BarcodeLabelPage() {
             setBarcodeTypes(types);
             setIndustryPresets(presets);
         } catch (error) {
-            toast.error('Failed to load data');
+            toast.error(t('common.loadFailed'));
             console.error(error);
         } finally {
             setLoading(false);
@@ -100,7 +89,7 @@ export default function BarcodeLabelPage() {
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount || 0);
+        return formatMoney(amount || 0);
     };
 
     const toggleProductSelection = (productId) => {
@@ -121,7 +110,7 @@ export default function BarcodeLabelPage() {
 
     const generateLabels = async () => {
         if (selectedProducts.length === 0) {
-            toast.error('Please select at least one product');
+            toast.error(t('barcode.selectProduct'));
             return;
         }
 
@@ -135,9 +124,9 @@ export default function BarcodeLabelPage() {
             );
             setGeneratedLabels(labels);
             setShowPreview(true);
-            toast.success(`Generated ${labels.length} labels`);
+            toast.success(t('barcode.generated', { n: labels.length }));
         } catch (error) {
-            toast.error('Failed to generate labels');
+            toast.error(t('barcode.generateFailed'));
             console.error(error);
         } finally {
             setGenerating(false);
@@ -146,7 +135,7 @@ export default function BarcodeLabelPage() {
 
     const generateCustomBarcode = async () => {
         if (!customBarcode.data) {
-            toast.error('Please enter barcode data');
+            toast.error(t('barcode.enterData'));
             return;
         }
 
@@ -159,12 +148,12 @@ export default function BarcodeLabelPage() {
 
             if (result.success) {
                 setCustomBarcodeResult(result);
-                toast.success('Barcode generated!');
+                toast.success(t('barcode.done'));
             } else {
                 toast.error(result.error);
             }
         } catch (error) {
-            toast.error('Failed to generate barcode');
+            toast.error(t('barcode.failed'));
         }
     };
 
@@ -173,7 +162,7 @@ export default function BarcodeLabelPage() {
             const randomData = await window.electronAPI.barcode.generateRandom(customBarcode.type);
             setCustomBarcode(prev => ({ ...prev, data: randomData }));
         } catch (error) {
-            toast.error('Failed to generate random barcode');
+            toast.error(t('barcode.randomFailed'));
         }
     };
 
@@ -184,7 +173,7 @@ export default function BarcodeLabelPage() {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Print Labels</title>
+                <title>${t('barcode.print')}</title>
                 <style>
                     body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
                     .label { 
@@ -207,9 +196,9 @@ export default function BarcodeLabelPage() {
             <body>
                 ${generatedLabels.map(label => `
                     <div class="label" style="width: ${label.template?.labelWidth || 50}mm;">
-                        <img class="barcode-image" src="${label.barcode}" alt="Barcode" />
+                        <img class="barcode-image" src="${label.barcode}" alt="" />
                         ${label.template?.showName ? `<div class="product-name">${escapeHtml(label.productName)}</div>` : ''}
-                        ${label.template?.showPrice ? `<div class="product-price">${settings.currencySymbol || '$'}${label.price?.toFixed(2)}</div>` : ''}
+                        ${label.template?.showPrice ? `<div class="product-price">${escapeHtml(formatCurrency(label.price))}</div>` : ''}
                         <div class="barcode-data">${escapeHtml(label.barcodeData)}</div>
                     </div>
                 `).join('')}
@@ -219,7 +208,7 @@ export default function BarcodeLabelPage() {
         try {
             await window.electronAPI.labels.printHtml(html);
         } catch (error) {
-            toast.error(`Printing failed: ${error.message}`);
+            toast.error(t('barcode.printFailed', { error: error.message }));
         }
     };
 
@@ -245,14 +234,14 @@ export default function BarcodeLabelPage() {
                 <div>
                     <h1 className="text-2xl font-bold flex items-center gap-3">
                         <Barcode className="w-7 h-7 text-indigo-500" />
-                        Barcode generator (other formats)
+                        {t('barcode.title')}
                     </h1>
-                    <p className="text-zinc-400 mt-1">EAN, UPC, Code128, DataMatrix and other barcode formats. For clothing QR labels use the QR Labels page.</p>
+                    <p className="text-zinc-400 mt-1">{t('barcode.subtitle')}</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <Button variant="secondary" onClick={() => setShowCustomModal(true)}>
                         <QrCode className="w-4 h-4" />
-                        Custom Barcode
+                        {t('barcode.custom')}
                     </Button>
                     <PermissionGate permission={PERMISSIONS.PRODUCTS_EDIT}>
                         <Button onClick={generateLabels} disabled={generating || selectedProducts.length === 0}>
@@ -261,7 +250,7 @@ export default function BarcodeLabelPage() {
                             ) : (
                                 <Printer className="w-4 h-4" />
                             )}
-                            Generate Labels ({selectedProducts.length})
+                            {t('barcode.generate', { n: selectedProducts.length })}
                         </Button>
                     </PermissionGate>
                 </div>
@@ -269,7 +258,7 @@ export default function BarcodeLabelPage() {
 
             {/* Industry Presets */}
             <div className="flex flex-col gap-2">
-                <span className="text-sm text-zinc-400">Industry Preset:</span>
+                <span className="text-sm text-zinc-400">{t('barcode.presetLabel')}</span>
                 <div className="flex gap-2 flex-wrap overflow-x-auto pb-2">
                     {Object.entries(industryPresets).map(([key, preset]) => {
                         const Icon = INDUSTRY_ICONS[key] || Tag;
@@ -283,7 +272,7 @@ export default function BarcodeLabelPage() {
                                     }`}
                             >
                                 <Icon className="w-4 h-4" />
-                                {preset.name}
+                                {t(`barcode.preset.${key}`)}
                             </button>
                         );
                     })}
@@ -295,26 +284,26 @@ export default function BarcodeLabelPage() {
                 <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
                     <div className="flex items-start gap-4">
                         <div className="flex-1">
-                            <h3 className="font-medium">{industryPresets[selectedPreset].name} Labels</h3>
+                            <h3 className="font-medium">{t(`barcode.preset.${selectedPreset}`)}</h3>
                             <p className="text-sm text-zinc-400 mt-1">
-                                {industryPresets[selectedPreset].description}
+                                {t(`barcode.preset.${selectedPreset}Hint`)}
                             </p>
                         </div>
                         <div className="flex items-center gap-4">
-                            <div className="text-right">
-                                <p className="text-xs text-zinc-500">Barcode Type</p>
+                            <div className="text-end">
+                                <p className="text-xs text-zinc-500">{t('barcode.type')}</p>
                                 <p className="font-medium text-indigo-400">
                                     {barcodeTypes[industryPresets[selectedPreset].barcodeType]?.name}
                                 </p>
                             </div>
-                            <div className="text-right">
-                                <p className="text-xs text-zinc-500">Label Size</p>
+                            <div className="text-end">
+                                <p className="text-xs text-zinc-500">{t('barcode.size')}</p>
                                 <p className="font-medium">
-                                    {industryPresets[selectedPreset].labelWidth}×{industryPresets[selectedPreset].labelHeight}mm
+                                    {industryPresets[selectedPreset].labelWidth}×{industryPresets[selectedPreset].labelHeight} mm
                                 </p>
                             </div>
                             <div>
-                                <label className="text-xs text-zinc-500 block">Qty per product</label>
+                                <label className="text-xs text-zinc-500 block">{t('barcode.qty')}</label>
                                 <Input
                                     type="number"
                                     value={quantityPerLabel}
@@ -334,14 +323,14 @@ export default function BarcodeLabelPage() {
                 <SearchInput
                     value={searchQuery}
                     onChange={setSearchQuery}
-                    placeholder="Search products..."
+                    placeholder={t('inventory.search')}
                     className="flex-1 max-w-md"
                 />
                 <Button variant="secondary" size="sm" onClick={selectAllProducts}>
-                    Select All
+                    {t('barcode.selectAll')}
                 </Button>
                 <Button variant="secondary" size="sm" onClick={clearSelection}>
-                    Clear
+                    {t('qr.clear')}
                 </Button>
             </div>
 
@@ -368,9 +357,9 @@ export default function BarcodeLabelPage() {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="font-medium truncate">{product.name}</p>
-                                    <p className="text-sm text-zinc-400">{product.sku || 'No SKU'}</p>
+                                    <p className="text-sm text-zinc-400">{product.sku || t('barcode.noSku')}</p>
                                     <p className="text-xs text-zinc-500 mt-1 font-mono">
-                                        {product.barcode || 'No barcode'}
+                                        {product.barcode || t('barcode.noBarcode')}
                                     </p>
                                     <p className="text-indigo-400 font-semibold mt-1">
                                         {formatCurrency(product.price)}
@@ -387,7 +376,7 @@ export default function BarcodeLabelPage() {
                 <Modal
                     isOpen={showPreview}
                     onClose={() => setShowPreview(false)}
-                    title="Label Preview"
+                    title={t('qr.preview')}
                     size="xl"
                 >
                     <ModalBody>
@@ -405,7 +394,7 @@ export default function BarcodeLabelPage() {
                                             <>
                                                 <img
                                                     src={label.barcode}
-                                                    alt="Barcode"
+                                                    alt={t('products.barcode')}
                                                     className="mx-auto"
                                                 />
                                                 {label.template?.showName && (
@@ -430,11 +419,11 @@ export default function BarcodeLabelPage() {
                     </ModalBody>
                     <ModalFooter>
                         <Button variant="secondary" onClick={() => setShowPreview(false)}>
-                            Close
+                            {t('common.close')}
                         </Button>
                         <Button onClick={printLabels}>
                             <Printer className="w-4 h-4" />
-                            Print Labels
+                            {t('barcode.print')}
                         </Button>
                     </ModalFooter>
                 </Modal>
@@ -445,25 +434,25 @@ export default function BarcodeLabelPage() {
                 <Modal
                     isOpen={showCustomModal}
                     onClose={() => { setShowCustomModal(false); setCustomBarcodeResult(null); }}
-                    title="Custom Barcode Generator"
+                    title={t('barcode.customTitle')}
                     size="md"
                 >
                     <ModalBody>
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-2">Barcode Type</label>
+                                <label className="block text-sm font-medium mb-2">{t('barcode.type')}</label>
                                 <Select
                                     value={customBarcode.type}
                                     onChange={(val) => setCustomBarcode(prev => ({ ...prev, type: val }))}
                                     options={Object.entries(barcodeTypes).map(([key, spec]) => ({
                                         value: key,
-                                        label: `${spec.name} (${spec.type}) - ${spec.region}`
+                                        label: `${spec.name} (${spec.type})`
                                     }))}
-                                    placeholder="Select barcode type"
+                                    placeholder={t('barcode.selectType')}
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-2">Barcode Data</label>
+                                <label className="block text-sm font-medium mb-2">{t('barcode.data')}</label>
                                 <div className="flex gap-2">
                                     <Input
                                         value={customBarcode.data}
@@ -479,14 +468,14 @@ export default function BarcodeLabelPage() {
                                 </p>
                             </div>
                             <Button onClick={generateCustomBarcode} className="w-full">
-                                Generate Barcode
+                                {t('barcode.generateOne')}
                             </Button>
 
                             {customBarcodeResult?.success && (
                                 <div className="bg-white rounded-lg p-6 text-center">
                                     <img
                                         src={customBarcodeResult.image}
-                                        alt="Generated Barcode"
+                                        alt={t('barcode.result')}
                                         className="mx-auto"
                                     />
                                     <p className="text-gray-600 font-mono text-sm mt-2">

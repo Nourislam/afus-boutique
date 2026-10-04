@@ -1,5 +1,8 @@
+import { t } from '../i18n';
+import { formatDate as formatLocalDate } from '../i18n/format';
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { Percent, Plus, Search, Edit2, Trash2, Calendar, Tag, DollarSign, Users } from 'lucide-react';
+import { Percent, Plus, Search, Edit2, Trash2, Calendar, Tag, Banknote, Users } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal, ModalBody } from '../components/ui/Modal';
@@ -8,12 +11,12 @@ import { toast } from '../components/ui/Toast';
 import { v4 as uuid } from 'uuid';
 import { useSettingsStore } from '../stores/settingsStore';
 
-const PROMO_TYPES = [
-    { value: 'percentage', label: 'Percentage Off', description: 'e.g., 20% off' },
-    { value: 'fixed', label: 'Fixed Amount Off', description: 'e.g., $10 off' },
-    { value: 'bogo', label: 'Buy One Get One', description: 'Buy X, get Y free/discounted' },
-    { value: 'threshold', label: 'Threshold Discount', description: 'Spend $X, get Y% off' },
-];
+// Built on each render so the labels follow the interface language
+const PROMO_TYPES = () => ['percentage', 'fixed', 'bogo', 'threshold'].map(value => ({
+    value,
+    label: t(`promo.type.${value}`),
+    description: t(`promo.type.${value}Hint`),
+}));
 
 export default function PromotionsPage() {
     const [promotions, setPromotions] = useState([]);
@@ -51,7 +54,7 @@ export default function PromotionsPage() {
             setPromotions(data);
         } catch (error) {
             console.error('Failed to load promotions:', error);
-            toast.error('Failed to load promotions');
+            toast.error(t('promo.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -101,11 +104,11 @@ export default function PromotionsPage() {
 
     const handleSave = async () => {
         if (!formData.name.trim()) {
-            toast.error('Please enter a promotion name');
+            toast.error(t('promo.nameRequired'));
             return;
         }
         if (!formData.value || parseFloat(formData.value) <= 0) {
-            toast.error('Please enter a valid discount value');
+            toast.error(t('promo.validValue'));
             return;
         }
 
@@ -129,17 +132,17 @@ export default function PromotionsPage() {
 
             if (editingPromo) {
                 await window.electronAPI.promotions.update(promo);
-                toast.success('Promotion updated successfully');
+                toast.success(t('promo.updated'));
             } else {
                 await window.electronAPI.promotions.create(promo);
-                toast.success('Promotion created successfully');
+                toast.success(t('promo.created'));
             }
 
             setShowFormModal(false);
             resetForm();
             loadPromotions();
         } catch (error) {
-            toast.error('Failed to save promotion');
+            toast.error(t('promo.saveFailed'));
             console.error(error);
         }
     };
@@ -152,10 +155,10 @@ export default function PromotionsPage() {
     const confirmDelete = async () => {
         try {
             await window.electronAPI.promotions.delete(deletingId);
-            toast.success('Promotion deleted');
+            toast.success(t('promo.deleted'));
             loadPromotions();
         } catch (error) {
-            toast.error('Failed to delete promotion');
+            toast.error(t('promo.deleteFailed'));
             console.error(error);
         }
         setDeletingId(null);
@@ -167,10 +170,10 @@ export default function PromotionsPage() {
                 ...promo,
                 is_active: !promo.is_active,
             });
-            toast.success(promo.is_active ? 'Promotion deactivated' : 'Promotion activated');
+            toast.success(promo.is_active ? t('promo.deactivated') : t('promo.activated'));
             loadPromotions();
         } catch (error) {
-            toast.error('Failed to update promotion');
+            toast.error(t('promo.updateFailed'));
             console.error(error);
         }
     };
@@ -190,9 +193,9 @@ export default function PromotionsPage() {
     );
 
     const formatCurrency = (amount) => {
-        return amount ? new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount) : '-';
+        return amount ? formatMoney(amount) : '-';
     };
-    const formatDate = (date) => date ? new Date(date).toLocaleDateString() : '-';
+    const formatDate = (date) => date ? formatLocalDate(date, 'date') : '-';
 
     const getPromoValueDisplay = (promo) => {
         switch (promo.type) {
@@ -234,13 +237,13 @@ export default function PromotionsPage() {
                 <div>
                     <h1 className="text-2xl font-bold flex items-center gap-3">
                         <Percent className="w-7 h-7 text-amber-500" />
-                        Promotions & Discounts
+                        {t('promo.title')}
                     </h1>
-                    <p className="text-zinc-400 mt-1">Create and manage promotional offers</p>
+                    <p className="text-zinc-400 mt-1">{t('promo.subtitle')}</p>
                 </div>
                 <Button onClick={handleOpenCreate}>
                     <Plus className="w-4 h-4" />
-                    Create Promotion
+                    {t('promo.create')}
                 </Button>
             </div>
 
@@ -252,7 +255,7 @@ export default function PromotionsPage() {
                     </div>
                     <div>
                         <p className="text-2xl font-bold">{promotions.length}</p>
-                        <p className="text-zinc-400 text-sm">Total Promotions</p>
+                        <p className="text-zinc-400 text-sm">{t('promo.total')}</p>
                     </div>
                 </div>
                 <div className="card flex items-center gap-4">
@@ -261,7 +264,7 @@ export default function PromotionsPage() {
                     </div>
                     <div>
                         <p className="text-2xl font-bold">{promotions.filter(p => isPromoActive(p)).length}</p>
-                        <p className="text-zinc-400 text-sm">Active Now</p>
+                        <p className="text-zinc-400 text-sm">{t('promo.activeNow')}</p>
                     </div>
                 </div>
                 <div className="card flex items-center gap-4">
@@ -270,7 +273,7 @@ export default function PromotionsPage() {
                     </div>
                     <div>
                         <p className="text-2xl font-bold">{promotions.reduce((sum, p) => sum + (p.current_uses || 0), 0)}</p>
-                        <p className="text-zinc-400 text-sm">Total Uses</p>
+                        <p className="text-zinc-400 text-sm">{t('promo.uses')}</p>
                     </div>
                 </div>
             </div>
@@ -279,7 +282,7 @@ export default function PromotionsPage() {
             <div className="max-w-md">
                 <Input
                     icon={Search}
-                    placeholder="Search by name or coupon code..."
+                    placeholder={t('promo.search')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -290,7 +293,7 @@ export default function PromotionsPage() {
                 {filteredPromos.length === 0 ? (
                     <div className="text-center py-12 text-zinc-400">
                         <Percent className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                        <p>No promotions found</p>
+                        <p>{t('promo.none')}</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -304,7 +307,7 @@ export default function PromotionsPage() {
                                                 {promo.type}
                                             </span>
                                             <span className={`text-xs px-2 py-1 rounded-full ${isPromoActive(promo) ? 'bg-green-500/20 text-green-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
-                                                {isPromoActive(promo) ? 'Active' : 'Inactive'}
+                                                {isPromoActive(promo) ? t('status.active') : t('status.inactive')}
                                             </span>
                                         </div>
                                     </div>
@@ -349,7 +352,7 @@ export default function PromotionsPage() {
                                     )}
                                     {promo.min_purchase > 0 && (
                                         <div className="flex items-center gap-2">
-                                            <DollarSign className="w-4 h-4" />
+                                            <Banknote className="w-4 h-4" />
                                             <span>Min. purchase: {formatCurrency(promo.min_purchase)}</span>
                                         </div>
                                     )}
@@ -362,7 +365,7 @@ export default function PromotionsPage() {
                                         onClick={() => handleToggleActive(promo)}
                                         className={`text-xs px-2 py-1 rounded ${promo.is_active ? 'text-red-400 hover:bg-red-500/20' : 'text-green-400 hover:bg-green-500/20'}`}
                                     >
-                                        {promo.is_active ? 'Deactivate' : 'Activate'}
+                                        {promo.is_active ? t('promo.deactivate') : t('promo.activate')}
                                     </button>
                                 </div>
                             </div>
@@ -375,36 +378,36 @@ export default function PromotionsPage() {
             {showFormModal && (
                 <Modal
                     isOpen={true}
-                    title={editingPromo ? 'Edit Promotion' : 'Create Promotion'}
+                    title={editingPromo ? t('promo.edit') : t('promo.create')}
                     onClose={() => { setShowFormModal(false); resetForm(); }}
                     size="lg"
                 >
                     <ModalBody>
                         <div className="space-y-4 max-h-[70vh] overflow-auto">
                             <Input
-                                label="Promotion Name"
-                                placeholder="e.g., Summer Sale 20% Off"
+                                label={t('promo.name')}
+                                placeholder={t('promo.namePlaceholder')}
                                 value={formData.name}
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                             />
 
                             <Input
-                                label="Description (optional)"
-                                placeholder="Promotion description..."
+                                label={t('bundles.description')}
+                                placeholder={t('promo.descriptionPlaceholder')}
                                 value={formData.description}
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                             />
 
                             {/* Promotion Type */}
                             <div className="form-group">
-                                <label className="form-label">Promotion Type</label>
+                                <label className="form-label">{t('promo.type')}</label>
                                 <div className="grid grid-cols-2 gap-2">
-                                    {PROMO_TYPES.map(type => (
+                                    {PROMO_TYPES().map(type => (
                                         <button
                                             key={type.value}
                                             type="button"
                                             onClick={() => setFormData({ ...formData, type: type.value })}
-                                            className={`p-3 rounded-lg border text-left transition-all ${formData.type === type.value ? 'border-indigo-500 bg-indigo-500/10' : 'border-zinc-700 hover:border-zinc-600'}`}
+                                            className={`p-3 rounded-lg border text-start transition-all ${formData.type === type.value ? 'border-indigo-500 bg-indigo-500/10' : 'border-zinc-700 hover:border-zinc-600'}`}
                                         >
                                             <p className="font-medium text-sm">{type.label}</p>
                                             <p className="text-xs text-zinc-500">{type.description}</p>
@@ -415,7 +418,7 @@ export default function PromotionsPage() {
 
                             <div className="grid grid-cols-2 gap-4">
                                 <Input
-                                    label={formData.type === 'fixed' ? 'Discount Amount ($)' : 'Discount Percentage (%)'}
+                                    label={formData.type === 'fixed' ? t('promo.amountDa') : t('promo.percent')}
                                     type="number"
                                     step="0.01"
                                     min="0"
@@ -424,7 +427,7 @@ export default function PromotionsPage() {
                                     onChange={(e) => setFormData({ ...formData, value: e.target.value })}
                                 />
                                 <Input
-                                    label="Minimum Purchase ($)"
+                                    label={t('promo.minPurchase')}
                                     type="number"
                                     step="0.01"
                                     min="0"
@@ -436,19 +439,19 @@ export default function PromotionsPage() {
 
                             <div className="grid grid-cols-2 gap-4">
                                 <Input
-                                    label="Max Discount ($) - optional"
+                                    label={t('promo.maxDiscount')}
                                     type="number"
                                     step="0.01"
                                     min="0"
-                                    placeholder="No limit"
+                                    placeholder={t('promo.noLimit')}
                                     value={formData.max_discount}
                                     onChange={(e) => setFormData({ ...formData, max_discount: e.target.value })}
                                 />
                                 <Input
-                                    label="Max Uses - optional"
+                                    label={t('promo.maxUses')}
                                     type="number"
                                     min="0"
-                                    placeholder="Unlimited"
+                                    placeholder={t('promo.unlimited')}
                                     value={formData.max_uses}
                                     onChange={(e) => setFormData({ ...formData, max_uses: e.target.value })}
                                 />
@@ -456,13 +459,13 @@ export default function PromotionsPage() {
 
                             <div className="grid grid-cols-2 gap-4">
                                 <Input
-                                    label="Start Date (optional)"
+                                    label={t('promo.start')}
                                     type="date"
                                     value={formData.start_date}
                                     onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
                                 />
                                 <Input
-                                    label="End Date (optional)"
+                                    label={t('promo.end')}
                                     type="date"
                                     value={formData.end_date}
                                     onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
@@ -470,8 +473,8 @@ export default function PromotionsPage() {
                             </div>
 
                             <Input
-                                label="Coupon Code (optional)"
-                                placeholder="e.g., SUMMER20"
+                                label={t('promo.coupon')}
+                                placeholder={t('promo.couponPlaceholder')}
                                 value={formData.coupon_code}
                                 onChange={(e) => setFormData({ ...formData, coupon_code: e.target.value.toUpperCase() })}
                             />
@@ -485,7 +488,7 @@ export default function PromotionsPage() {
                                         onChange={(e) => setFormData({ ...formData, auto_apply: e.target.checked })}
                                         className="w-4 h-4 rounded border-zinc-600 text-indigo-500 focus:ring-indigo-500"
                                     />
-                                    <label htmlFor="auto_apply" className="text-sm text-zinc-300">Auto-apply at checkout</label>
+                                    <label htmlFor="auto_apply" className="text-sm text-zinc-300">{t('promo.autoApply')}</label>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <input
@@ -495,16 +498,16 @@ export default function PromotionsPage() {
                                         onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                                         className="w-4 h-4 rounded border-zinc-600 text-indigo-500 focus:ring-indigo-500"
                                     />
-                                    <label htmlFor="is_active" className="text-sm text-zinc-300">Active</label>
+                                    <label htmlFor="is_active" className="text-sm text-zinc-300">{t('status.active')}</label>
                                 </div>
                             </div>
 
                             <div className="flex gap-3 pt-4">
                                 <Button variant="secondary" className="flex-1" onClick={() => { setShowFormModal(false); resetForm(); }}>
-                                    Cancel
+                                    {t('common.cancel')}
                                 </Button>
                                 <Button className="flex-1" onClick={handleSave}>
-                                    {editingPromo ? 'Update' : 'Create'} Promotion
+                                    {editingPromo ? t('common.update') : t('common.create')} Promotion
                                 </Button>
                             </div>
                         </div>
@@ -517,9 +520,9 @@ export default function PromotionsPage() {
                 isOpen={showDeleteConfirm}
                 onClose={() => { setShowDeleteConfirm(false); setDeletingId(null); }}
                 onConfirm={confirmDelete}
-                title="Delete Promotion"
-                message="Are you sure you want to delete this promotion? This action cannot be undone."
-                confirmText="Delete"
+                title={t('promo.delete')}
+                message={t('promo.deleteConfirm')}
+                confirmText={t('common.delete')}
                 variant="danger"
             />
         </div>

@@ -17,6 +17,7 @@ import BundlesPage from './pages/BundlesPage';
 import PromotionsPage from './pages/PromotionsPage';
 import BarcodeLabelPage from './pages/BarcodeLabelPage';
 import QrLabelsPage from './pages/QrLabelsPage';
+import BrandsPage from './pages/BrandsPage';
 import TransactionsPage from './pages/TransactionsPage';
 
 import SuppliersPage from './pages/SuppliersPage';
@@ -26,13 +27,15 @@ import { useAuthStore, PERMISSIONS } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { Toaster } from './components/ui/Toast';
-import { APP_NAME } from './lib/appInfo';
+import { useT } from './i18n';
 
 function App() {
     const { isAuthenticated, checkAuth, startSession } = useAuthStore();
     const { loadSettings } = useSettingsStore();
     const [isLoading, setIsLoading] = useState(true);
     const [showSetupWizard, setShowSetupWizard] = useState(false);
+    // Subscribing to the language re-renders the whole tree when it changes
+    const { t } = useT();
 
     useEffect(() => {
         // Everything is local: no account, activation or internet connection
@@ -73,7 +76,7 @@ function App() {
             <div className="h-screen w-screen flex items-center justify-center bg-dark-primary">
                 <div className="flex flex-col items-center gap-4">
                     <div className="w-12 h-12 border-4 border-accent-primary border-t-transparent rounded-full animate-spin" />
-                    <p className="text-zinc-400">Loading {APP_NAME}...</p>
+                    <p className="text-zinc-400">{t('app.loading')}</p>
                 </div>
             </div>
         );
@@ -114,6 +117,11 @@ function App() {
                     <Route path="/products" element={
                         <ProtectedRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
                             <ProductsPage />
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/brands" element={
+                        <ProtectedRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
+                            <BrandsPage />
                         </ProtectedRoute>
                     } />
                     <Route path="/inventory" element={

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 
@@ -9,17 +10,14 @@ export const useCartStore = create((set, get) => ({
     notes: '',
 
     taxType: 'inclusive', // 'exclusive' or 'inclusive' - default to inclusive
-    globalTaxRate: 10, // Default to 10% to match database default
-    currency: 'USD',
+    globalTaxRate: 0,
+    currency: 'DZD',
     serviceCharge: 0,
     taxExempt: false,
 
     loadSettings: async () => {
         try {
             const settings = await window.electronAPI.settings.getAll();
-            console.log('=== LOAD SETTINGS DEBUG ===');
-            console.log('Raw settings from DB:', settings);
-
             let parsed = { ...settings };
             if (settings.store_config) {
                 try {
@@ -28,7 +26,6 @@ export const useCartStore = create((set, get) => ({
                     if (typeof storeConfig === 'string') {
                         storeConfig = JSON.parse(storeConfig);
                     }
-                    console.log('Parsed store_config:', storeConfig);
                     parsed = { ...parsed, ...storeConfig };
                 } catch (e) {
                     console.error('Error parsing store_config:', e);
@@ -36,13 +33,10 @@ export const useCartStore = create((set, get) => ({
             }
 
             const finalTaxType = parsed.taxType || 'inclusive';
-            const finalTaxRate = parseFloat(parsed.taxRate) || 10;
-            const finalCurrency = parsed.currency || 'LKR';
-
-            console.log('Final taxType:', finalTaxType);
-            console.log('Final globalTaxRate:', finalTaxRate);
-            console.log('Final currency:', finalCurrency);
-            console.log('===========================');
+            // 0 is a valid rate (most small Algerian shops sell without TVA)
+            const rate = parseFloat(parsed.taxRate);
+            const finalTaxRate = Number.isFinite(rate) && rate >= 0 ? rate : 0;
+            const finalCurrency = parsed.currency || 'DZD';
 
             set({
                 taxType: finalTaxType,
@@ -80,7 +74,7 @@ export const useCartStore = create((set, get) => ({
             const maxStock = line.max_stock ?? available ?? 999999;
 
             if (line.quantity + quantity > maxStock) {
-                return { success: false, message: 'Insufficient stock' };
+                return { success: false, message: t('cart.insufficientStock') };
             }
 
             newItems[existingIndex] = {
@@ -93,7 +87,7 @@ export const useCartStore = create((set, get) => ({
         }
 
         if (quantity > available) {
-            return { success: false, message: 'Insufficient stock' };
+            return { success: false, message: t('cart.insufficientStock') };
         }
 
         const variantLabel = variant ? [variant.color, variant.size].filter(Boolean).join(' / ') : '';
@@ -125,10 +119,10 @@ export const useCartStore = create((set, get) => ({
 
         const { items } = get();
         const item = items.find(i => i.id === itemId);
-        if (!item) return { success: false, message: 'Item not found' };
+        if (!item) return { success: false, message: t('cart.itemNotFound') };
 
         if (item.max_stock !== undefined && quantity > item.max_stock) {
-            return { success: false, message: 'Cannot exceed available stock' };
+            return { success: false, message: t('cart.insufficientStock') };
         }
 
         set(state => ({
@@ -286,7 +280,7 @@ export const useCartStore = create((set, get) => ({
 
     processPayment: async (payments, employeeId, employeeName = null) => {
         const { items, customer, notes, discount, discountType, serviceCharge, taxExempt } = get();
-        if (items.length === 0) throw new Error('Cart is empty');
+        if (items.length === 0) throw new Error(t('cart.empty'));
 
         const receiptNumber = await window.electronAPI.generateReceiptNumber();
         const subtotal = get().getSubtotal();

@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useState } from 'react';
 import { ScanLine } from 'lucide-react';
 import { Input } from '../ui/Input';
@@ -24,31 +25,32 @@ export function ScannerSettingsForm({ value, onChange }) {
                     onChange={(e) => set('enabled', e.target.checked)}
                     className="w-4 h-4 rounded bg-dark-tertiary border-dark-border"
                 />
-                <span className="text-sm">Enable USB barcode / QR scanner</span>
+                <span className="text-sm">{t('scanner.enable')}</span>
             </label>
 
             <div className="grid grid-cols-2 gap-4">
                 <Select
-                    label="Key sent after each code (suffix)"
+                    label={t('scanner.suffix')}
                     value={value.suffix}
                     onChange={(v) => set('suffix', v)}
                     options={[
-                        { value: 'enter', label: 'Enter (most scanners)' },
+                        { value: 'enter', label: t('scanner.enter') },
                         { value: 'tab', label: 'Tab' },
-                        { value: 'none', label: 'Nothing (detect end by pause)' },
+                        { value: 'none', label: t('scanner.none') },
                     ]}
                 />
                 <Select
-                    label="Keyboard layout handling"
+                    label={t('scanner.layout')}
                     value={value.layoutMode}
                     onChange={(v) => set('layoutMode', v)}
                     options={[
-                        { value: 'us', label: 'Scanner in US mode (recommended, works with Arabic/French Windows)' },
-                        { value: 'os', label: 'Use the Windows keyboard layout' },
+                        { value: 'us', label: t('scanner.layoutUs') },
+                        { value: 'azerty', label: t('scanner.layoutAzerty') },
+                        { value: 'os', label: t('scanner.layoutOs') },
                     ]}
                 />
                 <Input
-                    label="Max time between characters (ms)"
+                    label={t('scanner.interval')}
                     type="number"
                     min="10"
                     max="200"
@@ -56,7 +58,7 @@ export function ScannerSettingsForm({ value, onChange }) {
                     onChange={(e) => set('maxKeyIntervalMs', parseInt(e.target.value, 10) || 50)}
                 />
                 <Input
-                    label="Minimum code length"
+                    label={t('scanner.minLength')}
                     type="number"
                     min="1"
                     max="20"
@@ -65,17 +67,16 @@ export function ScannerSettingsForm({ value, onChange }) {
                 />
             </div>
             <p className="text-xs text-zinc-500">
-                Increase the time between characters if scans are sometimes typed as text (slow scanners or Bluetooth),
-                decrease it if fast typing is mistaken for a scan.
+                {t('scanner.intervalHint')}
             </p>
 
             <div className="p-4 rounded-lg bg-dark-tertiary border border-dark-border">
-                <div className="flex items-center gap-2 font-medium mb-2"><ScanLine className="w-4 h-4" /> Test your scanner</div>
-                <p className="text-sm text-zinc-400 mb-3">Scan any barcode or QR label now (no need to click anywhere).</p>
+                <div className="flex items-center gap-2 font-medium mb-2"><ScanLine className="w-4 h-4" /> {t('scanner.test')}</div>
+                <p className="text-sm text-zinc-400 mb-3">{t('scanner.testHint')}</p>
                 {lastScan ? (
                     <div className="font-mono text-lg text-green-400 break-all">{lastScan.code}</div>
                 ) : (
-                    <div className="text-sm text-zinc-500">{value.enabled ? 'Waiting for a scan…' : 'Scanner is disabled.'}</div>
+                    <div className="text-sm text-zinc-500">{value.enabled ? t('scanner.waiting') : t('scanner.disabled')}</div>
                 )}
             </div>
         </div>

@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+import { formatMoney } from '../i18n/format';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { QrCode, Printer, FileDown, Trash2, Search, Barcode, Save, Boxes } from 'lucide-react';
@@ -7,6 +9,7 @@ import { Input } from '../components/ui/Input';
 import { toast } from '../components/ui/Toast';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
+import { variantLabel } from '../lib/clothing';
 
 const cleanError = (error) => String(error?.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
@@ -33,7 +36,7 @@ export default function QrLabelsPage() {
 
     const formatCurrency = (amount) => {
         try {
-            return new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount || 0);
+            return formatMoney(amount || 0);
         } catch {
             return String(amount);
         }
@@ -55,7 +58,7 @@ export default function QrLabelsPage() {
                 setPrinterName(printerSettings.label.printerName || '');
                 setPrinters(printerList);
             } catch (error) {
-                toast.error(`Failed to load: ${cleanError(error)}`);
+                toast.error(`${t('common.loadFailed')}: ${cleanError(error)}`);
             }
         })();
     }, []);
@@ -90,7 +93,7 @@ export default function QrLabelsPage() {
                 key: variant.id,
                 variantId: variant.id,
                 name: product?.name || variant.product_name,
-                label: [variant.color, variant.size].filter(Boolean).join(' / '),
+                label: variantLabel(variant),
                 sku: variant.qr_code || variant.sku,
                 price,
                 stock: variant.stock_quantity,
@@ -140,7 +143,7 @@ export default function QrLabelsPage() {
     useBarcodeScanner(async (code) => {
         const result = await window.electronAPI.catalog.lookupCode(code);
         if (!result) {
-            toast.error(`Unknown code: ${code}`);
+            toast.error(t('qr.unknownCode', { code }));
         } else if (result.type === 'variant') {
             addVariant(result.variant, result.product);
             toast.success(`${result.product.name} ${result.variant.label || ''} added`);
@@ -189,26 +192,26 @@ export default function QrLabelsPage() {
     };
 
     const handlePrint = async () => {
-        if (totalLabels === 0) return toast.error('Add at least one label');
+        if (totalLabels === 0) return toast.error(t('qr.addOne'));
         setBusy(true);
         try {
             const result = await window.electronAPI.labels.print(items, layout, { printerName });
             if (result?.success) toast.success(`${totalLabels} label${totalLabels > 1 ? 's' : ''} sent to the printer`);
         } catch (error) {
-            toast.error(`Printing failed: ${cleanError(error)}`);
+            toast.error(t('barcode.printFailed', { error: cleanError(error) }));
         } finally {
             setBusy(false);
         }
     };
 
     const handlePdf = async () => {
-        if (totalLabels === 0) return toast.error('Add at least one label');
+        if (totalLabels === 0) return toast.error(t('qr.addOne'));
         setBusy(true);
         try {
             const file = await window.electronAPI.labels.savePdf(items, layout);
-            if (file) toast.success(`Saved ${file}`);
+            if (file) toast.success(t('common.savedTo', { path: file }));
         } catch (error) {
-            toast.error(`PDF failed: ${cleanError(error)}`);
+            toast.error(`${t('po.pdfFailed')}: ${cleanError(error)}`);
         } finally {
             setBusy(false);
         }
@@ -216,12 +219,17 @@ export default function QrLabelsPage() {
 
     const saveAsDefault = async () => {
         await window.electronAPI.settings.set({ key: 'label_settings', value: layout });
-        toast.success('Label layout saved as default');
+        toast.success(t('qr.savedDefault'));
     };
 
     const templateOptions = [
-        ...Object.entries(templates).map(([id, t]) => ({ value: id, label: t.name })),
-        { value: 'custom', label: 'Custom size…' },
+        ...Object.entries(templates).map(([id, tpl]) => ({
+            value: id,
+            label: tpl.mode === 'sheet'
+                ? t('labels.sheetTemplate', { paper: tpl.paper || 'A4', cols: tpl.columns, rows: tpl.rows, w: tpl.widthMm, h: tpl.heightMm })
+                : t('labels.rollTemplate', { w: tpl.widthMm, h: tpl.heightMm }),
+        })),
+        { value: 'custom', label: t('labels.custom') },
     ];
 
     // Scale the preview page to fit the panel (CSS mm -> px at 96 dpi)
@@ -233,37 +241,37 @@ export default function QrLabelsPage() {
         <div className="h-full flex flex-col overflow-hidden">
             <div className="p-6 border-b border-dark-border flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold flex items-center gap-3"><QrCode className="w-7 h-7 text-accent-primary" /> QR Labels</h1>
-                    <p className="text-zinc-500">Print QR labels for products and their colour/size variants. Scan an existing label to reprint it.</p>
+                    <h1 className="text-2xl font-bold flex items-center gap-3"><QrCode className="w-7 h-7 text-accent-primary" /> {t('qr.title')}</h1>
+                    <p className="text-zinc-500">{t('qr.subtitle')}</p>
                 </div>
                 <Button variant="secondary" onClick={() => navigate('/barcode-generator')}>
-                    <Barcode className="w-4 h-4" /> Other barcode formats
+                    <Barcode className="w-4 h-4" /> {t('qr.otherFormats')}
                 </Button>
             </div>
 
             <div className="flex-1 overflow-hidden grid grid-cols-12 gap-0">
                 {/* Search & queue */}
-                <div className="col-span-7 flex flex-col overflow-hidden border-r border-dark-border">
+                <div className="col-span-7 flex flex-col overflow-hidden border-e border-dark-border">
                     <div className="p-4 border-b border-dark-border relative">
-                        <Search className="absolute left-7 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                        <Search className="absolute start-7 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
                         <input
-                            className="input pl-10"
-                            placeholder="Search product, colour, size or SKU…"
+                            className="input ps-10"
+                            placeholder={t('qr.search')}
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                         />
                         {query && (variantResults.length > 0 || simpleMatches.length > 0) && (
-                            <div className="absolute left-4 right-4 z-20 mt-1 bg-dark-secondary border border-dark-border rounded-lg shadow-xl max-h-80 overflow-y-auto">
+                            <div className="absolute start-4 end-4 z-20 mt-1 bg-dark-secondary border border-dark-border rounded-lg shadow-xl max-h-80 overflow-y-auto">
                                 {variantResults.map(v => (
                                     <button key={v.id} type="button" onClick={() => { addVariant(v); setQuery(''); }}
-                                        className="w-full text-left px-4 py-2 hover:bg-dark-tertiary flex justify-between">
-                                        <span>{v.product_name} <span className="text-accent-primary">{[v.color, v.size].filter(Boolean).join(' / ')}</span></span>
+                                        className="w-full text-start px-4 py-2 hover:bg-dark-tertiary flex justify-between">
+                                        <span>{v.product_name} <span className="text-accent-primary">{variantLabel(v)}</span></span>
                                         <span className="font-mono text-xs text-zinc-500">{v.sku} · stock {v.stock_quantity}</span>
                                     </button>
                                 ))}
                                 {simpleMatches.map(p => (
                                     <button key={p.id} type="button" onClick={() => { addProduct(p); setQuery(''); }}
-                                        className="w-full text-left px-4 py-2 hover:bg-dark-tertiary flex justify-between">
+                                        className="w-full text-start px-4 py-2 hover:bg-dark-tertiary flex justify-between">
                                         <span>{p.name}</span>
                                         <span className="font-mono text-xs text-zinc-500">{p.sku || p.barcode || 'no code'} · stock {p.stock_quantity}</span>
                                     </button>
@@ -276,16 +284,16 @@ export default function QrLabelsPage() {
                         {queue.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center text-zinc-500 text-center gap-2">
                                 <QrCode className="w-12 h-12 opacity-40" />
-                                <p>Search for a product above, open this page from a product, or scan a label.</p>
+                                <p>{t('qr.empty')}</p>
                             </div>
                         ) : (
                             <table className="w-full text-sm">
                                 <thead className="text-xs uppercase text-zinc-500">
                                     <tr>
-                                        <th className="text-left py-2">Product</th>
-                                        <th className="text-left py-2">QR / SKU</th>
-                                        <th className="text-left py-2">Price</th>
-                                        <th className="text-left py-2">Labels</th>
+                                        <th className="text-start py-2">{t('inventory.product')}</th>
+                                        <th className="text-start py-2">{t('qr.code')}</th>
+                                        <th className="text-start py-2">{t('qr.price')}</th>
+                                        <th className="text-start py-2">{t('qr.labels')}</th>
                                         <th />
                                     </tr>
                                 </thead>
@@ -303,13 +311,13 @@ export default function QrLabelsPage() {
                                                     <input type="number" min="1" max="1000" className="input py-1 w-20"
                                                         value={item.quantity}
                                                         onChange={(e) => setQueue(prev => prev.map(i => (i.key === item.key ? { ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) } : i)))} />
-                                                    <button type="button" className="text-xs text-zinc-400 hover:text-white" title="One label per item in stock"
+                                                    <button type="button" className="text-xs text-zinc-400 hover:text-white" title={t('qr.onePerItem')}
                                                         onClick={() => setQueue(prev => prev.map(i => (i.key === item.key ? { ...i, quantity: Math.max(1, item.stock || 0) } : i)))}>
                                                         = stock ({item.stock ?? 0})
                                                     </button>
                                                 </div>
                                             </td>
-                                            <td className="py-2 text-right">
+                                            <td className="py-2 text-end">
                                                 <button type="button" onClick={() => setQueue(prev => prev.filter(i => i.key !== item.key))}
                                                     className="p-1.5 rounded hover:bg-red-500/20 text-red-400">
                                                     <Trash2 className="w-4 h-4" />
@@ -329,7 +337,7 @@ export default function QrLabelsPage() {
                                 <Button variant="ghost" size="sm" onClick={() => setQueue(prev => prev.map(i => ({ ...i, quantity: Math.max(1, i.stock || 0) })))}>
                                     <Boxes className="w-4 h-4" /> All = stock
                                 </Button>
-                                <Button variant="ghost" size="sm" onClick={() => setQueue([])}>Clear</Button>
+                                <Button variant="ghost" size="sm" onClick={() => setQueue([])}>{t('qr.clear')}</Button>
                             </div>
                         </div>
                     )}
@@ -340,27 +348,27 @@ export default function QrLabelsPage() {
                     {layout && (
                         <>
                             <div className="grid grid-cols-2 gap-3">
-                                <Select label="Label size" value={layout.template || 'roll-40x30'} onChange={chooseTemplate} options={templateOptions} />
+                                <Select label={t('labels.size')} value={layout.template || 'roll-40x30'} onChange={chooseTemplate} options={templateOptions} />
                                 <Select
-                                    label="Printer"
+                                    label={t('printers.printer')}
                                     value={printerName}
                                     onChange={setPrinterName}
                                     options={[
-                                        { value: '', label: 'Choose in print dialog' },
+                                        { value: '', label: t('qr.chooseInDialog') },
                                         ...printers.map(p => ({ value: p.name, label: `${p.displayName}${p.isDefault ? ' (default)' : ''}` })),
                                     ]}
                                 />
                                 {layout.template === 'custom' && (
                                     <>
-                                        <Select label="Layout" value={layout.mode || 'roll'} onChange={(v) => setLayoutField({ mode: v })}
-                                            options={[{ value: 'roll', label: 'Label roll' }, { value: 'sheet', label: 'Sticker sheet (A4)' }]} />
+                                        <Select label={t('labels.layout')} value={layout.mode || 'roll'} onChange={(v) => setLayoutField({ mode: v })}
+                                            options={[{ value: 'roll', label: t('qr.roll') }, { value: 'sheet', label: t('qr.sheet') }]} />
                                         <div />
-                                        <Input label="Width (mm)" type="number" step="0.1" value={layout.widthMm} onChange={(e) => setLayoutField({ widthMm: parseFloat(e.target.value) || '' })} />
-                                        <Input label="Height (mm)" type="number" step="0.1" value={layout.heightMm} onChange={(e) => setLayoutField({ heightMm: parseFloat(e.target.value) || '' })} />
+                                        <Input label={t('qr.width')} type="number" step="0.1" value={layout.widthMm} onChange={(e) => setLayoutField({ widthMm: parseFloat(e.target.value) || '' })} />
+                                        <Input label={t('qr.height')} type="number" step="0.1" value={layout.heightMm} onChange={(e) => setLayoutField({ heightMm: parseFloat(e.target.value) || '' })} />
                                         {layout.mode === 'sheet' && (
                                             <>
-                                                <Input label="Per row" type="number" value={layout.columns} onChange={(e) => setLayoutField({ columns: parseInt(e.target.value, 10) || 1 })} />
-                                                <Input label="Rows" type="number" value={layout.rows} onChange={(e) => setLayoutField({ rows: parseInt(e.target.value, 10) || 1 })} />
+                                                <Input label={t('qr.perRow')} type="number" value={layout.columns} onChange={(e) => setLayoutField({ columns: parseInt(e.target.value, 10) || 1 })} />
+                                                <Input label={t('qr.rows')} type="number" value={layout.rows} onChange={(e) => setLayoutField({ rows: parseInt(e.target.value, 10) || 1 })} />
                                             </>
                                         )}
                                     </>
@@ -368,8 +376,9 @@ export default function QrLabelsPage() {
                             </div>
                             <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
                                 {[
-                                    ['showShopName', 'Shop name'], ['showLogo', 'Logo'], ['showProductName', 'Product'],
-                                    ['showVariant', 'Colour / size'], ['showSku', 'SKU'], ['showPrice', 'Price'],
+                                    ['showShopName', t('labels.showShopName')], ['showLogo', t('labels.showLogo')], ['showProductName', t('labels.showProductName')],
+                                    ['showVariant', t('labels.showVariant')], ['showSku', 'SKU'], ['showPrice', t('labels.showPrice')],
+                                    ['showBarcode', t('labels.showBarcodeShort')],
                                 ].map(([key, text]) => (
                                     <label key={key} className="flex items-center gap-2 cursor-pointer">
                                         <input type="checkbox" checked={!!layout[key]} onChange={(e) => setLayoutField({ [key]: e.target.checked })} className="w-4 h-4 rounded" />
@@ -378,20 +387,20 @@ export default function QrLabelsPage() {
                                 ))}
                             </div>
                             <button type="button" onClick={saveAsDefault} className="text-xs text-zinc-400 hover:text-white flex items-center gap-1">
-                                <Save className="w-3 h-3" /> Save this layout as default
+                                <Save className="w-3 h-3" /> {t('qr.saveDefault')}
                             </button>
                         </>
                     )}
 
                     <div className="rounded-lg bg-zinc-800 p-4 flex items-start justify-center min-h-[220px] overflow-hidden">
                         {!preview ? (
-                            <span className="text-sm text-zinc-500 self-center">Preview appears here</span>
+                            <span className="text-sm text-zinc-500 self-center">{t('qr.previewHere')}</span>
                         ) : preview.error ? (
                             <span className="text-sm text-red-400 self-center">{preview.error}</span>
                         ) : (
                             <div style={{ width: previewWidthPx * scale, height: previewHeightPx * scale * preview.pages }}>
                                 <iframe
-                                    title="Label preview"
+                                    title={t('qr.preview')}
                                     sandbox=""
                                     scrolling="no"
                                     src={`data:text/html;charset=utf-8,${encodeURIComponent(preview.html)}`}

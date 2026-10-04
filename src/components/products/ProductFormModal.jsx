@@ -9,6 +9,9 @@ import { toast } from '../ui/Toast';
 import { VariantEditor } from './VariantEditor';
 import { QrPreview } from './QrPreview';
 import { useAuthStore } from '../../stores/authStore';
+import { t } from '../../i18n';
+import { translateErrorLines } from '../../i18n/errors';
+import { GENDERS, SEASONS, genderLabel, seasonLabel, sizeSetForCategory } from '../../lib/clothing';
 
 const EMPTY_PRODUCT = {
     name: '',
@@ -20,6 +23,7 @@ const EMPTY_PRODUCT = {
     brand: '',
     gender: '',
     season: '',
+    collection: '',
     price: '',
     cost: '',
     stock_quantity: '0',
@@ -29,15 +33,6 @@ const EMPTY_PRODUCT = {
     image_path: '',
 };
 
-const GENDERS = [
-    { value: '', label: '—' },
-    { value: 'women', label: 'Women' },
-    { value: 'men', label: 'Men' },
-    { value: 'unisex', label: 'Unisex' },
-    { value: 'girls', label: 'Girls' },
-    { value: 'boys', label: 'Boys' },
-    { value: 'baby', label: 'Baby' },
-];
 
 function toRow(v) {
     return {
@@ -45,6 +40,7 @@ function toRow(v) {
         id: v.id,
         isNew: false,
         color: v.color || '',
+        color_code: v.color_code || null,
         size: v.size || '',
         sku: v.sku || '',
         savedSku: v.sku || '',
@@ -68,6 +64,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
     const [hasVariants, setHasVariants] = useState(false);
     const [variants, setVariants] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
+    const [brands, setBrands] = useState([]);
     const [loading, setLoading] = useState(false);
     const [loadingVariants, setLoadingVariants] = useState(false);
     const [imagePreview, setImagePreview] = useState(null);
@@ -78,6 +75,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
         if (!isOpen) return;
         setErrors([]);
         window.electronAPI.suppliers.getAll().then(setSuppliers).catch(() => setSuppliers([]));
+        window.electronAPI.brands.getAll().then(list => setBrands(list.filter(b => b.is_active))).catch(() => setBrands([]));
 
         if (product) {
             setFormData({
@@ -91,6 +89,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 brand: product.brand || '',
                 gender: product.gender || '',
                 season: product.season || '',
+                collection: product.collection || '',
                 price: (product.price ?? 0).toString(),
                 cost: (product.cost ?? 0).toString(),
                 stock_quantity: (product.stock_quantity ?? 0).toString(),
@@ -105,7 +104,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 setLoadingVariants(true);
                 window.electronAPI.catalog.getVariants(product.id, true)
                     .then(rows => setVariants(rows.map(toRow)))
-                    .catch(() => toast.error('Failed to load variants'))
+                    .catch(() => toast.error(t('products.loadVariantsFailed')))
                     .finally(() => setLoadingVariants(false));
             }
             if (product.image_path) {
@@ -135,7 +134,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 if (result.success) set('image_path', result.fileName);
             } catch (error) {
                 console.error('Failed to save image:', error);
-                toast.error('Failed to save the image');
+                toast.error(t('products.imageSaveFailed'));
             }
         };
         reader.readAsDataURL(file);
@@ -152,12 +151,14 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
         setErrors([]);
 
         if (!formData.name.trim() || formData.price === '') {
-            toast.error('Name and price are required');
+            toast.error(t('products.namePriceRequired'));
             return;
         }
         const activeVariants = variants.filter(v => v.is_active);
-        if (hasVariants && activeVariants.length === 0) {
-            toast.error('Generate at least one variant, or turn off sizes/colours');
+        // Colours/sizes are optional: ticked but none added -> saved as a simple article
+        const useVariants = hasVariants && variants.length > 0;
+        if (useVariants && activeVariants.length === 0) {
+            toast.error(t('products.needVariant'));
             return;
         }
 
@@ -178,10 +179,11 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 sku: formData.sku.trim() || null,
                 barcode: formData.barcode.trim() || null,
             };
-            const variantPayload = hasVariants
+            const variantPayload = useVariants
                 ? variants.map(v => ({
                     id: v.isNew ? null : v.id,
                     color: v.color,
+                    color_code: v.color_code || null,
                     size: v.size,
                     sku: v.sku,
                     qr_code: v.isNew ? null : v.qr_code,
@@ -194,72 +196,96 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 }))
                 : [];
 
+            // A brand typed for the first time is added to the brands list
+            if (data.brand && !brands.some(b => b.name.toLowerCase() === data.brand.trim().toLowerCase())) {
+                await window.electronAPI.brands.create({ name: data.brand }).catch(() => { });
+            }
             await window.electronAPI.catalog.saveProduct({
                 product: data,
                 variants: variantPayload,
                 employeeId: currentEmployee?.id || null,
                 isNew: !product,
             });
-            toast.success(product ? 'Product updated' : 'Product created');
+            toast.success(product ? t('products.updated') : t('products.created'));
             onSave();
         } catch (error) {
-            // IPC errors arrive as "Error invoking remote method '...': Error: <message>"
-            const message = String(error.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-            setErrors(message.split('\n').filter(Boolean));
-            toast.error('The product could not be saved');
+            setErrors(translateErrorLines(error));
+            toast.error(t('products.saveFailed'));
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={product ? 'Edit Product' : 'Add Product'} size="full">
+        <Modal isOpen={isOpen} onClose={onClose} title={product ? t('products.edit') : t('products.add')} size="full">
             <form onSubmit={handleSubmit}>
                 <ModalBody className="max-h-[75vh] overflow-y-auto">
+                    <p className="text-xs text-zinc-500 mb-3">{t('products.requiredHint')}</p>
                     <div className="grid grid-cols-4 gap-4">
                         <div className="col-span-1">
-                            <label className="form-label mb-2 block">Product image</label>
+                            <label className="form-label mb-2 block">{t('products.image')}</label>
                             <div className="aspect-square bg-dark-tertiary rounded-lg flex flex-col items-center justify-center overflow-hidden relative border-2 border-dashed border-zinc-600 hover:border-zinc-500 transition-colors">
                                 {imagePreview ? (
                                     <>
-                                        <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                                        <button type="button" onClick={handleRemoveImage} className="absolute top-2 right-2 p-1 bg-red-500 rounded-full hover:bg-red-600">
+                                        <img src={imagePreview} alt={t('products.preview')} className="w-full h-full object-cover" />
+                                        <button type="button" onClick={handleRemoveImage} className="absolute top-2 end-2 p-1 bg-red-500 rounded-full hover:bg-red-600">
                                             <Trash2 className="w-4 h-4 text-white" />
                                         </button>
                                     </>
                                 ) : (
                                     <label className="cursor-pointer flex flex-col items-center p-4 text-center">
                                         <Package className="w-10 h-10 text-zinc-500 mb-2" />
-                                        <span className="text-sm text-zinc-400">Click to upload</span>
-                                        <span className="text-xs text-zinc-500 mt-1">JPG, PNG up to 5MB</span>
+                                        <span className="text-sm text-zinc-400">{t('products.clickUpload')}</span>
+                                        <span className="text-xs text-zinc-500 mt-1">{t('products.imageHint')}</span>
                                         <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
                                     </label>
                                 )}
                             </div>
                             <label className="flex items-center gap-2 mt-4 text-sm">
                                 <input type="checkbox" checked={formData.is_active} onChange={(e) => set('is_active', e.target.checked)} className="w-4 h-4 rounded" />
-                                Active (can be sold)
+                                {t('products.activeHint')}
                             </label>
                         </div>
 
                         <div className="col-span-3 grid grid-cols-3 gap-4 content-start">
-                            <Input label="Product name *" value={formData.name} onChange={(e) => set('name', e.target.value)}
-                                placeholder="e.g. T-Shirt Basic" containerClassName="col-span-2" />
-                            <Input label="Brand" value={formData.brand} onChange={(e) => set('brand', e.target.value)} />
-                            <Select label="Category" value={formData.category_id} onChange={(v) => set('category_id', v)}
-                                options={[{ value: '', label: 'No category' }, ...categories.map(c => ({ value: c.id, label: c.name }))]} />
-                            <Select label="Supplier" value={formData.supplier_id} onChange={(v) => set('supplier_id', v)}
-                                options={[{ value: '', label: 'No supplier' }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]} />
-                            <Select label="Gender" value={formData.gender} onChange={(v) => set('gender', v)} options={GENDERS} />
-                            <Input label="Season / collection" value={formData.season} onChange={(e) => set('season', e.target.value)} placeholder="e.g. Summer 2025" />
-                            <Input label={hasVariants ? 'Base selling price *' : 'Selling price *'} type="number" step="0.01" value={formData.price}
+                            <Input label={t('products.name')} value={formData.name} onChange={(e) => set('name', e.target.value)}
+                                placeholder={t('products.namePlaceholder')} containerClassName="col-span-2" />
+                            <div className="form-group">
+                                <label className="form-label">{t('products.brand')}</label>
+                                <input
+                                    className="input"
+                                    list="brand-options"
+                                    value={formData.brand}
+                                    onChange={(e) => set('brand', e.target.value)}
+                                    placeholder={t('brands.pick')}
+                                />
+                                <datalist id="brand-options">
+                                    {brands.map(b => <option key={b.id} value={b.name} />)}
+                                </datalist>
+                            </div>
+                            <Select label={t('products.category')} value={formData.category_id} onChange={(v) => set('category_id', v)}
+                                options={[{ value: '', label: t('categories.none') }, ...categories.map(c => ({ value: c.id, label: c.name }))]} />
+                            <Select label={t('products.supplier')} value={formData.supplier_id} onChange={(v) => set('supplier_id', v)}
+                                options={[{ value: '', label: t('products.noSupplier') }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]} />
+                            <Select label={t('products.gender')} value={formData.gender} onChange={(v) => set('gender', v)}
+                                options={[{ value: '', label: '—' }, ...GENDERS.map(g => ({ value: g.code, label: genderLabel(g.code) }))]} />
+                            <Select label={t('products.season')} value={formData.season} onChange={(v) => set('season', v)}
+                                options={[
+                                    { value: '', label: '—' },
+                                    ...SEASONS.map(x => ({ value: x.code, label: seasonLabel(x.code) })),
+                                    // Free text typed in an older version stays selectable
+                                    ...(formData.season && !SEASONS.some(x => x.code === formData.season) ? [{ value: formData.season, label: formData.season }] : []),
+                                ]} />
+                            <Input label={t('products.collection')} value={formData.collection} onChange={(e) => set('collection', e.target.value)}
+                                placeholder={t('products.collectionPlaceholder')} />
+                            <Input label={hasVariants ? t('products.basePrice') : t('products.sellPrice')} type="number" step="0.01" value={formData.price}
                                 onChange={(e) => set('price', e.target.value)} placeholder="0.00" />
-                            <Input label={hasVariants ? 'Base cost' : 'Cost'} type="number" step="0.01" value={formData.cost}
+                            <Input label={hasVariants ? t('products.baseCost') : t('products.cost')} type="number" step="0.01" value={formData.cost}
                                 onChange={(e) => set('cost', e.target.value)} placeholder="0.00" />
-                            <Input label="Tax rate (%)" type="number" step="0.1" value={formData.tax_rate}
+                            <Input label={t('products.taxRate')} type="number" step="0.1" value={formData.tax_rate}
                                 onChange={(e) => set('tax_rate', e.target.value)} />
                             <div className="col-span-2">
-                                <TextArea label="Description" value={formData.description} onChange={(e) => set('description', e.target.value)} className="min-h-[60px]" />
+                                <TextArea label={t('products.description')} value={formData.description} onChange={(e) => set('description', e.target.value)} className="min-h-[60px]" />
                             </div>
                         </div>
                     </div>
@@ -268,7 +294,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                         <label className="flex items-center gap-3 cursor-pointer">
                             <input type="checkbox" checked={hasVariants} onChange={(e) => setHasVariants(e.target.checked)} className="w-4 h-4 rounded" />
                             <Shirt className="w-4 h-4 text-accent-primary" />
-                            <span className="font-medium">This product comes in several colours and/or sizes</span>
+                            <span className="font-medium">{t('products.hasVariants')}</span>
                         </label>
                         {product && !product.has_variants && hasVariants && (
                             <p className="text-xs text-amber-400 mt-2">
@@ -280,15 +306,16 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                     {hasVariants ? (
                         <div className="mt-4 space-y-3">
                             <Input
-                                label="Product code (optional, used as SKU prefix, e.g. TSH)"
+                                label={t('products.productCode')}
                                 value={formData.sku}
                                 onChange={(e) => set('sku', e.target.value.toUpperCase())}
                                 containerClassName="max-w-xs"
                             />
                             {loadingVariants ? (
-                                <div className="text-sm text-zinc-500">Loading variants…</div>
+                                <div className="text-sm text-zinc-500">{t('products.loadingVariants')}</div>
                             ) : (
                                 <VariantEditor
+                                    suggestedSizeSet={sizeSetForCategory(categories.find(c => c.id === formData.category_id)?.name)}
                                     product={{ name: formData.name, sku: formData.sku, price: formData.price, cost: formData.cost }}
                                     variants={variants}
                                     onChange={setVariants}
@@ -297,10 +324,10 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                         </div>
                     ) : (
                         <div className="mt-4 grid grid-cols-4 gap-4 items-start">
-                            <Input label="SKU" value={formData.sku} onChange={(e) => set('sku', e.target.value)} placeholder="Used in the QR code" data-scan-passthrough />
-                            <Input label="Barcode" value={formData.barcode} onChange={(e) => set('barcode', e.target.value)} placeholder="Scan or type" data-scan-passthrough />
-                            <Input label="Stock quantity" type="number" value={formData.stock_quantity} onChange={(e) => set('stock_quantity', e.target.value)} />
-                            <Input label="Min stock level" type="number" value={formData.min_stock_level} onChange={(e) => set('min_stock_level', e.target.value)} />
+                            <Input label={t('products.colSku')} value={formData.sku} onChange={(e) => set('sku', e.target.value)} placeholder={t('products.skuHint')} data-scan-passthrough />
+                            <Input label={t('products.barcode')} value={formData.barcode} onChange={(e) => set('barcode', e.target.value)} placeholder={t('products.barcodeHint')} data-scan-passthrough />
+                            <Input label={t('products.stock')} type="number" value={formData.stock_quantity} onChange={(e) => set('stock_quantity', e.target.value)} />
+                            <Input label={t('products.minStock')} type="number" value={formData.min_stock_level} onChange={(e) => set('min_stock_level', e.target.value)} />
                             {(formData.sku || formData.barcode) && (
                                 <div className="col-span-4 flex items-center gap-3 text-xs text-zinc-500">
                                     <QrPreview value={(formData.sku || formData.barcode).trim().toUpperCase()} size={64} />
@@ -317,9 +344,9 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                     )}
                 </ModalBody>
                 <ModalFooter>
-                    <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+                    <Button type="button" variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
                     <Button type="submit" loading={loading}>
-                        {product ? 'Update Product' : 'Add Product'}
+                        {product ? t('products.update') : t('products.add')}
                     </Button>
                 </ModalFooter>
             </form>

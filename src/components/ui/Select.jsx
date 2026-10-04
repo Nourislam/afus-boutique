@@ -1,3 +1,4 @@
+import { useT } from '../../i18n';
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 
@@ -6,10 +7,11 @@ export function Select({
     value,
     onChange,
     options = [],
-    placeholder = 'Select...',
+    placeholder,
     error,
     className = ''
 }) {
+    const { t } = useT();
     const [isOpen, setIsOpen] = useState(false);
     const [dropdownStyle, setDropdownStyle] = useState({});
     const ref = useRef(null);
@@ -51,7 +53,7 @@ export function Select({
                     className={`input flex items-center justify-between ${error ? 'border-red-500' : ''}`}
                 >
                     <span className={selectedOption ? 'text-white' : 'text-zinc-500'}>
-                        {selectedOption?.label || placeholder}
+                        {selectedOption?.label || placeholder || t('common.select')}
                     </span>
                     <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -67,7 +69,7 @@ export function Select({
                                         onChange(option.value);
                                         setIsOpen(false);
                                     }}
-                                    className={`w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-dark-tertiary transition-colors
+                                    className={`w-full flex items-center justify-between px-4 py-2.5 text-start hover:bg-dark-tertiary transition-colors
                     ${option.value === value ? 'bg-accent-primary/10 text-accent-primary' : 'text-white'}
                   `}
                                 >

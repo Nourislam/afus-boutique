@@ -1,3 +1,6 @@
+import { t } from '../i18n';
+import { formatDate as formatLocalDate } from '../i18n/format';
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { Package, AlertTriangle, Plus, Minus, History, ArrowUpDown } from 'lucide-react';
 import { Button } from '../components/ui/Button';
@@ -11,6 +14,8 @@ import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
 import { format } from 'date-fns';
 import { useSettingsStore } from '../stores/settingsStore';
+import { variantLabel } from '../lib/clothing';
+import { MANUAL_REASONS, stockReasonLabel } from '../lib/stockReasons';
 
 export default function InventoryPage() {
     const [products, setProducts] = useState([]);
@@ -46,7 +51,7 @@ export default function InventoryPage() {
             setLowStockProducts(lowStock);
             setInventoryLogs(logs);
         } catch (error) {
-            toast.error('Failed to load inventory data');
+            toast.error(t('inventory.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -61,7 +66,7 @@ export default function InventoryPage() {
     const totalValue = products.reduce((sum, p) => sum + (p.stock_quantity * p.cost), 0);
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount);
+        return formatMoney(amount);
     };
 
     const getStockStatus = (product) => {
@@ -77,7 +82,7 @@ export default function InventoryPage() {
             setInventoryLogs(logs);
             setShowLogsModal(true);
         } catch (error) {
-            toast.error('Failed to load logs');
+            toast.error(t('inventory.logsFailed'));
         }
     };
 
@@ -87,33 +92,33 @@ export default function InventoryPage() {
             <div className="p-6 border-b border-dark-border">
                 <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-2xl font-bold">Inventory</h1>
-                        <p className="text-zinc-500">Manage stock levels and track changes</p>
+                        <h1 className="text-2xl font-bold">{t('inventory.title')}</h1>
+                        <p className="text-zinc-500">{t('inventory.subtitle')}</p>
                     </div>
                 </div>
 
                 {/* Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                     <StatCard
-                        label="Total Products"
+                        label={t('inventory.totalProducts')}
                         value={products.length}
                         icon={Package}
                         color="primary"
                     />
                     <StatCard
-                        label="Total Stock"
+                        label={t('inventory.totalStock')}
                         value={totalStock.toLocaleString()}
                         icon={Package}
                         color="primary"
                     />
                     <StatCard
-                        label="Stock Value"
+                        label={t('inventory.stockValue')}
                         value={formatCurrency(totalValue)}
                         icon={Package}
                         color="success"
                     />
                     <StatCard
-                        label="Low Stock Items"
+                        label={t('inventory.lowStockItems')}
                         value={lowStockProducts.length}
                         icon={AlertTriangle}
                         color={lowStockProducts.length > 0 ? 'warning' : 'success'}
@@ -123,7 +128,7 @@ export default function InventoryPage() {
                 <SearchInput
                     value={searchQuery}
                     onChange={setSearchQuery}
-                    placeholder="Search products..."
+                    placeholder={t('inventory.search')}
                     className="max-w-md"
                 />
             </div>
@@ -135,7 +140,7 @@ export default function InventoryPage() {
                     <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
                         <div className="flex items-center gap-2 text-amber-400 mb-3">
                             <AlertTriangle className="w-5 h-5" />
-                            <span className="font-semibold">Low Stock Alert</span>
+                            <span className="font-semibold">{t('inventory.lowAlert')}</span>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             {lowStockProducts.slice(0, 8).map(row => (
@@ -145,7 +150,7 @@ export default function InventoryPage() {
                                 >
                                     <p className="font-medium truncate">{row.product_name}</p>
                                     {(row.color || row.size) && (
-                                        <p className="text-xs text-zinc-300 truncate">{[row.color, row.size].filter(Boolean).join(' / ')}</p>
+                                        <p className="text-xs text-zinc-300 truncate">{variantLabel(row)}</p>
                                     )}
                                     <p className="text-sm text-amber-400">
                                         {row.stock_quantity} remaining
@@ -168,13 +173,13 @@ export default function InventoryPage() {
                     <Table>
                         <TableHead>
                             <TableRow>
-                                <TableHeader>Product</TableHeader>
-                                <TableHeader>SKU</TableHeader>
-                                <TableHeader>Current Stock</TableHeader>
-                                <TableHeader>Min Level</TableHeader>
-                                <TableHeader>Status</TableHeader>
-                                <TableHeader>Value</TableHeader>
-                                <TableHeader>Actions</TableHeader>
+                                <TableHeader>{t('inventory.product')}</TableHeader>
+                                <TableHeader>{t('products.sku')}</TableHeader>
+                                <TableHeader>{t('inventory.current')}</TableHeader>
+                                <TableHeader>{t('inventory.minLevel')}</TableHeader>
+                                <TableHeader>{t('inventory.status')}</TableHeader>
+                                <TableHeader>{t('inventory.value')}</TableHeader>
+                                <TableHeader>{t('inventory.actions')}</TableHeader>
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -195,7 +200,7 @@ export default function InventoryPage() {
                                                                 title={v.sku}
                                                                 className={`text-[11px] px-1.5 py-0.5 rounded bg-dark-tertiary ${v.stock_quantity <= 0 ? 'text-red-400' : v.stock_quantity <= v.min_stock_level ? 'text-amber-400' : 'text-zinc-300'}`}
                                                             >
-                                                                {[v.color, v.size].filter(Boolean).join('/') || v.sku}: {v.stock_quantity}
+                                                                {variantLabel(v) || v.sku}: {v.stock_quantity}
                                                             </span>
                                                         ))}
                                                     </div>
@@ -223,7 +228,7 @@ export default function InventoryPage() {
                                                 onClick={() => { setSelectedProduct(product); setShowAdjustModal(true); }}
                                             >
                                                 <ArrowUpDown className="w-3 h-3" />
-                                                Adjust
+                                                {t('inventory.adjustShort')}
                                             </Button>
                                             <Button
                                                 variant="ghost"
@@ -259,7 +264,7 @@ export default function InventoryPage() {
             >
                 <ModalBody>
                     {inventoryLogs.length === 0 ? (
-                        <p className="text-center text-zinc-500 py-8">No stock history</p>
+                        <p className="text-center text-zinc-500 py-8">{t('inventory.noHistory')}</p>
                     ) : (
                         <div className="space-y-2 max-h-96 overflow-y-auto">
                             {inventoryLogs.map(log => (
@@ -279,26 +284,26 @@ export default function InventoryPage() {
                                                     </div>
                                                     <div>
                                                         <p className="font-medium">
-                                                            {isOut ? '-' : '+'}{amount} units
+                                                            {t('stock.units', { n: `${isOut ? '-' : '+'}${amount}` })}
                                                             {(log.variant_color || log.variant_size) && (
-                                                                <span className="ml-2 text-sm text-accent-primary">{[log.variant_color, log.variant_size].filter(Boolean).join(' / ')}</span>
+                                                                <span className="ms-2 text-sm text-accent-primary">{variantLabel({ color: log.variant_color, size: log.variant_size })}</span>
                                                             )}
-                                                            {log.variant_sku && <span className="ml-2 text-xs font-mono text-zinc-500">{log.variant_sku}</span>}
+                                                            {log.variant_sku && <span className="ms-2 text-xs font-mono text-zinc-500">{log.variant_sku}</span>}
                                                         </p>
                                                         <p className="text-sm text-zinc-400">
-                                                            {log.reason || log.type || 'No reason specified'}{log.employee_name ? ` • ${log.employee_name}` : ''}
+                                                            {log.reason ? stockReasonLabel(log.reason) : (log.type || t('stock.reason.none'))}{log.employee_name ? ` • ${log.employee_name}` : ''}
                                                         </p>
                                                     </div>
                                                 </>
                                             );
                                         })()}
                                     </div>
-                                    <div className="text-right">
+                                    <div className="text-end">
                                         <p className="text-sm text-zinc-400">
                                             {log.quantity_before} → {log.quantity_after}
                                         </p>
                                         <p className="text-xs text-zinc-500">
-                                            {format(new Date(log.created_at), 'MMM d, yyyy HH:mm')}
+                                            {formatLocalDate(log.created_at, 'datetime')}
                                         </p>
                                     </div>
                                 </div>
@@ -345,17 +350,17 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
 
         const qty = parseInt(quantity);
         if (!qty || qty <= 0) {
-            toast.error('Please enter a valid quantity');
+            toast.error(t('inventory.validQty'));
             return;
         }
 
         if (needsVariant && !selectedVariant) {
-            toast.error('Choose the colour / size');
+            toast.error(t('variants.chooseColorSize'));
             return;
         }
 
         if (adjustType === 'remove' && qty > currentStock) {
-            toast.error('Cannot remove more than current stock');
+            toast.error(t('inventory.tooMuch'));
             return;
         }
 
@@ -369,10 +374,10 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
                 reason,
                 employeeId,
             });
-            toast.success('Stock updated');
+            toast.success(t('inventory.updated'));
             onSave();
         } catch (error) {
-            toast.error('Failed to update stock');
+            toast.error(t('inventory.updateFailed'));
         } finally {
             setLoading(false);
         }
@@ -381,7 +386,7 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
     if (!product) return null;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Adjust Stock" size="md">
+        <Modal isOpen={isOpen} onClose={onClose} title={t('inventory.adjust')} size="md">
             <form onSubmit={handleSubmit}>
                 <ModalBody>
                     <div className="space-y-4">
@@ -396,14 +401,14 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
 
                         {needsVariant && (
                             <Select
-                                label="Colour / size *"
+                                label={t('inventory.variant')}
                                 value={variantId}
                                 onChange={setVariantId}
                                 options={[
-                                    { value: '', label: 'Select variant' },
+                                    { value: '', label: t('inventory.selectVariant') },
                                     ...variants.map(v => ({
                                         value: v.id,
-                                        label: `${[v.color, v.size].filter(Boolean).join(' / ') || v.sku} — ${v.sku} (stock ${v.stock_quantity})`,
+                                        label: `${variantLabel(v) || v.sku} — ${v.sku} (${t('variants.inStock', { n: v.stock_quantity })})`,
                                     })),
                                 ]}
                             />
@@ -421,7 +426,7 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
                                     }`}
                             >
                                 <Plus className="w-5 h-5" />
-                                Add Stock
+                                {t('inventory.add')}
                             </button>
                             <button
                                 type="button"
@@ -433,38 +438,33 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
                                     }`}
                             >
                                 <Minus className="w-5 h-5" />
-                                Remove Stock
+                                {t('inventory.remove')}
                             </button>
                         </div>
 
                         <Input
-                            label="Quantity"
+                            label={t('inventory.quantity')}
                             type="number"
                             value={quantity}
                             onChange={(e) => setQuantity(e.target.value)}
-                            placeholder="Enter quantity"
+                            placeholder={t('inventory.enterQty')}
                             min="1"
                         />
 
                         <Select
-                            label="Reason"
+                            label={t('inventory.reason')}
                             value={reason}
                             onChange={setReason}
                             options={[
-                                { value: '', label: 'Select reason' },
-                                { value: 'Received shipment', label: 'Received shipment' },
-                                { value: 'Inventory count', label: 'Inventory count' },
-                                { value: 'Damaged goods', label: 'Damaged goods' },
-                                { value: 'Returned items', label: 'Returned items' },
-                                { value: 'Shrinkage', label: 'Shrinkage' },
-                                { value: 'Other', label: 'Other' },
+                                { value: '', label: t('stock.selectReason') },
+                                ...MANUAL_REASONS.map(code => ({ value: code, label: t(`stock.reason.${code}`) })),
                             ]}
                         />
 
                         {/* Preview */}
                         {quantity && (
                             <div className={`p-4 rounded-lg ${adjustType === 'add' ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                                <p className="text-sm text-zinc-400">New Stock Level</p>
+                                <p className="text-sm text-zinc-400">{t('inventory.newLevel')}</p>
                                 <p className="text-2xl font-bold">
                                     {adjustType === 'add'
                                         ? currentStock + parseInt(quantity || 0)
@@ -476,13 +476,13 @@ function StockAdjustmentModal({ isOpen, onClose, product, employeeId, onSave }) 
                     </div>
                 </ModalBody>
                 <ModalFooter>
-                    <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+                    <Button type="button" variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
                     <Button
                         type="submit"
                         variant={adjustType === 'add' ? 'success' : 'danger'}
                         loading={loading}
                     >
-                        {adjustType === 'add' ? 'Add Stock' : 'Remove Stock'}
+                        {adjustType === 'add' ? t('inventory.add') : t('inventory.remove')}
                     </Button>
                 </ModalFooter>
             </form>

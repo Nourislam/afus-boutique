@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Edit2, Trash2, Package, Grid, List, FileSpreadsheet, QrCode } from 'lucide-react';
@@ -16,6 +18,7 @@ import { ExcelImport } from '../components/ui/ExcelImport';
 
 import { useSettingsStore } from '../stores/settingsStore';
 import { ProductFormModal } from '../components/products/ProductFormModal';
+import { CategoryManagerModal } from '../components/products/CategoryManagerModal';
 
 export default function ProductsPage() {
     const [products, setProducts] = useState([]);
@@ -60,7 +63,7 @@ export default function ProductsPage() {
             setProducts(productsData);
             setCategories(categoriesData);
         } catch (error) {
-            toast.error('Failed to load data');
+            toast.error(t('common.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -77,7 +80,7 @@ export default function ProductsPage() {
     });
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount);
+        return formatMoney(amount);
     };
 
     const formatPrice = (product) => {
@@ -88,25 +91,25 @@ export default function ProductsPage() {
     };
 
     const handleDeleteProduct = async (product) => {
-        if (confirm(`Delete "${product.name}"?`)) {
+        if (confirm(t('common.deleteConfirm', { name: product.name }))) {
             try {
                 await window.electronAPI.products.delete(product.id);
-                toast.success('Product deleted');
+                toast.success(t('products.deleted'));
                 loadData();
             } catch (error) {
-                toast.error('Failed to delete product');
+                toast.error(t('products.deleteFailed'));
             }
         }
     };
 
     const handleDeleteCategory = async (category) => {
-        if (confirm(`Delete "${category.name}"? Products in this category will become uncategorized.`)) {
+        if (confirm(t('categories.deleteConfirm', { name: category.name }))) {
             try {
                 await window.electronAPI.categories.delete(category.id);
-                toast.success('Category deleted');
+                toast.success(t('products.categoryDeleted'));
                 loadData();
             } catch (error) {
-                toast.error('Failed to delete category');
+                toast.error(t('products.categoryDeleteFailed'));
             }
         }
     };
@@ -138,6 +141,7 @@ export default function ProductsPage() {
                     name: record.name,
                     description: record.description || null,
                     category_id: categoryId,
+                    brand: record.brand || null,
                     price: parseFloat(record.price) || 0,
                     cost: parseFloat(record.cost) || 0,
                     stock_quantity: parseInt(record.stock_quantity) || 0,
@@ -152,8 +156,8 @@ export default function ProductsPage() {
                 failures.push(record.name);
             }
         }
-        toast.success(`Imported ${successCount} products`);
-        if (failures.length) toast.error(`${failures.length} rows were not imported (e.g. duplicate SKU/barcode): ${failures.slice(0, 3).join(', ')}`);
+        toast.success(t('products.imported', { n: successCount }));
+        if (failures.length) toast.error(t('products.importFailures', { n: failures.length, names: failures.slice(0, 3).join(', ') }));
         loadData();
     };
 
@@ -164,17 +168,17 @@ export default function ProductsPage() {
                 <div className="p-6 border-b border-dark-border">
                     <div className="flex items-center justify-between mb-4">
                         <div>
-                            <h1 className="text-2xl font-bold">Products</h1>
-                            <p className="text-zinc-500">{products.length} products in inventory</p>
+                            <h1 className="text-2xl font-bold">{t('products.title')}</h1>
+                            <p className="text-zinc-500">{t('products.count', { n: products.length })}</p>
                         </div>
                         <div className="flex items-center gap-2">
                             <PermissionGate permission={PERMISSIONS.PRODUCTS_CREATE}>
                                 <Button variant="secondary" onClick={() => setShowExcelImport(true)}>
                                     <FileSpreadsheet className="w-4 h-4" />
-                                    Import Excel
+                                    {t('common.importExcel')}
                                 </Button>
                                 <Button variant="secondary" onClick={() => setShowCategoryModal(true)}>
-                                    Manage Categories
+                                    {t('products.manageCategories')}
                                 </Button>
                                 <Button onClick={() => {
                                     setInitialValues(null);
@@ -182,7 +186,7 @@ export default function ProductsPage() {
                                     setShowProductModal(true);
                                 }}>
                                     <Plus className="w-4 h-4" />
-                                    Add Product
+                                    {t('products.add')}
                                 </Button>
                             </PermissionGate>
                         </div>
@@ -192,14 +196,14 @@ export default function ProductsPage() {
                         <SearchInput
                             value={searchQuery}
                             onChange={setSearchQuery}
-                            placeholder="Search products..."
+                            placeholder={t('products.search')}
                             className="flex-1 max-w-md"
                         />
                         <Select
                             value={selectedCategory}
                             onChange={setSelectedCategory}
                             options={[
-                                { value: 'all', label: 'All Categories' },
+                                { value: 'all', label: t('products.allCategories') },
                                 ...categories.map(c => ({ value: c.id, label: c.name }))
                             ]}
                             className="w-48"
@@ -230,12 +234,12 @@ export default function ProductsPage() {
                     ) : filteredProducts.length === 0 ? (
                         <EmptyState
                             icon={Package}
-                            title="No products found"
-                            description={searchQuery ? 'Try a different search term' : 'Add your first product to get started'}
+                            title={t('products.notFound')}
+                            description={searchQuery ? t('products.tryOther') : t('products.addFirst')}
                             action={
                                 <Button onClick={() => { setEditingProduct(null); setShowProductModal(true); }}>
                                     <Plus className="w-4 h-4" />
-                                    Add Product
+                                    {t('products.add')}
                                 </Button>
                             }
                         />
@@ -253,7 +257,7 @@ export default function ProductsPage() {
                                     <div className="space-y-1">
                                         <h3 className="font-medium truncate">{product.name}</h3>
                                         <p className="text-sm text-zinc-500 truncate">
-                                            {product.variant_count > 0 ? `${product.variant_count} variants · ${product.stock_quantity} in stock` : (product.sku || 'No SKU')}
+                                            {product.variant_count > 0 ? t('products.variantsInStock', { n: product.variant_count, stock: product.stock_quantity }) : (product.sku || t('products.noSku'))}
                                         </p>
                                         <div className="flex items-center justify-between gap-2">
                                             <p className="font-semibold text-accent-primary truncate">{formatPrice(product)}</p>
@@ -269,13 +273,13 @@ export default function ProductsPage() {
                                                 onClick={() => { setEditingProduct(product); setShowProductModal(true); }}
                                             >
                                                 <Edit2 className="w-3 h-3" />
-                                                Edit
+                                                {t('common.edit')}
                                             </Button>
                                         </PermissionGate>
                                         <Button
                                             variant="secondary"
                                             size="sm"
-                                            title="Print QR labels"
+                                            title={t('products.printLabels')}
                                             onClick={() => navigate(`/barcode-labels?product=${product.id}`)}
                                         >
                                             <QrCode className="w-3 h-3" />
@@ -297,13 +301,13 @@ export default function ProductsPage() {
                         <Table>
                             <TableHead>
                                 <TableRow>
-                                    <TableHeader>Product</TableHeader>
-                                    <TableHeader>SKU</TableHeader>
-                                    <TableHeader>Category</TableHeader>
-                                    <TableHeader>Price</TableHeader>
-                                    <TableHeader>Stock</TableHeader>
-                                    <TableHeader>Status</TableHeader>
-                                    <TableHeader>Actions</TableHeader>
+                                    <TableHeader>{t('products.product')}</TableHeader>
+                                    <TableHeader>{t('products.colSku')}</TableHeader>
+                                    <TableHeader>{t('products.colCategory')}</TableHeader>
+                                    <TableHeader>{t('products.colPrice')}</TableHeader>
+                                    <TableHeader>{t('products.colStock')}</TableHeader>
+                                    <TableHeader>{t('products.colStatus')}</TableHeader>
+                                    <TableHeader>{t('products.colActions')}</TableHeader>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -319,7 +323,7 @@ export default function ProductsPage() {
                                                     )}
                                                 </div>
                                                 <span className="font-medium">{product.name}</span>
-                                                {product.variant_count > 0 && <Badge>{product.variant_count} variants</Badge>}
+                                                {product.variant_count > 0 && <Badge>{t('products.variantCount', { n: product.variant_count })}</Badge>}
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-zinc-400">{product.sku || '-'}</TableCell>
@@ -345,7 +349,7 @@ export default function ProductsPage() {
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
-                                                    title="Print QR labels"
+                                                    title={t('products.printLabels')}
                                                     onClick={() => navigate(`/barcode-labels?product=${product.id}`)}
                                                 >
                                                     <QrCode className="w-4 h-4" />
@@ -390,102 +394,9 @@ export default function ProductsPage() {
                     onClose={() => setShowExcelImport(false)}
                     dataType="products"
                     onImport={handleExcelImport}
-                    title="Import Products from Excel"
+                    title={t('products.importTitle')}
                 />
             </div>
         </>
-    );
-}
-
-function CategoryManagerModal({ isOpen, onClose, categories, onSave }) {
-    const [newCategory, setNewCategory] = useState({ name: '', color: '#6366f1' });
-    const [loading, setLoading] = useState(false);
-
-    const handleAddCategory = async () => {
-        if (!newCategory.name) {
-            toast.error('Category name is required');
-            return;
-        }
-
-        setLoading(true);
-        try {
-            await window.electronAPI.categories.create({
-                id: uuid(),
-                name: newCategory.name,
-                color: newCategory.color,
-            });
-            setNewCategory({ name: '', color: '#6366f1' });
-            toast.success('Category added');
-            onSave();
-        } catch (error) {
-            toast.error('Failed to add category');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleDeleteCategory = async (category) => {
-        if (confirm(`Delete "${category.name}"?`)) {
-            try {
-                await window.electronAPI.categories.delete(category.id);
-                toast.success('Category deleted');
-                onSave();
-            } catch (error) {
-                toast.error('Failed to delete category');
-            }
-        }
-    };
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Manage Categories" size="md">
-            <ModalBody>
-                <div className="space-y-4">
-                    {/* Add new category */}
-                    <div className="flex items-end gap-2">
-                        <Input
-                            label="New Category"
-                            value={newCategory.name}
-                            onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
-                            placeholder="Category name"
-                            containerClassName="flex-1"
-                        />
-                        <input
-                            type="color"
-                            value={newCategory.color}
-                            onChange={(e) => setNewCategory({ ...newCategory, color: e.target.value })}
-                            className="w-10 h-10 rounded-lg cursor-pointer bg-transparent"
-                        />
-                        <Button onClick={handleAddCategory} loading={loading}>
-                            <Plus className="w-4 h-4" />
-                        </Button>
-                    </div>
-
-                    {/* Category list */}
-                    <div className="space-y-2">
-                        {categories.map(category => (
-                            <div
-                                key={category.id}
-                                className="flex items-center justify-between p-3 rounded-lg bg-dark-tertiary"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div
-                                        className="w-4 h-4 rounded-full"
-                                        style={{ backgroundColor: category.color }}
-                                    />
-                                    <span className="font-medium">{category.name}</span>
-                                </div>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleDeleteCategory(category)}
-                                >
-                                    <Trash2 className="w-4 h-4 text-red-400" />
-                                </Button>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </ModalBody>
-        </Modal>
     );
 }

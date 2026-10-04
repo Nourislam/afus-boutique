@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -33,16 +34,16 @@ export default function CartOptionsModal({ isOpen, onClose }) {
     };
 
     const tabs = [
-        { id: 'discount', label: 'Discount' },
-        { id: 'fees', label: 'Fees' },
-        { id: 'tax', label: 'Tax' },
+        { id: 'discount', label: t('pos.discount') },
+        { id: 'fees', label: t('cartOptions.fees') },
+        { id: 'tax', label: t('pos.tax') },
     ];
 
     return (
         <Modal
             isOpen={isOpen}
             onClose={onClose}
-            title="Cart Options"
+            title={t('cartOptions.title')}
             size="sm"
         >
             <ModalBody>
@@ -65,7 +66,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                                         : 'text-zinc-400 hover:text-white'
                                         }`}
                                 >
-                                    Fixed Amount ($)
+                                    {t('cartOptions.fixedDa')}
                                 </button>
                                 <button
                                     onClick={() => setDiscountType('percent')}
@@ -74,11 +75,11 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                                         : 'text-zinc-400 hover:text-white'
                                         }`}
                                 >
-                                    Percentage (%)
+                                    {t('cartOptions.percentShort')}
                                 </button>
                             </div>
                             <Input
-                                label={discountType === 'fixed' ? 'Discount Amount' : 'Percentage Off'}
+                                label={discountType === 'fixed' ? t('cartOptions.amount') : t('cartOptions.percent')}
                                 type="number"
                                 min="0"
                                 value={discountValue}
@@ -92,7 +93,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                     {activeTab === 'fees' && (
                         <div className="space-y-4">
                             <Input
-                                label="Service Charge / Fee ($)"
+                                label={t('cartOptions.fee')}
                                 type="number"
                                 min="0"
                                 value={serviceCharge}
@@ -100,7 +101,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                                 placeholder="0.00"
                             />
                             <p className="text-xs text-zinc-500">
-                                This amount will be added to the final total.
+                                {t('cartOptions.feeHint')}
                             </p>
                         </div>
                     )}
@@ -115,8 +116,8 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                                     className="w-5 h-5 rounded border-zinc-600 bg-dark-bg text-accent-primary focus:ring-accent-primary"
                                 />
                                 <div>
-                                    <span className="block font-medium">Tax Exempt</span>
-                                    <span className="text-xs text-zinc-500">Remove tax for this transaction</span>
+                                    <span className="block font-medium">{t('cartOptions.exempt')}</span>
+                                    <span className="text-xs text-zinc-500">{t('cartOptions.exemptHint')}</span>
                                 </div>
                             </label>
                         </div>
@@ -126,10 +127,10 @@ export default function CartOptionsModal({ isOpen, onClose }) {
             <ModalFooter>
                 <div className="flex justify-end gap-2 w-full">
                     <Button variant="secondary" onClick={onClose} className="flex-1">
-                        Cancel
+                        {t('common.cancel')}
                     </Button>
                     <Button variant="primary" onClick={handleSave} className="flex-1">
-                        Apply Changes
+                        {t('cartOptions.apply')}
                     </Button>
                 </div>
             </ModalFooter>

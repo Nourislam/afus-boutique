@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ScanDetector, usCharFromCode, charFromEvent } from '../src/lib/scanner';
+import { ScanDetector, usCharFromCode, azertyCharFromCode, charFromEvent } from '../src/lib/scanner';
 
 // Physical key codes a scanner in US mode sends for a string
 function usKeystrokes(text) {
@@ -44,6 +44,17 @@ describe('US key code table', () => {
     it("'os' mode uses the produced character", () => {
         expect(charFromEvent({ code: 'Digit1', key: '&', shiftKey: false }, 'os')).toBe('&');
         expect(charFromEvent({ code: 'Digit1', key: '&', shiftKey: false }, 'us')).toBe('1');
+    });
+
+    it("'azerty' mode decodes a scanner set to French while Windows uses another layout", () => {
+        // An AZERTY scanner types "TSH-BLK-M" + digits with Shift on the top row
+        const keys = [
+            ['KeyT', true], ['KeyS', true], ['KeyH', true], ['Digit6', false], ['KeyQ', false], ['KeyW', true],
+            ['Semicolon', true], ['Digit1', true], ['Digit0', true],
+        ];
+        const text = keys.map(([code, shiftKey]) => azertyCharFromCode({ code, shiftKey })).join('');
+        expect(text).toBe('TSH-aZM10');
+        expect(charFromEvent({ code: 'Digit2', key: 'ب', shiftKey: true }, 'azerty')).toBe('2');
     });
 });
 

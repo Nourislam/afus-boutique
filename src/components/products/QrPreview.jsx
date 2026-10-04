@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useEffect, useState } from 'react';
 
 /**
@@ -17,7 +18,7 @@ export function QrPreview({ value, size = 96, className = '' }) {
         }
         window.electronAPI.labels.qrSvg(value)
             .then((markup) => { if (!cancelled) setSvg(markup); })
-            .catch((e) => { if (!cancelled) setError(e.message || 'Cannot generate QR'); });
+            .catch((e) => { if (!cancelled) setError(e.message || t('products.qrFailed')); });
         return () => { cancelled = true; };
     }, [value]);
 

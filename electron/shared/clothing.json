@@ -1,0 +1,88 @@
+{
+  "colors": [
+    { "code": "black", "sku": "BLK", "hex": "#111111", "en": "Black", "fr": "Noir", "ar": "أسود" },
+    { "code": "white", "sku": "WHT", "hex": "#f5f5f5", "en": "White", "fr": "Blanc", "ar": "أبيض" },
+    { "code": "grey", "sku": "GRY", "hex": "#8a8a8a", "en": "Grey", "fr": "Gris", "ar": "رمادي" },
+    { "code": "navy", "sku": "NVY", "hex": "#1f2a52", "en": "Navy", "fr": "Bleu marine", "ar": "كحلي" },
+    { "code": "blue", "sku": "BLU", "hex": "#2563eb", "en": "Blue", "fr": "Bleu", "ar": "أزرق" },
+    { "code": "skyblue", "sku": "SKY", "hex": "#7dd3fc", "en": "Sky blue", "fr": "Bleu ciel", "ar": "أزرق سماوي" },
+    { "code": "red", "sku": "RED", "hex": "#dc2626", "en": "Red", "fr": "Rouge", "ar": "أحمر" },
+    { "code": "burgundy", "sku": "BRG", "hex": "#7f1d1d", "en": "Burgundy", "fr": "Bordeaux", "ar": "عنابي" },
+    { "code": "pink", "sku": "PNK", "hex": "#f472b6", "en": "Pink", "fr": "Rose", "ar": "وردي" },
+    { "code": "green", "sku": "GRN", "hex": "#16a34a", "en": "Green", "fr": "Vert", "ar": "أخضر" },
+    { "code": "khaki", "sku": "KHK", "hex": "#8b8456", "en": "Khaki", "fr": "Kaki", "ar": "كاكي" },
+    { "code": "yellow", "sku": "YLW", "hex": "#facc15", "en": "Yellow", "fr": "Jaune", "ar": "أصفر" },
+    { "code": "orange", "sku": "ORG", "hex": "#f97316", "en": "Orange", "fr": "Orange", "ar": "برتقالي" },
+    { "code": "purple", "sku": "PRP", "hex": "#7c3aed", "en": "Purple", "fr": "Violet", "ar": "بنفسجي" },
+    { "code": "brown", "sku": "BRN", "hex": "#7c4a24", "en": "Brown", "fr": "Marron", "ar": "بني" },
+    { "code": "camel", "sku": "CML", "hex": "#c19a6b", "en": "Camel", "fr": "Camel", "ar": "جملي" },
+    { "code": "beige", "sku": "BEG", "hex": "#e7d8b9", "en": "Beige", "fr": "Beige", "ar": "بيج" },
+    { "code": "cream", "sku": "CRM", "hex": "#fff8e7", "en": "Cream", "fr": "Crème", "ar": "كريمي" },
+    { "code": "gold", "sku": "GLD", "hex": "#d4af37", "en": "Gold", "fr": "Doré", "ar": "ذهبي" },
+    { "code": "silver", "sku": "SLV", "hex": "#c0c0c0", "en": "Silver", "fr": "Argenté", "ar": "فضي" },
+    { "code": "multicolor", "sku": "MLT", "hex": "linear-gradient(135deg,#ef4444,#f59e0b,#22c55e,#3b82f6)", "en": "Multicolour", "fr": "Multicolore", "ar": "متعدد الألوان" }
+  ],
+  "sizeSets": [
+    { "code": "letters", "en": "Letters (XS–XXXL)", "fr": "Lettres (XS–XXXL)", "ar": "حروف (XS–XXXL)", "sizes": ["XS", "S", "M", "L", "XL", "XXL", "XXXL"] },
+    { "code": "eu", "en": "European 36–54", "fr": "Européennes 36–54", "ar": "أوروبية 36–54", "sizes": ["36", "38", "40", "42", "44", "46", "48", "50", "52", "54"] },
+    { "code": "jeans", "en": "Jeans 28–40", "fr": "Jeans 28–40", "ar": "جينز 28–40", "sizes": ["28", "30", "32", "34", "36", "38", "40"] },
+    { "code": "shoes", "en": "Shoes 36–46", "fr": "Chaussures 36–46", "ar": "أحذية 36–46", "sizes": ["36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"] },
+    { "code": "kids", "en": "Children (age)", "fr": "Enfants (âge)", "ar": "أطفال (حسب العمر)", "sizes": ["2Y", "4Y", "6Y", "8Y", "10Y", "12Y", "14Y", "16Y"] },
+    { "code": "baby", "en": "Baby (months)", "fr": "Bébé (mois)", "ar": "رضّع (بالأشهر)", "sizes": ["0M", "3M", "6M", "9M", "12M", "18M", "24M"] },
+    { "code": "onesize", "en": "One size", "fr": "Taille unique", "ar": "مقاس واحد", "sizes": ["TU"] }
+  ],
+  "sizeLabels": {
+    "TU": { "en": "One size", "fr": "Taille unique", "ar": "مقاس واحد" }
+  },
+  "genders": [
+    { "code": "men", "en": "Men", "fr": "Homme", "ar": "رجال" },
+    { "code": "women", "en": "Women", "fr": "Femme", "ar": "نساء" },
+    { "code": "unisex", "en": "Unisex", "fr": "Mixte", "ar": "للجنسين" },
+    { "code": "boys", "en": "Boys", "fr": "Garçon", "ar": "أولاد" },
+    { "code": "girls", "en": "Girls", "fr": "Fille", "ar": "بنات" },
+    { "code": "baby", "en": "Baby", "fr": "Bébé", "ar": "رضّع" }
+  ],
+  "seasons": [
+    { "code": "summer", "en": "Summer", "fr": "Été", "ar": "صيف" },
+    { "code": "winter", "en": "Winter", "fr": "Hiver", "ar": "شتاء" },
+    { "code": "midseason", "en": "Spring / Autumn", "fr": "Mi-saison", "ar": "ربيع / خريف" },
+    { "code": "eid", "en": "Eid", "fr": "Aïd", "ar": "العيد" },
+    { "code": "back_to_school", "en": "Back to school", "fr": "Rentrée scolaire", "ar": "الدخول المدرسي" },
+    { "code": "ramadan", "en": "Ramadan", "fr": "Ramadan", "ar": "رمضان" },
+    { "code": "wedding", "en": "Weddings", "fr": "Mariages", "ar": "الأعراس" },
+    { "code": "all_year", "en": "All year", "fr": "Toute l'année", "ar": "طوال السنة" }
+  ],
+  "categories": [
+    { "code": "tshirts", "en": "T-shirts", "fr": "T-shirts", "ar": "تيشيرتات", "color": "#3b82f6", "sizeSet": "letters" },
+    { "code": "shirts", "en": "Shirts", "fr": "Chemises", "ar": "قمجات", "color": "#6366f1", "sizeSet": "letters" },
+    { "code": "polos", "en": "Polos", "fr": "Polos", "ar": "بولو", "color": "#0ea5e9", "sizeSet": "letters" },
+    { "code": "trousers", "en": "Trousers", "fr": "Pantalons", "ar": "سراويل", "color": "#0891b2", "sizeSet": "eu" },
+    { "code": "jeans", "en": "Jeans", "fr": "Jeans", "ar": "دجين", "color": "#1d4ed8", "sizeSet": "jeans" },
+    { "code": "shorts", "en": "Shorts", "fr": "Shorts", "ar": "شورتات", "color": "#14b8a6", "sizeSet": "letters" },
+    { "code": "jackets", "en": "Jackets", "fr": "Vestes & blousons", "ar": "جاكيتات", "color": "#f59e0b", "sizeSet": "letters" },
+    { "code": "coats", "en": "Coats", "fr": "Manteaux", "ar": "معاطف", "color": "#b45309", "sizeSet": "letters" },
+    { "code": "hoodies", "en": "Hoodies & sweatshirts", "fr": "Sweats & hoodies", "ar": "سويتات وهوديات", "color": "#8b5cf6", "sizeSet": "letters" },
+    { "code": "tracksuits", "en": "Tracksuits", "fr": "Survêtements", "ar": "بدلات رياضية", "color": "#22c55e", "sizeSet": "letters" },
+    { "code": "dresses", "en": "Dresses", "fr": "Robes", "ar": "فساتين", "color": "#ec4899", "sizeSet": "eu" },
+    { "code": "skirts", "en": "Skirts", "fr": "Jupes", "ar": "تنورات", "color": "#db2777", "sizeSet": "eu" },
+    { "code": "traditional", "en": "Traditional wear", "fr": "Tenues traditionnelles", "ar": "اللباس التقليدي", "color": "#a16207", "sizeSet": "letters" },
+    { "code": "abayas", "en": "Abayas & djellabas", "fr": "Abayas & djellabas", "ar": "عبايات وجلابات", "color": "#78350f", "sizeSet": "letters" },
+    { "code": "underwear", "en": "Underwear & socks", "fr": "Sous-vêtements & chaussettes", "ar": "ملابس داخلية وتقاشر", "color": "#64748b", "sizeSet": "letters" },
+    { "code": "pyjamas", "en": "Pyjamas", "fr": "Pyjamas", "ar": "بيجامات", "color": "#a78bfa", "sizeSet": "letters" },
+    { "code": "kids", "en": "Children's clothing", "fr": "Vêtements enfants", "ar": "ملابس الأطفال", "color": "#f472b6", "sizeSet": "kids" },
+    { "code": "baby", "en": "Baby clothing", "fr": "Vêtements bébé", "ar": "ملابس الرضّع", "color": "#fda4af", "sizeSet": "baby" },
+    { "code": "shoes", "en": "Shoes", "fr": "Chaussures", "ar": "أحذية", "color": "#ef4444", "sizeSet": "shoes" },
+    { "code": "bags", "en": "Bags", "fr": "Sacs", "ar": "حقائب", "color": "#10b981", "sizeSet": "onesize" },
+    { "code": "belts", "en": "Belts", "fr": "Ceintures", "ar": "أحزمة", "color": "#92400e", "sizeSet": "onesize" },
+    { "code": "caps", "en": "Caps & hats", "fr": "Casquettes & chapeaux", "ar": "كاسكيطات وقبعات", "color": "#0d9488", "sizeSet": "onesize" },
+    { "code": "scarves", "en": "Scarves & hijabs", "fr": "Écharpes & foulards", "ar": "شاشات وخمارات", "color": "#c026d3", "sizeSet": "onesize" },
+    { "code": "accessories", "en": "Accessories", "fr": "Accessoires", "ar": "إكسسوارات", "color": "#6b7280", "sizeSet": "onesize" }
+  ],
+  "defaultCategories": ["tshirts", "shirts", "trousers", "jeans", "jackets", "dresses", "kids", "shoes", "bags", "accessories"],
+  "brands": [
+    "Nike", "Adidas", "Puma", "New Balance", "Reebok", "Under Armour", "Skechers", "Converse", "Vans", "Fila", "Kappa", "Lotto",
+    "Zara", "Pull&Bear", "Bershka", "Stradivarius", "Massimo Dutti", "Mango", "H&M", "Celio", "Jules", "Kiabi",
+    "LC Waikiki", "DeFacto", "Koton", "Mavi", "Colin's",
+    "Lacoste", "Tommy Hilfiger", "Calvin Klein", "Ralph Lauren", "Hugo Boss", "Guess", "Levi's", "Diesel", "The North Face", "Timberland"
+  ]
+}

@@ -5,6 +5,8 @@ const fs = require('fs');
 const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener } = require('./database/init');
 const dbApi = require('./database/api');
 const catalog = require('./services/catalogService');
+const dashboard = require('./services/dashboardService');
+const i18n = require('./i18n');
 const { v4: uuid } = require('uuid');
 const { getImagesDir } = require('./services/imageService');
 const ReceiptService = require('./services/receiptService');
@@ -36,6 +38,13 @@ function getSettingValue(key) {
 
 // All settings with store_config merged in at top level (the shape the
 // receipt/label templates expect)
+// Text for native dialogs in the shop's language
+function shopT(key, params) {
+  let lang;
+  try { lang = getStoreSettings().defaultLanguage; } catch { lang = undefined; }
+  return i18n.translate(i18n.normalizeLanguage(lang), key, params);
+}
+
 function getStoreSettings() {
   const settings = {};
   runQuery('SELECT key, value FROM settings').forEach(row => {
@@ -155,8 +164,10 @@ if (!gotTheLock) {
       await initDatabase();
     } catch (error) {
       console.error('Database initialization failed:', error);
-      dialog.showErrorBox('Store POS could not start',
-        `The local database could not be opened.\n\n${error.message}\n\nData folder: ${app.getPath('userData')}`);
+      // The shop's language is not known yet: show the message in the three languages
+      const lines = ['ar', 'fr', 'en'].map(l => `${i18n.translate(l, 'dialog.dbFailed')}\n${i18n.translate(l, 'dialog.dataFolder')}: ${app.getPath('userData')}`);
+      dialog.showErrorBox(i18n.translate('fr', 'dialog.startFailed', { app: 'Hanout' }),
+        `${lines.join('\n\n')}\n\n${error.message}`);
       app.quit();
       return;
     }
@@ -382,9 +393,9 @@ ipcMain.handle('backup:create', async () => {
   const dbPath = path.join(app.getPath('userData'), 'pos-database.sqlite');
 
   const { filePath } = await dialog.showSaveDialog({
-    title: 'Export Backup',
-    defaultPath: `pos-backup-${new Date().toISOString().split('T')[0]}.sqlite`,
-    filters: [{ name: 'SQLite Database', extensions: ['sqlite'] }]
+    title: shopT('dialog.exportBackup'),
+    defaultPath: `hanout-backup-${new Date().toISOString().split('T')[0]}.sqlite`,
+    filters: [{ name: shopT('dialog.backupFiles'), extensions: ['sqlite'] }]
   });
 
   if (filePath) {
@@ -401,8 +412,8 @@ ipcMain.handle('backup:create', async () => {
 
 ipcMain.handle('backup:restore', async () => {
   const { filePaths } = await dialog.showOpenDialog({
-    title: 'Import Backup',
-    filters: [{ name: 'SQLite Database', extensions: ['sqlite'] }],
+    title: shopT('dialog.importBackup'),
+    filters: [{ name: shopT('dialog.backupFiles'), extensions: ['sqlite'] }],
     properties: ['openFile']
   });
 
@@ -448,22 +459,74 @@ ipcMain.handle('app:getInfo', () => ({
   electron: process.versions.electron,
 }));
 
+// ------------------------------------------------------------------
+// Brands (list used to pick a brand quickly when entering products)
+// ------------------------------------------------------------------
+ipcMain.handle('db:brands:getAll', () => {
+  return runQuery(`
+    SELECT b.*, (SELECT COUNT(*) FROM products p WHERE p.is_active = 1 AND LOWER(TRIM(p.brand)) = LOWER(b.name)) AS product_count
+    FROM brands b
+    ORDER BY b.is_active DESC, b.name COLLATE NOCASE
+  `);
+});
+
+ipcMain.handle('db:brands:create', (_, { name }) => {
+  const clean = String(name || '').trim();
+  if (!clean) throw catalog.codedError('BRAND_NAME_REQUIRED');
+  const existing = getOne('SELECT * FROM brands WHERE name = ? COLLATE NOCASE', [clean]);
+  if (existing) {
+    if (!existing.is_active) dbApi.run('UPDATE brands SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [existing.id]);
+    return { ...existing, is_active: 1 };
+  }
+  const id = uuid();
+  dbApi.run('INSERT INTO brands (id, name, sort_order) VALUES (?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM brands))', [id, clean]);
+  return getOne('SELECT * FROM brands WHERE id = ?', [id]);
+});
+
+// Renaming a brand also renames it on the products that use it
+ipcMain.handle('db:brands:update', (_, { id, name, is_active }) => {
+  const brand = getOne('SELECT * FROM brands WHERE id = ?', [id]);
+  if (!brand) throw catalog.codedError('BRAND_NOT_FOUND');
+  const clean = String(name ?? brand.name).trim();
+  if (!clean) throw catalog.codedError('BRAND_NAME_REQUIRED');
+  const clash = getOne('SELECT id FROM brands WHERE name = ? COLLATE NOCASE AND id <> ?', [clean, id]);
+  if (clash) throw catalog.codedError('BRAND_EXISTS');
+  runTransaction(() => {
+    dbApi.run('UPDATE brands SET name = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP, is_synced = 0 WHERE id = ?',
+      [clean, is_active === undefined ? brand.is_active : (is_active ? 1 : 0), id]);
+    if (clean !== brand.name) {
+      dbApi.run('UPDATE products SET brand = ?, updated_at = CURRENT_TIMESTAMP, is_synced = 0 WHERE LOWER(TRIM(brand)) = LOWER(?)', [clean, brand.name]);
+    }
+  });
+  return getOne('SELECT * FROM brands WHERE id = ?', [id]);
+});
+
+// Removing a brand from the list does not change existing products
+ipcMain.handle('db:brands:delete', (_, id) => {
+  dbApi.run('DELETE FROM brands WHERE id = ?', [id]);
+  return true;
+});
+
 ipcMain.handle('db:categories:create', (_, category) => {
-  runInsert('INSERT INTO categories (id, name, color, icon, is_synced) VALUES (?, ?, ?, ?, 0)',
-    [category.id, category.name, category.color, category.icon]);
+  dbApi.run('INSERT INTO categories (id, name, color, icon, is_synced) VALUES (?, ?, ?, ?, 0)',
+    [category.id || uuid(), category.name, category.color ?? null, category.icon ?? null]);
   SyncManager.triggerSync();
   return category;
 });
 
 ipcMain.handle('db:categories:update', (_, category) => {
-  runInsert('UPDATE categories SET name = ?, color = ?, icon = ?, updated_at = CURRENT_TIMESTAMP, is_synced = 0 WHERE id = ?',
-    [category.name, category.color, category.icon, category.id]);
+  dbApi.run('UPDATE categories SET name = ?, color = ?, icon = COALESCE(?, icon), updated_at = CURRENT_TIMESTAMP, is_synced = 0 WHERE id = ?',
+    [category.name, category.color ?? null, category.icon ?? null, category.id]);
   SyncManager.triggerSync();
   return category;
 });
 
+// Deleting a category keeps its products; they simply become uncategorised
 ipcMain.handle('db:categories:delete', (_, id) => {
-  runInsert('DELETE FROM categories WHERE id = ?', [id]);
+  runTransaction(() => {
+    dbApi.run('UPDATE products SET category_id = NULL, updated_at = CURRENT_TIMESTAMP, is_synced = 0 WHERE category_id = ?', [id]);
+    dbApi.run('DELETE FROM categories WHERE id = ?', [id]);
+  });
   return true;
 });
 
@@ -516,11 +579,11 @@ ipcMain.handle('catalog:generateSkus', (_, { product, variants, reserved }) => {
 });
 
 ipcMain.handle('catalog:checkIdentifier', (_, { code, excludeVariantId, excludeProductId }) => {
-  const formatError = catalog.validateIdentifier(code, 'Code');
+  const formatError = catalog.validateIdentifier(code, 'code');
   if (formatError) return { valid: false, message: formatError };
   const owner = catalog.findIdentifierOwner(dbApi, code, { excludeVariantId, excludeProductId });
   return owner
-    ? { valid: false, message: `Already used by ${catalog.describeOwner(owner)}`, owner }
+    ? { valid: false, message: catalog.coded('ID_TAKEN', { field: 'code', value: String(code).toUpperCase(), owner: catalog.describeOwner(owner) }), owner }
     : { valid: true };
 });
 
@@ -765,10 +828,10 @@ ipcMain.handle('db:sales:create', (_, sale) => {
         ? getOne('SELECT * FROM product_variants WHERE id = ?', [item.variant_id])
         : null;
       if (item.variant_id && !variant) {
-        throw new Error(`Variant for "${item.product_name}" no longer exists`);
+        throw catalog.codedError('VARIANT_GONE', { product: item.product_name });
       }
       if (product && product.has_variants && !variant) {
-        throw new Error(`"${item.product_name}" has sizes/colours: please select a variant`);
+        throw catalog.codedError('VARIANT_REQUIRED', { product: item.product_name });
       }
 
       // Cost snapshot for profit reports: variant cost if set, else product cost
@@ -828,9 +891,9 @@ ipcMain.handle('db:sales:create', (_, sale) => {
         const amount = payment.amount;
 
         const card = getOne('SELECT * FROM gift_cards WHERE code = ?', [code]);
-        if (!card) throw new Error(`Gift Card ${code} not found`);
+        if (!card) throw catalog.codedError('GIFT_CARD_NOT_FOUND', { code });
         const newBalance = card.current_balance - amount;
-        if (newBalance < 0) throw new Error(`Insufficient balance on Gift Card ${code}`);
+        if (newBalance < 0) throw catalog.codedError('GIFT_CARD_BALANCE', { code });
 
         runInsert('UPDATE gift_cards SET current_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newBalance, card.id]);
 
@@ -1087,6 +1150,11 @@ ipcMain.handle('db:reports:salesByDate', (_, { startDate, endDate, employeeId })
   return runQuery(query, queryParams);
 });
 
+// Clothing dashboard: best sizes/colours, stock value, low-stock variants
+ipcMain.handle('db:reports:clothingDashboard', (_, range) => {
+  return dashboard.getClothingDashboard(dbApi, range || {});
+});
+
 ipcMain.handle('db:reports:topProducts', (_, { startDate, endDate, limit = 10, employeeId }) => {
   let query = `
     SELECT 
@@ -1310,9 +1378,9 @@ ipcMain.handle('images:getPath', (_, fileName) => {
 // File Dialog for selecting an image
 ipcMain.handle('dialog:selectImage', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Select Signature Image',
+    title: shopT('dialog.selectSignature'),
     filters: [
-      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }
+      { name: shopT('dialog.imageFiles'), extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }
     ],
     properties: ['openFile']
   });
@@ -1563,28 +1631,40 @@ function getShopSettingsForPrint() {
   return settings;
 }
 
+// Receipt lines carry the variant's colour code and size so colours are
+// printed in the shop's language ("Noir" / "أسود"), whatever the label stored.
+function enrichSaleForPrint(sale) {
+  if (!sale || !Array.isArray(sale.items)) return sale;
+  const items = sale.items.map(item => {
+    if (!item.variant_id || item.color_code) return item;
+    const variant = getOne('SELECT color, color_code, size FROM product_variants WHERE id = ?', [item.variant_id]);
+    return variant ? { ...item, color: item.color || variant.color, color_code: variant.color_code, size: item.size || variant.size } : item;
+  });
+  return { ...sale, items };
+}
+
 ipcMain.handle('receipts:print', async (_, sale, overrides = {}) => {
   const printer = { ...getPrinterSettings().receipt, ...overrides };
   // Without a selected printer the system print dialog is shown
   if (!printer.printerName) printer.silent = false;
-  return receiptService.print(sale, getShopSettingsForPrint(), printer);
+  return receiptService.print(enrichSaleForPrint(sale), getShopSettingsForPrint(), printer);
 });
 
 ipcMain.handle('receipts:getHtml', async (_, sale) => {
-  return receiptService.getHtml(sale, getShopSettingsForPrint());
+  return receiptService.getHtml(enrichSaleForPrint(sale), getShopSettingsForPrint());
 });
 
 ipcMain.handle('receipts:savePdf', async (_, sale) => {
   try {
     const settings = getShopSettingsForPrint();
     const dialogResult = await dialog.showSaveDialog({
-      title: 'Save Receipt PDF',
+      title: shopT('dialog.saveReceipt'),
       defaultPath: `Receipt_${sale.receipt_number || sale.id}.pdf`,
-      filters: [{ name: 'PDF Documents', extensions: ['pdf'] }]
+      filters: [{ name: shopT('dialog.pdfFiles'), extensions: ['pdf'] }]
     });
 
     if (dialogResult.canceled) return null;
-    return await receiptService.generatePdf(sale, settings, dialogResult.filePath);
+    return await receiptService.generatePdf(enrichSaleForPrint(sale), settings, dialogResult.filePath);
   } catch (error) {
     console.error('savePdf error:', error);
     throw error;
@@ -1627,7 +1707,7 @@ function buildLabelData(items) {
     const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
     if (item.variantId) {
       const variant = getOne('SELECT * FROM product_variants WHERE id = ?', [item.variantId]);
-      if (!variant) throw new Error('Variant not found');
+      if (!variant) throw catalog.codedError('VARIANT_GONE', { product: '' });
       const product = getOne('SELECT * FROM products WHERE id = ?', [variant.product_id]);
       labels.push({
         productName: product ? product.name : '',
@@ -1642,9 +1722,9 @@ function buildLabelData(items) {
     } else if (item.productId) {
       const product = getOne('SELECT * FROM products WHERE id = ?', [item.productId]);
       if (!product) throw new Error('Product not found');
-      if (product.has_variants) throw new Error(`"${product.name}" has variants: choose which variant to label`);
+      if (product.has_variants) throw catalog.codedError('VARIANT_REQUIRED', { product: product.name });
       const code = product.sku || product.barcode;
-      if (!code) throw new Error(`"${product.name}" has no SKU or barcode to put in the QR code`);
+      if (!code) throw catalog.codedError('LABEL_NO_CODE', { product: product.name });
       labels.push({
         productName: product.name,
         variantLabel: '',
@@ -1666,6 +1746,7 @@ function buildLabelsDocument(items, layoutOverrides) {
   const html = labelService.buildLabelsHtml(buildLabelData(items), layout, {
     name: shop.businessName,
     logo: shop.shopLogoDataUri,
+    lang: i18n.normalizeLanguage(shop.defaultLanguage),
   });
   return { html, layout };
 }
@@ -1692,9 +1773,9 @@ ipcMain.handle('labels:print', async (_, { items, layout, printer }) => {
 ipcMain.handle('labels:savePdf', async (_, { items, layout }) => {
   const doc = buildLabelsDocument(items, layout);
   const result = await dialog.showSaveDialog({
-    title: 'Save labels as PDF',
+    title: shopT('dialog.saveLabels'),
     defaultPath: 'labels.pdf',
-    filters: [{ name: 'PDF Documents', extensions: ['pdf'] }],
+    filters: [{ name: shopT('dialog.pdfFiles'), extensions: ['pdf'] }],
   });
   if (result.canceled) return null;
   const pdf = await labelService.labelsToPdf(BrowserWindow, doc.html, doc.layout);
@@ -1870,9 +1951,9 @@ ipcMain.handle('purchaseOrders:savePdf', async (_, po) => {
     // Show save dialog
     const { shell } = require('electron');
     const result = await dialog.showSaveDialog(mainWindow, {
-      title: 'Save Purchase Order PDF',
+      title: shopT('dialog.savePurchaseOrder'),
       defaultPath: `PO_${fullPO.po_number || 'draft'}.pdf`,
-      filters: [{ name: 'PDF Documents', extensions: ['pdf'] }]
+      filters: [{ name: shopT('dialog.pdfFiles'), extensions: ['pdf'] }]
     });
 
     if (result.canceled || !result.filePath) {
@@ -2137,11 +2218,11 @@ ipcMain.handle('db:purchaseOrders:delete', (_, id) => {
   }
 
   if (po.status === 'received') {
-    throw new Error('Cannot delete a Received Purchase Order. Please use Returns instead.');
+    throw catalog.codedError('PO_RECEIVED_DELETE');
   }
 
   if (po.amount_paid > 0) {
-    throw new Error('Cannot delete a Purchase Order with recorded payments.');
+    throw catalog.codedError('PO_PAID_DELETE');
   }
 
   try {
@@ -2853,9 +2934,9 @@ ipcMain.handle('quotations:print', async (_, quote) => {
 
 ipcMain.handle('quotations:savePdf', async (_, quote) => {
   const { canceled, filePath } = await dialog.showSaveDialog({
-    title: 'Save Quotation',
+    title: shopT('dialog.saveQuotation'),
     defaultPath: `Quotation_${quote.quote_number}.pdf`,
-    filters: [{ name: 'PDF Documents', extensions: ['pdf'] }]
+    filters: [{ name: shopT('dialog.pdfFiles'), extensions: ['pdf'] }]
   });
 
   if (canceled || !filePath) return null;
@@ -2869,13 +2950,8 @@ ipcMain.handle('quotations:savePdf', async (_, quote) => {
 
 // Helper to get settings object
 async function getSettings() {
-  const rows = runQuery('SELECT key, value FROM settings');
-  const settings = {};
-  rows.forEach(row => {
-    try { settings[row.key] = JSON.parse(row.value); }
-    catch (e) { settings[row.key] = row.value; }
-  });
-  return settings;
+  // Includes the shop information (store_config) at the top level
+  return getStoreSettings();
 }
 
 ipcMain.handle('excel:export', (_, { data, dataType }) => {
@@ -3210,8 +3286,7 @@ ipcMain.handle('creditPayments:printReceipt', async (_, paymentId) => {
     throw new Error('Payment not found');
   }
 
-  const settings = await getSettings();
-  return await receiptService.print(payment, { ...settings, type: 'credit_payment' });
+  return await receiptService.print(payment, { ...getShopSettingsForPrint(), type: 'credit_payment' });
 });
 
 // Customer Credit Info
@@ -3302,7 +3377,7 @@ ipcMain.handle('creditInvoice:sendEmail', async (_, { creditSaleId, email }) => 
       to: email || creditSale.customer_email,
       creditSale,
       businessInfo: {
-        businessName: settings.businessName || 'POS',
+        businessName: settings.businessName || 'Hanout',
         businessAddress: settings.businessAddress,
         businessPhone: settings.businessPhone,
         businessEmail: settings.businessEmail
@@ -3350,7 +3425,7 @@ ipcMain.handle('creditInvoice:sendReminder', async (_, { creditSaleId, email }) 
     to: email || creditSale.customer_email,
     creditSale,
     businessInfo: {
-      businessName: settings.businessName || 'POS',
+      businessName: settings.businessName || 'Hanout',
       businessPhone: settings.businessPhone,
       businessEmail: settings.businessEmail
     }
@@ -3374,9 +3449,9 @@ console.log('Electron main process started (Phase 5 - Credit Sales enabled)');
 ipcMain.handle('giftCards:savePdf', async (_, giftCard) => {
   try {
     const dialogResult = await dialog.showSaveDialog({
-      title: 'Save Gift Card PDF',
+      title: shopT('dialog.saveGiftCard'),
       defaultPath: `GiftCard_${giftCard.code}.pdf`,
-      filters: [{ name: 'PDF Documents', extensions: ['pdf'] }]
+      filters: [{ name: shopT('dialog.pdfFiles'), extensions: ['pdf'] }]
     });
 
     if (dialogResult.canceled) return null;
@@ -3439,7 +3514,7 @@ ipcMain.handle('email:sendGiftCard', async (_, { giftCard, email }) => {
     if (emailService.initEmailService(emailConfig)) {
       await emailService.sendEmail({
         to: email,
-        subject: `Your Gift Card from ${settings.businessName || 'POS System'}`,
+        subject: `Your Gift Card from ${settings.businessName || 'Hanout'}`,
         html: `
                 <h2>Here is your Gift Card!</h2>
                 <p>Enjoy your gift card of <strong>${receiptService.formatCurrency(giftCard.current_balance)}</strong>.</p>

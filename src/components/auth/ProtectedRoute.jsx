@@ -1,3 +1,4 @@
+import { useT } from '../../i18n';
 /**
  * ProtectedRoute Component
  * 
@@ -47,25 +48,24 @@ export function ProtectedRoute({
  * Access Denied Component
  */
 function AccessDenied({ role }) {
+    const { t } = useT();
     return (
         <div className="h-full flex flex-col items-center justify-center p-6">
             <div className="w-20 h-20 rounded-full bg-red-500/20 flex items-center justify-center mb-6">
                 <ShieldAlert className="w-10 h-10 text-red-400" />
             </div>
-            <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
+            <h1 className="text-2xl font-bold mb-2">{t('common.accessDenied')}</h1>
             <p className="text-zinc-400 text-center max-w-md mb-6">
-                You don't have permission to access this page.
+                {t('common.accessDeniedHint')}
                 {role && (
-                    <span className="block mt-2">
-                        Your role: <span className="capitalize font-medium text-zinc-300">{role}</span>
-                    </span>
+                    <span className="block mt-2 font-medium text-zinc-300">{t(`role.${role}`)}</span>
                 )}
             </p>
             <a
-                href="/"
+                href="#/"
                 className="text-indigo-400 hover:text-indigo-300 transition-colors"
             >
-                ← Back to Dashboard
+                {t('common.goBack')}
             </a>
         </div>
     );

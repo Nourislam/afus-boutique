@@ -118,6 +118,13 @@ class ShiftService {
             WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'credit'
         `, [shift.employee_id, shift.start_time, endTime]);
 
+        const transferSales = getOne(`
+            SELECT COALESCE(SUM(amount), 0) as total_transfer
+            FROM payments p
+            JOIN sales s ON p.sale_id = s.id
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'transfer'
+        `, [shift.employee_id, shift.start_time, endTime]);
+
         const giftCardSales = getOne(`
             SELECT COALESCE(SUM(amount), 0) as total_gift_card
             FROM payments p
@@ -142,6 +149,7 @@ class ShiftService {
             ...salesStats,
             total_cash_sales: totalCashSales,
             total_card_sales: totalCardSales,
+            total_transfer_sales: transferSales.total_transfer || 0,
             total_credit_sales: totalCreditSales,
             total_gift_card_sales: totalGiftCardSales,
             total_refunds: totalRefunds,

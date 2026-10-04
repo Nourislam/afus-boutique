@@ -15,6 +15,7 @@
  */
 
 const bwipjs = require('bwip-js');
+const { formatMoney } = require('../i18n');
 
 const PAPER_SIZES_MM = {
     A4: { width: 210, height: 297 },
@@ -58,6 +59,8 @@ const DEFAULT_LABEL_SETTINGS = {
     showVariant: true,
     showSku: true,
     showPrice: true,
+    // Optional Code 128 barcode of the SKU, for shops whose scanners read only 1D codes
+    showBarcode: false,
     extraText: '',
     qrErrorCorrection: 'M',
 };
@@ -111,14 +114,11 @@ function qrSvg(text, eclevel = 'M') {
     return bwipjs.toSVG({ bcid: 'qrcode', text: String(text), eclevel, paddingwidth: 0, paddingheight: 0 });
 }
 
-// Compact price for small labels: "2,500 DA" rather than "DZD 2,500.00"
-function formatPrice(amount, currency, symbol) {
-    const value = Number(amount || 0);
-    const number = new Intl.NumberFormat('en-US', {
-        minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
-        maximumFractionDigits: 2,
-    }).format(value);
-    return `${number} ${symbol || currency || ''}`.trim();
+// Code 128 accepts printable ASCII; SKUs always are, free barcodes may not be
+function code128Svg(text) {
+    const value = String(text || '');
+    if (!value || !/^[\x20-\x7e]+$/.test(value)) return '';
+    return bwipjs.toSVG({ bcid: 'code128', text: value, height: 6, includetext: false, paddingwidth: 0, paddingheight: 0 });
 }
 
 function renderLabel(label, layout, shop) {
@@ -149,10 +149,14 @@ function renderLabel(label, layout, shop) {
         lines.push(`<div class="sku" style="font-size:${fit(label.sku, base * 0.8, 0.62)}mm">${escapeHtml(label.sku)}</div>`);
     }
     if (layout.showPrice && label.price !== null && label.price !== undefined) {
-        const price = formatPrice(label.price, label.currency, label.currencySymbol);
+        const price = formatMoney(label.price, shop.lang, label.currency);
         lines.push(`<div class="price" style="font-size:${fit(price, base * 1.25, 0.6)}mm">${escapeHtml(price)}</div>`);
     }
     if (layout.extraText) lines.push(`<div class="extra">${escapeHtml(layout.extraText)}</div>`);
+    if (layout.showBarcode) {
+        const bars = code128Svg(label.sku || label.qrValue);
+        if (bars) lines.push(`<div class="bars" style="height:${Math.max(3, innerH * 0.22).toFixed(2)}mm">${bars}</div>`);
+    }
 
     return `
         <div class="label" style="width:${layout.widthMm}mm;height:${layout.heightMm}mm;padding:${pad}mm;font-size:${base.toFixed(2)}mm">
@@ -165,7 +169,7 @@ function renderLabel(label, layout, shop) {
  * Build the printable HTML for a list of labels.
  * @param {Array} labels [{ productName, variantLabel, sku, qrValue, price, currency, quantity }]
  * @param {object} settings label settings (see DEFAULT_LABEL_SETTINGS)
- * @param {object} shop { name, logo (data URI) }
+ * @param {object} shop { name, logo (data URI), lang (shop language for prices) }
  */
 function buildLabelsHtml(labels, settings = {}, shop = {}) {
     const layout = resolveLayout(settings);
@@ -195,12 +199,12 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
     }
 
     return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
+<html lang="${shop.lang || 'ar'}" dir="${shop.lang === 'ar' || !shop.lang ? 'rtl' : 'ltr'}"><head><meta charset="UTF-8">
 <style>
     @page { size: ${page.width}mm ${page.height}mm; margin: 0; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-    body { font-family: Arial, Helvetica, "Segoe UI", sans-serif; }
+    body { font-family: Arial, Tahoma, "Segoe UI", sans-serif; }
     .page { width: ${page.width}mm; height: ${page.height}mm; overflow: hidden; page-break-after: always; break-after: page; }
     .page:last-child { page-break-after: auto; break-after: auto; }
     .page.sheet { display: grid; align-content: start; }
@@ -213,6 +217,8 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
     .shop img { height: 1.6em; max-width: 6em; object-fit: contain; }
     .name { font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
     .variant { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sku, .price { direction: ltr; unicode-bidi: isolate; }
+    .bars svg { display: block; width: 100%; height: 100%; }
     .sku { font-family: "Courier New", monospace; font-size: 0.8em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .price { font-weight: 800; font-size: 1.25em; white-space: nowrap; overflow: hidden; }
     .extra { font-size: 0.7em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

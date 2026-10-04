@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, X, Send, Sparkles, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -54,8 +55,8 @@ export default function AIAssistant() {
 
         const removeErrorListener = window.electronAPI.ai.onChatError((err) => {
             setIsStreaming(false);
-            toast.error('AI Error: ' + err);
-            setMessages(prev => [...prev, { role: 'model', content: "Sorry, I encountered an error. Please try again.", isError: true }]);
+            toast.error(`${t('ai.error')} ${err}`);
+            setMessages(prev => [...prev, { role: 'model', content: t('ai.sorry'), isError: true }]);
         });
 
         return () => {
@@ -99,16 +100,16 @@ export default function AIAssistant() {
             {/* FAB */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className={`fixed bottom-6 right-6 p-4 rounded-full shadow-lg z-50 transition-all duration-300 hover:scale-110 ${
+                className={`fixed bottom-6 end-6 p-4 rounded-full shadow-lg z-50 transition-all duration-300 hover:scale-110 ${
                     isOpen ? 'bg-zinc-700 rotate-90' : 'bg-gradient-to-r from-indigo-600 to-purple-600 animate-pulse-slow'
                 }`}
-                title="AI Assistant"
+                title={t('ai.assistant')}
             >
                 {isOpen ? <X className="text-white" /> : <Sparkles className="text-white" />}
             </button>
 
             {/* Chat Window */}
-            <div className={`fixed bottom-24 right-6 w-96 h-[500px] bg-dark-secondary border border-dark-border rounded-2xl shadow-2xl z-50 flex flex-col transition-all duration-300 transform origin-bottom-right ${
+            <div className={`fixed bottom-24 end-6 w-96 h-[500px] bg-dark-secondary border border-dark-border rounded-2xl shadow-2xl z-50 flex flex-col transition-all duration-300 transform origin-bottom-right ${
                 isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'
             }`}>
                 {/* Header */}
@@ -118,8 +119,8 @@ export default function AIAssistant() {
                             <Sparkles size={16} className="text-white" />
                         </div>
                         <div>
-                            <h3 className="font-bold text-white text-sm">AI Assistant</h3>
-                            <p className="text-[10px] text-indigo-200">Powered by Gemini 2.0</p>
+                            <h3 className="font-bold text-white text-sm">{t('ai.assistant')}</h3>
+                            <p className="text-[10px] text-indigo-200">{t('ai.powered2')}</p>
                         </div>
                     </div>
                 </div>
@@ -130,8 +131,8 @@ export default function AIAssistant() {
                         <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${
                                 msg.role === 'user' 
-                                    ? 'bg-indigo-600 text-white rounded-br-none' 
-                                    : 'bg-dark-tertiary text-zinc-100 rounded-bl-none border border-dark-border'
+                                    ? 'bg-indigo-600 text-white rounded-ee-none' 
+                                    : 'bg-dark-tertiary text-zinc-100 rounded-es-none border border-dark-border'
                             }`}>
                                 <div className="prose prose-invert prose-sm max-w-none break-words">
                                     <ReactMarkdown
@@ -160,7 +161,7 @@ export default function AIAssistant() {
                                         {msg.content}
                                     </ReactMarkdown>
                                 </div>
-                                {msg.isStreaming && <span className="inline-block w-1.5 h-3 ml-1 bg-indigo-400 animate-pulse"/>}
+                                {msg.isStreaming && <span className="inline-block w-1.5 h-3 ms-1 bg-indigo-400 animate-pulse"/>}
                             </div>
                         </div>
                     ))}
@@ -174,7 +175,7 @@ export default function AIAssistant() {
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder="Ask about your sales..."
+                            placeholder={t('ai.ask')}
                             className="flex-1 bg-dark-tertiary border border-dark-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none h-10 max-h-20"
                             disabled={isStreaming}
                         />

@@ -1,6 +1,9 @@
+import { t } from '../../i18n';
+import { formatDate as formatLocalDate } from '../../i18n/format';
+import { formatMoney } from '../../i18n/format';
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { ArrowUpRight, ArrowDownLeft, FileText, DollarSign, RefreshCcw } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, FileText, Banknote, RefreshCcw } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 
@@ -30,10 +33,7 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
 
     // Helper to format currency
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-        }).format(amount);
+        return formatMoney(amount);
     };
 
     return (
@@ -43,23 +43,23 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
                     {/* Summary Card */}
                     <div className="bg-dark-tertiary p-4 rounded-lg flex justify-between items-center border border-dark-border">
                         <div>
-                            <p className="text-zinc-400 text-sm">Current Balance Due</p>
+                            <p className="text-zinc-400 text-sm">{t('supplierHistory.due')}</p>
                             <p className="text-2xl font-bold text-white">
                                 {formatCurrency(supplier.balance || 0)}
                             </p>
                         </div>
-                        <div className="text-right">
-                            <p className="text-zinc-400 text-sm">Contact</p>
-                            <p className="text-white font-medium">{supplier.contact_person || 'N/A'}</p>
+                        <div className="text-end">
+                            <p className="text-zinc-400 text-sm">{t('customers.contact')}</p>
+                            <p className="text-white font-medium">{supplier.contact_person || t('po.na')}</p>
                         </div>
                     </div>
 
                     {/* Timeline */}
-                    <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-3">
+                    <div className="max-h-[60vh] overflow-y-auto pe-2 space-y-3">
                         {isLoading ? (
-                            <div className="text-center py-8 text-zinc-500">Loading history...</div>
+                            <div className="text-center py-8 text-zinc-500">{t('supplierHistory.loading')}</div>
                         ) : history.length === 0 ? (
-                            <div className="text-center py-8 text-zinc-500">No history found.</div>
+                            <div className="text-center py-8 text-zinc-500">{t('supplierHistory.none')}</div>
                         ) : (
                             history.map((item, index) => (
                                 <div key={index} className="flex gap-4">
@@ -70,7 +70,7 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
                                                     'border-amber-500/20 bg-amber-500/10 text-amber-500' // return
                                             }`}>
                                             {item.type === 'purchase_order' && <FileText className="w-4 h-4" />}
-                                            {item.type === 'payment' && <DollarSign className="w-4 h-4" />}
+                                            {item.type === 'payment' && <Banknote className="w-4 h-4" />}
                                             {item.type === 'return' && <RefreshCcw className="w-4 h-4" />}
                                         </div>
                                         {index < history.length - 1 && <div className="w-0.5 h-full bg-dark-border mt-2" />}
@@ -82,7 +82,7 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
                                                     {item.type.replace('_', ' ')}
                                                 </h4>
                                                 <span className="text-xs text-zinc-500">
-                                                    {format(new Date(item.date), 'MMM dd, yyyy HH:mm')}
+                                                    {formatLocalDate(item.date, 'datetime')}
                                                 </span>
                                             </div>
 
@@ -114,7 +114,7 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
                 </div>
             </ModalBody>
             <ModalFooter>
-                <Button onClick={onClose}>Close</Button>
+                <Button onClick={onClose}>{t('common.close')}</Button>
             </ModalFooter>
         </Modal>
     );

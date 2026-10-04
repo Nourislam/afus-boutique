@@ -1,10 +1,9 @@
+import { formatDate as formatLocalDate } from '../i18n/format';
+import { formatMoney } from '../i18n/format';
 import { format, formatDistanceToNow } from 'date-fns';
 
 export function formatCurrency(amount, currency = 'USD', symbol = '$') {
-    return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency,
-    }).format(amount || 0);
+    return formatMoney(amount || 0);
 }
 
 export function formatDate(date, formatStr = 'MMM d, yyyy') {
@@ -12,7 +11,7 @@ export function formatDate(date, formatStr = 'MMM d, yyyy') {
 }
 
 export function formatDateTime(date) {
-    return format(new Date(date), 'MMM d, yyyy HH:mm');
+    return formatLocalDate(date, 'datetime');
 }
 
 export function formatRelativeTime(date) {

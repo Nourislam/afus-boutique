@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { Delete, CornerDownLeft } from 'lucide-react';
 
 export function NumPad({ value, onChange, onEnter, maxLength = 10 }) {
@@ -59,7 +60,7 @@ export function NumPad({ value, onChange, onEnter, maxLength = 10 }) {
                 onClick={handleClear}
                 className="numpad-btn col-span-2 text-lg"
             >
-                Clear
+                {t('qr.clear')}
             </button>
             <button
                 type="button"
@@ -123,7 +124,7 @@ export function PinPad({ value, onChange, onEnter, pinLength = 4 }) {
                     onClick={handleClear}
                     className="numpad-btn h-16 text-base"
                 >
-                    Clear
+                    {t('qr.clear')}
                 </button>
                 <button
                     type="button"

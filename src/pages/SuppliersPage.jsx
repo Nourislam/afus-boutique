@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import {
     Search,
@@ -50,14 +52,14 @@ export default function SuppliersPage() {
             setSuppliers(data);
         } catch (error) {
             console.error('Failed to fetch suppliers:', error);
-            toast.error('Failed to load suppliers');
+            toast.error(t('suppliers.loadFailed'));
         } finally {
             setIsLoading(false);
         }
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount || 0);
+        return formatMoney(amount || 0);
     };
 
     const handleSubmit = async (e) => {
@@ -65,27 +67,27 @@ export default function SuppliersPage() {
         try {
             if (editingSupplier) {
                 await window.electronAPI.suppliers.update({ ...formData, id: editingSupplier.id });
-                toast.success('Supplier updated successfully');
+                toast.success(t('suppliers.updated'));
             } else {
                 await window.electronAPI.suppliers.create(formData);
-                toast.success('Supplier created successfully');
+                toast.success(t('suppliers.created'));
             }
             fetchSuppliers();
             handleCloseModal();
         } catch (error) {
             console.error('Failed to save supplier:', error);
-            toast.error('Failed to save supplier');
+            toast.error(t('suppliers.saveFailed'));
         }
     };
 
     const handleDelete = async (id) => {
-        if (!confirm('Are you sure you want to delete this supplier?')) return;
+        if (!confirm(t('suppliers.deleteConfirm'))) return;
         try {
             await window.electronAPI.suppliers.delete(id);
-            toast.success('Supplier deleted');
+            toast.success(t('suppliers.deleted'));
             fetchSuppliers();
         } catch (error) {
-            toast.error('Failed to delete supplier');
+            toast.error(t('suppliers.deleteFailed'));
         }
     };
 
@@ -123,23 +125,23 @@ export default function SuppliersPage() {
         <div className="h-full flex flex-col">
             <div className="p-6 border-b border-dark-border flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold mb-1">Suppliers</h1>
-                    <p className="text-zinc-400">Manage your product suppliers and vendors</p>
+                    <h1 className="text-2xl font-bold mb-1">{t('suppliers.title')}</h1>
+                    <p className="text-zinc-400">{t('suppliers.subtitle')}</p>
                 </div>
                 <Button onClick={() => setShowModal(true)}>
-                    <Plus className="w-5 h-5 mr-2" />
-                    Add Supplier
+                    <Plus className="w-5 h-5 me-2" />
+                    {t('suppliers.add')}
                 </Button>
             </div>
 
             <div className="p-4 border-b border-dark-border bg-dark-primary">
                 <div className="max-w-md relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                    <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
                     <Input
-                        placeholder="Search suppliers..."
+                        placeholder={t('suppliers.search')}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-10"
+                        className="ps-10"
                     />
                 </div>
             </div>
@@ -159,13 +161,13 @@ export default function SuppliersPage() {
                                     </div>
                                 </div>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Button variant="ghost" size="icon" onClick={() => handleHistory(supplier)} title="View History">
+                                    <Button variant="ghost" size="icon" onClick={() => handleHistory(supplier)} title={t('suppliers.history')}>
                                         <History className="w-4 h-4 text-blue-400 hover:text-blue-300" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" onClick={() => handleEdit(supplier)} title="Edit">
+                                    <Button variant="ghost" size="icon" onClick={() => handleEdit(supplier)} title={t('common.edit')}>
                                         <Edit className="w-4 h-4 text-zinc-400 hover:text-white" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" onClick={() => handleDelete(supplier.id)} title="Delete">
+                                    <Button variant="ghost" size="icon" onClick={() => handleDelete(supplier.id)} title={t('common.delete')}>
                                         <Trash className="w-4 h-4 text-red-400 hover:text-red-300" />
                                     </Button>
                                 </div>
@@ -174,7 +176,7 @@ export default function SuppliersPage() {
                             <div className="space-y-2 text-sm text-zinc-400">
                                 {supplier.balance !== undefined && (
                                     <div className="flex items-center justify-between py-1 border-b border-dark-border mb-2">
-                                        <span>Balance:</span>
+                                        <span>{t('suppliers.balance')}</span>
                                         <span className={`font-semibold ${supplier.balance > 0 ? 'text-red-400' : 'text-green-400'}`}>
                                             {formatCurrency(supplier.balance)}
                                         </span>
@@ -207,38 +209,38 @@ export default function SuppliersPage() {
                 </div>
             </div>
 
-            <Modal isOpen={showModal} onClose={handleCloseModal} title={editingSupplier ? 'Edit Supplier' : 'Add Supplier'}>
+            <Modal isOpen={showModal} onClose={handleCloseModal} title={editingSupplier ? t('suppliers.edit') : t('suppliers.add')}>
                 <form onSubmit={handleSubmit}>
                     <ModalBody>
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1">Company Name</label>
+                                <label className="block text-sm font-medium mb-1">{t('suppliers.company')}</label>
                                 <Input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Contact Person</label>
+                                <label className="block text-sm font-medium mb-1">{t('suppliers.contact')}</label>
                                 <Input value={formData.contact_person} onChange={e => setFormData({ ...formData, contact_person: e.target.value })} />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium mb-1">Email</label>
+                                    <label className="block text-sm font-medium mb-1">{t('shop.email')}</label>
                                     <Input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium mb-1">Phone</label>
+                                    <label className="block text-sm font-medium mb-1">{t('customers.phone')}</label>
                                     <Input value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Address</label>
+                                <label className="block text-sm font-medium mb-1">{t('shop.address')}</label>
                                 <Input value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Website</label>
+                                <label className="block text-sm font-medium mb-1">{t('suppliers.website')}</label>
                                 <Input value={formData.website} onChange={e => setFormData({ ...formData, website: e.target.value })} />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Notes</label>
+                                <label className="block text-sm font-medium mb-1">{t('customers.notes')}</label>
                                 <textarea
                                     className="input w-full h-24 pt-2"
                                     value={formData.notes}
@@ -248,8 +250,8 @@ export default function SuppliersPage() {
                         </div>
                     </ModalBody>
                     <ModalFooter>
-                        <Button type="button" variant="secondary" onClick={handleCloseModal}>Cancel</Button>
-                        <Button type="submit">{editingSupplier ? 'Update' : 'Create'}</Button>
+                        <Button type="button" variant="secondary" onClick={handleCloseModal}>{t('common.cancel')}</Button>
+                        <Button type="submit">{editingSupplier ? t('common.update') : t('common.create')}</Button>
                     </ModalFooter>
                 </form>
             </Modal>

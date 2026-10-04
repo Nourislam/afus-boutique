@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useState, useEffect } from 'react';
 import { Sparkles, RefreshCw, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -34,7 +35,7 @@ export default function AIInsightsWidget({ salesData }) {
         try {
             // If specific sales data isn't passed, we might want to fetch a summary here
             // For now, we assume salesData is passed or we send a generic request
-            const dataToAnalyze = salesData || { message: "No recent sales data available." };
+            const dataToAnalyze = salesData || { message: t('ai.noData') };
             
             const result = await window.electronAPI.ai.getInsights(dataToAnalyze);
             setInsights(result);
@@ -67,8 +68,8 @@ export default function AIInsightsWidget({ salesData }) {
                         <Sparkles size={20} />
                     </div>
                     <div>
-                        <h3 className="font-bold text-white">AI Insights</h3>
-                        <p className="text-xs text-indigo-300">Powered by Gemini AI</p>
+                        <h3 className="font-bold text-white">{t('ai.insights')}</h3>
+                        <p className="text-xs text-indigo-300">{t('ai.powered')}</p>
                     </div>
                 </div>
                 <Button 
@@ -88,7 +89,7 @@ export default function AIInsightsWidget({ salesData }) {
                         <div className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0s' }} />
                         <div className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0.2s' }} />
                         <div className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0.4s' }} />
-                        <p className="text-xs text-indigo-400 mt-2">Analyzing sales patterns...</p>
+                        <p className="text-xs text-indigo-400 mt-2">{t('ai.analyzing')}</p>
                     </div>
                 ) : error ? (
                     <div className="flex items-center gap-2 text-red-400 py-4">
@@ -103,7 +104,7 @@ export default function AIInsightsWidget({ salesData }) {
                             components={{
                                 // Override element styles if needed, but prose handles most
                                 p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
-                                ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-2 space-y-1" {...props} />,
+                                ul: ({node, ...props}) => <ul className="list-disc ps-4 mb-2 space-y-1" {...props} />,
                                 li: ({node, ...props}) => <li className="text-zinc-300" {...props} />,
                                 strong: ({node, ...props}) => <strong className="text-indigo-200 font-semibold" {...props} />
                             }}
@@ -112,7 +113,7 @@ export default function AIInsightsWidget({ salesData }) {
                         </ReactMarkdown>
                     </div>
                 ) : (
-                    <p className="text-zinc-500 italic py-4">Click refresh to generate AI insights for your business.</p>
+                    <p className="text-zinc-500 italic py-4">{t('ai.clickRefresh')}</p>
                 )}
             </div>
         </Card>

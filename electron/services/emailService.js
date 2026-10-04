@@ -168,7 +168,7 @@ async function sendTestEmail(settings, toEmail) {
         await testTransporter.sendMail({
             from: settings.smtp_user,
             to: toEmail,
-            subject: 'POS - Test Email',
+            subject: 'Hanout - Test e-mail',
             html: `
         <h2>Email Configuration Test</h2>
         <p>This is a test email from your point of sale system.</p>

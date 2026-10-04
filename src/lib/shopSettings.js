@@ -9,17 +9,23 @@ export const DEFAULT_SHOP = {
     businessPhone: '',
     businessEmail: '',
     businessAddress: '',
+    businessWilaya: '',
     businessCity: '',
-    businessTaxId: '',
+    // Algerian registration numbers printed on receipts (all optional)
+    businessRc: '',
+    businessTaxId: '', // NIF
+    businessNis: '',
+    businessAi: '',
     shopDescription: '',
-    defaultLanguage: 'en',
+    defaultLanguage: 'ar',
     currency: 'DZD',
-    currencySymbol: 'د.ج',
+    currencySymbol: 'DA',
     taxRate: 0,
-    taxName: 'VAT',
+    taxName: 'TVA',
     taxType: 'inclusive',
     receiptHeader: '',
-    receiptFooter: 'Thank you for your purchase!',
+    // Empty = translated default thank-you line
+    receiptFooter: '',
 };
 
 export const DEFAULT_PRINTER_SETTINGS = {
@@ -45,12 +51,6 @@ export const DEFAULT_SKU_SETTINGS = {
     separator: '-',
     digits: 3,
 };
-
-export const LANGUAGES = [
-    { value: 'en', label: 'English' },
-    { value: 'fr', label: 'Français' },
-    { value: 'ar', label: 'العربية' },
-];
 
 function asObject(value) {
     if (!value) return {};

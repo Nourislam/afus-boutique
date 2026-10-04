@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+import { formatDate as formatLocalDate } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, UserCog, Shield, ShieldCheck, User } from 'lucide-react';
 import { Button } from '../components/ui/Button';
@@ -44,7 +46,7 @@ export default function EmployeesPage() {
             const data = await window.electronAPI.employees.getAll();
             setEmployees(data);
         } catch (error) {
-            toast.error('Failed to load employees');
+            toast.error(t('employees.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -57,17 +59,17 @@ export default function EmployeesPage() {
 
     const handleDelete = async (employee) => {
         if (employee.id === currentEmployee.id) {
-            toast.error('Cannot delete yourself');
+            toast.error(t('employees.notSelf'));
             return;
         }
 
         if (confirm(`Delete employee "${employee.name}"?`)) {
             try {
                 await window.electronAPI.employees.delete(employee.id);
-                toast.success('Employee deleted');
+                toast.success(t('employees.deleted'));
                 loadData();
             } catch (error) {
-                toast.error('Failed to delete employee');
+                toast.error(t('employees.deleteFailed'));
             }
         }
     };
@@ -104,21 +106,21 @@ export default function EmployeesPage() {
             <div className="p-6 border-b border-dark-border">
                 <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-2xl font-bold">Employees</h1>
-                        <p className="text-zinc-500">Manage staff and access levels</p>
+                        <h1 className="text-2xl font-bold">{t('nav.employees')}</h1>
+                        <p className="text-zinc-500">{t('employees.subtitle')}</p>
                     </div>
                     {isAdmin() && (
                         <div className="flex gap-2">
                             <Button variant="secondary" onClick={() => setShowImportModal(true)}>
                                 <FileSpreadsheet className="w-4 h-4" />
-                                Import Excel
+                                {t('common.importExcel')}
                             </Button>
                             <Button onClick={() => {
                                 setEditingEmployee(null);
                                 setShowModal(true);
                             }}>
                                 <Plus className="w-4 h-4" />
-                                Add Employee
+                                {t('employees.add')}
                             </Button>
                         </div>
                     )}
@@ -127,7 +129,7 @@ export default function EmployeesPage() {
                 <SearchInput
                     value={searchQuery}
                     onChange={setSearchQuery}
-                    placeholder="Search employees..."
+                    placeholder={t('employees.search')}
                     className="max-w-md"
                 />
             </div>
@@ -141,8 +143,8 @@ export default function EmployeesPage() {
                 ) : filteredEmployees.length === 0 ? (
                     <EmptyState
                         icon={UserCog}
-                        title="No employees found"
-                        description="Add employees to manage staff access"
+                        title={t('employees.none')}
+                        description={t('employees.addHint')}
                     />
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -162,14 +164,14 @@ export default function EmployeesPage() {
                                             <p className="font-semibold flex items-center gap-2">
                                                 {employee.name}
                                                 {employee.id === currentEmployee.id && (
-                                                    <span className="text-xs text-accent-primary">(You)</span>
+                                                    <span className="text-xs text-accent-primary">{t('employees.you')}</span>
                                                 )}
                                             </p>
                                             <p className="text-sm text-zinc-400">{employee.email}</p>
                                         </div>
                                     </div>
                                     {!employee.is_active && (
-                                        <Badge variant="danger">Inactive</Badge>
+                                        <Badge variant="danger">{t('status.inactive')}</Badge>
                                     )}
                                 </div>
 
@@ -181,7 +183,7 @@ export default function EmployeesPage() {
                                 </div>
 
                                 <div className="text-sm text-zinc-500 mb-4">
-                                    Joined {format(new Date(employee.created_at), 'MMM d, yyyy')}
+                                    Joined {formatLocalDate(employee.created_at, 'date')}
                                 </div>
 
                                 {isAdmin() && (
@@ -193,7 +195,7 @@ export default function EmployeesPage() {
                                             onClick={() => { setEditingEmployee(employee); setShowModal(true); }}
                                         >
                                             <Edit2 className="w-3 h-3" />
-                                            Edit
+                                            {t('common.edit')}
                                         </Button>
                                         <Button
                                             variant="danger"
@@ -226,7 +228,7 @@ export default function EmployeesPage() {
                 onClose={() => setShowImportModal(false)}
                 dataType="employees"
                 onImport={handleExcelImport}
-                title="Import Employees"
+                title={t('employees.import')}
             />
         </div>
     );
@@ -272,22 +274,22 @@ function EmployeeFormModal({ isOpen, onClose, employee, onSave, currentUser }) {
         e.preventDefault();
 
         if (!formData.name) {
-            toast.error('Name is required');
+            toast.error(t('customers.nameRequired'));
             return;
         }
 
         if (!employee && !formData.pin) {
-            toast.error('PIN is required for new employees');
+            toast.error(t('employees.pinRequired'));
             return;
         }
 
         if (formData.pin && formData.pin !== formData.confirmPin) {
-            toast.error('PINs do not match');
+            toast.error(t('setup.pinMismatch'));
             return;
         }
 
         if (formData.pin && formData.pin.length !== 4) {
-            toast.error('PIN must be 4 digits');
+            toast.error(t('employees.pinFormat'));
             return;
         }
 
@@ -307,10 +309,10 @@ function EmployeeFormModal({ isOpen, onClose, employee, onSave, currentUser }) {
 
             if (employee) {
                 await window.electronAPI.employees.update(data);
-                toast.success('Employee updated');
+                toast.success(t('employees.updated'));
             } else {
                 await window.electronAPI.employees.create(data);
-                toast.success('Employee created');
+                toast.success(t('employees.created'));
             }
             onSave();
         } catch (error) {
@@ -321,52 +323,52 @@ function EmployeeFormModal({ isOpen, onClose, employee, onSave, currentUser }) {
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={employee ? 'Edit Employee' : 'Add Employee'} size="md">
+        <Modal isOpen={isOpen} onClose={onClose} title={employee ? t('employees.edit') : t('employees.add')} size="md">
             <form onSubmit={handleSubmit}>
                 <ModalBody>
                     <div className="space-y-4">
                         <Input
-                            label="Name *"
+                            label={t('setup.adminName')}
                             value={formData.name}
                             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            placeholder="Employee name"
+                            placeholder={t('employees.namePlaceholder')}
                         />
                         <Input
-                            label="Email"
+                            label={t('shop.email')}
                             type="email"
                             value={formData.email}
                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                             placeholder="email@example.com"
                         />
                         <Select
-                            label="Role"
+                            label={t('employees.role')}
                             value={formData.role}
                             onChange={(value) => setFormData({ ...formData, role: value })}
                             options={[
-                                { value: 'cashier', label: 'Cashier' },
-                                { value: 'manager', label: 'Manager' },
-                                { value: 'admin', label: 'Admin', disabled: !canCreateAdmin },
+                                { value: 'cashier', label: t('role.cashier') },
+                                { value: 'manager', label: t('role.manager') },
+                                { value: 'admin', label: t('role.admin'), disabled: !canCreateAdmin },
                             ]}
                         />
                         {!canCreateAdmin && (
-                            <p className="text-xs text-zinc-500 mt-1">Only an administrator can create new administrators.</p>
+                            <p className="text-xs text-zinc-500 mt-1">{t('employees.adminOnly')}</p>
                         )}
                         <div className="grid grid-cols-2 gap-4">
                             <Input
-                                label={employee ? 'New PIN (leave blank to keep)' : 'PIN *'}
+                                label={employee ? t('employees.newPin') : t('employees.pin')}
                                 type="password"
                                 maxLength={4}
                                 value={formData.pin}
                                 onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '') })}
-                                placeholder="4-digit PIN"
+                                placeholder={t('employees.pinPlaceholder')}
                             />
                             <Input
-                                label="Confirm PIN"
+                                label={t('employees.confirmPin')}
                                 type="password"
                                 maxLength={4}
                                 value={formData.confirmPin}
                                 onChange={(e) => setFormData({ ...formData, confirmPin: e.target.value.replace(/\D/g, '') })}
-                                placeholder="Confirm PIN"
+                                placeholder={t('employees.confirmPin')}
                             />
                         </div>
                         <div className="flex items-center gap-2">
@@ -377,14 +379,14 @@ function EmployeeFormModal({ isOpen, onClose, employee, onSave, currentUser }) {
                                 onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                                 className="w-4 h-4 rounded bg-dark-tertiary border-dark-border"
                             />
-                            <label htmlFor="is_active" className="text-sm">Active</label>
+                            <label htmlFor="is_active" className="text-sm">{t('status.active')}</label>
                         </div>
                     </div>
                 </ModalBody>
                 <ModalFooter>
-                    <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+                    <Button type="button" variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
                     <Button type="submit" loading={loading}>
-                        {employee ? 'Update Employee' : 'Add Employee'}
+                        {employee ? t('employees.update') : t('employees.add')}
                     </Button>
                 </ModalFooter>
             </form>

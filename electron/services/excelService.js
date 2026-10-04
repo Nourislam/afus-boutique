@@ -8,12 +8,28 @@ const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 
+// Row problems are sent as "CODE|{json}" and shown in the shop's language
+const coded = (code, params = {}) => `${code}|${JSON.stringify(params)}`;
+
 // Field mappings for each data type
 const FIELD_MAPPINGS = {
     products: {
         required: ['name', 'price'],
-        optional: ['sku', 'barcode', 'description', 'category', 'cost', 'stock_quantity', 'min_stock_level', 'tax_rate'],
+        optional: ['sku', 'barcode', 'description', 'category', 'brand', 'cost', 'stock_quantity', 'min_stock_level', 'tax_rate'],
         aliases: {
+            // French and Arabic column names used in Algerian shops
+            'nom': 'name', 'désignation': 'name', 'designation': 'name', 'article': 'name', 'produit': 'name',
+            'الاسم': 'name', 'السلعة': 'name', 'المنتج': 'name',
+            'prix': 'price', 'prix de vente': 'price', 'pv': 'price', 'السعر': 'price', 'سعر البيع': 'price',
+            "prix d'achat": 'cost', 'pa': 'cost', 'coût': 'cost', 'سعر الشراء': 'cost',
+            'quantité': 'stock_quantity', 'quantite': 'stock_quantity', 'qté': 'stock_quantity', 'الكمية': 'stock_quantity', 'المخزون': 'stock_quantity',
+            'catégorie': 'category', 'categorie': 'category', 'famille': 'category', 'الصنف': 'category',
+            'marque': 'brand', 'الماركة': 'brand', 'العلامة': 'brand',
+            'code-barres': 'barcode', 'code barre': 'barcode', 'code barres': 'barcode', 'الباركود': 'barcode',
+            'référence': 'sku', 'reference': 'sku', 'réf': 'sku', 'ref': 'sku', 'المرجع': 'sku',
+            'stock minimum': 'min_stock_level', 'الحد الأدنى': 'min_stock_level',
+            'tva': 'tax_rate',
+
             'product name': 'name',
             'product_name': 'name',
             'title': 'name',
@@ -46,6 +62,9 @@ const FIELD_MAPPINGS = {
         required: ['name'],
         optional: ['email', 'phone', 'address', 'notes', 'loyalty_points'],
         aliases: {
+            'nom': 'name', 'client': 'name', 'الاسم': 'name', 'الزبون': 'name',
+            'téléphone': 'phone', 'tél': 'phone', 'tel': 'phone', 'الهاتف': 'phone',
+            'adresse': 'address', 'العنوان': 'address',
             'customer name': 'name',
             'full name': 'name',
             'customer': 'name',
@@ -206,15 +225,10 @@ class ExcelService {
             for (const [field, colIndex] of Object.entries(columnMappings)) {
                 let value = row[colIndex];
 
-                // Debug log for stock_quantity
-                if (field === 'stock_quantity') {
-                    console.log(`[Excel] Raw stock: '${value}' (${typeof value})`);
-                }
-
                 // Handle empty values
                 if (value === undefined || value === null || value === '') {
                     if (mapping.required.includes(field)) {
-                        rowErrors.push(`Missing required field: ${field}`);
+                        rowErrors.push(coded('EXCEL_MISSING', { field }));
                     }
                     continue;
                 }
@@ -222,43 +236,39 @@ class ExcelService {
                 // Type-specific transformations
                 value = this.transformValue(field, value, dataType);
 
-                if (field === 'stock_quantity') {
-                    console.log(`[Excel] Transformed stock:`, value);
-                }
-
                 record[field] = value;
             }
 
             // Validate required fields
             for (const required of mapping.required) {
-                if (!record[required] && !rowErrors.some(e => e.includes(required))) {
-                    rowErrors.push(`Missing required field: ${required}`);
+                if (!record[required] && !rowErrors.some(e => e.includes(`"${required}"`))) {
+                    rowErrors.push(coded('EXCEL_MISSING', { field: required }));
                 }
             }
 
             // Data type specific validations
             if (dataType === 'products') {
                 if (record.price && isNaN(parseFloat(record.price))) {
-                    rowErrors.push('Price must be a number');
+                    rowErrors.push(coded('EXCEL_PRICE_NAN'));
                 }
                 if (record.stock_quantity && isNaN(parseInt(record.stock_quantity))) {
-                    rowWarnings.push('Stock quantity is not a valid number, defaulting to 0');
+                    rowWarnings.push(coded('EXCEL_STOCK_NAN'));
                     record.stock_quantity = 0;
                 }
             }
 
             if (dataType === 'customers') {
                 if (record.email && !this.isValidEmail(record.email)) {
-                    rowWarnings.push('Invalid email format');
+                    rowWarnings.push(coded('EXCEL_EMAIL'));
                 }
             }
 
             if (dataType === 'employees') {
                 if (record.pin && (record.pin.length < 4 || record.pin.length > 6)) {
-                    rowErrors.push('PIN must be 4-6 digits');
+                    rowErrors.push(coded('EXCEL_PIN'));
                 }
                 if (record.role && !['admin', 'manager', 'cashier'].includes(record.role.toLowerCase())) {
-                    rowWarnings.push('Role defaulted to cashier');
+                    rowWarnings.push(coded('EXCEL_ROLE'));
                     record.role = 'cashier';
                 }
             }
@@ -352,15 +362,16 @@ class ExcelService {
         switch (dataType) {
             case 'products':
                 return [
-                    ['Example Product', '1234567890123', 'SKU001', 'Sample product description', 'Electronics', 19.99, 10.00, 100, 10, 0],
+                    // Same order as the headers: name, price, sku, barcode, description, category, brand, cost, stock, min stock, tax
+                    ['T-shirt basique', 1500, 'TSH-001', '', 'T-shirt 100% coton', 'T-shirts', 'Zara', 900, 20, 3, 0],
                 ];
             case 'customers':
                 return [
-                    ['John Doe', 'john@example.com', '+1234567890', '123 Main St', 'Regular customer', 0],
+                    ['Amina B.', '', '0555 12 34 56', 'Alger', '', 0],
                 ];
             case 'employees':
                 return [
-                    ['Jane Smith', 'jane@example.com', '1234', 'cashier'],
+                    ['Karim', '1234', '', 'cashier'],
                 ];
             default:
                 return [];

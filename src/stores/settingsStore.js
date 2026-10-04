@@ -1,9 +1,12 @@
 import { create } from 'zustand';
+import { resolveFeatures } from '../lib/features';
+import { useLanguageStore, normalizeLanguage } from '../i18n';
+import { formatMoney } from '../i18n/format';
 
 export const useSettingsStore = create((set, get) => ({
     settings: {
-        currency: 'USD',
-        currencySymbol: '$',
+        currency: 'DZD',
+        currencySymbol: 'DA',
         taxRate: 10,
         taxType: 'exclusive',
         taxName: 'Tax',
@@ -14,7 +17,8 @@ export const useSettingsStore = create((set, get) => ({
         poSignatureName: '',
         poSignatureTitle: '',
         receiptHeader: '',
-        receiptFooter: ''
+        receiptFooter: '',
+        features: resolveFeatures(),
     },
     loading: false,
     error: null,
@@ -39,6 +43,14 @@ export const useSettingsStore = create((set, get) => ({
                 }
             }
 
+            parsedSettings.features = resolveFeatures(data.features);
+
+            // The language saved with the shop settings wins over the local cache
+            if (parsedSettings.defaultLanguage) {
+                const lang = normalizeLanguage(parsedSettings.defaultLanguage);
+                if (lang !== useLanguageStore.getState().lang) useLanguageStore.getState().setLang(lang);
+            }
+
             // Normalize taxRate to float
             if (parsedSettings.taxRate) {
                 parsedSettings.taxRate = parseFloat(parsedSettings.taxRate) || 0;
@@ -51,12 +63,6 @@ export const useSettingsStore = create((set, get) => ({
         }
     },
 
-    // Helper to format currency
-    formatCurrency: (amount) => {
-        const { currency } = get().settings;
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: currency || 'USD'
-        }).format(amount || 0);
-    }
+    // Helper to format currency (dinars by default: "2 500 DA" / "2 500 د.ج")
+    formatCurrency: (amount) => formatMoney(amount, { currency: get().settings.currency || 'DZD' }),
 }));

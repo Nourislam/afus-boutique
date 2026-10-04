@@ -1,5 +1,8 @@
+import { t } from '../i18n';
+import { formatDate as formatLocalDate } from '../i18n/format';
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { BarChart3, TrendingUp, DollarSign, Euro, PoundSterling, JapaneseYen, IndianRupee, Coins, ShoppingCart, Calendar, Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { BarChart3, TrendingUp, Banknote, Euro, PoundSterling, JapaneseYen, IndianRupee, Coins, ShoppingCart, Calendar, Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Select } from '../components/ui/Select';
 import { Card, StatCard } from '../components/ui/Card';
@@ -7,15 +10,17 @@ import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader } from '.
 import { toast } from '../components/ui/Toast';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, subMonths } from 'date-fns';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { paymentLabel } from '../lib/payments';
 
-const dateRanges = [
-    { value: 'today', label: 'Today' },
-    { value: 'yesterday', label: 'Yesterday' },
-    { value: 'week', label: 'This Week' },
-    { value: 'last7', label: 'Last 7 Days' },
-    { value: 'month', label: 'This Month' },
-    { value: 'last30', label: 'Last 30 Days' },
-    { value: 'last3months', label: 'Last 3 Months' },
+// Built on each render so the labels follow the interface language
+const dateRanges = () => [
+    { value: 'today', label: t('reports.today') },
+    { value: 'yesterday', label: t('reports.yesterday') },
+    { value: 'week', label: t('reports.week') },
+    { value: 'last7', label: t('reports.last7') },
+    { value: 'month', label: t('dashboard.month') },
+    { value: 'last30', label: t('reports.last30') },
+    { value: 'last3months', label: t('reports.last3months') },
 ];
 
 export default function ReportsPage() {
@@ -111,11 +116,11 @@ export default function ReportsPage() {
             setStats(statsData || { total_transactions: 0, total_revenue: 0, average_sale: 0, total_tax: 0 });
             setSalesByDate(salesData.map(d => ({
                 ...d,
-                dateLabel: format(new Date(d.date), 'MMM d'),
+                dateLabel: formatLocalDate(d.date, 'short'),
             })));
             setTopProducts(topData);
             setCategoryData(categoryData.map(c => ({
-                name: c.category_name || 'Uncategorized',
+                name: c.category_name || t('reports.uncategorized'),
                 value: c.total_revenue,
                 color: c.category_color || '#6b7280',
             })));
@@ -123,7 +128,7 @@ export default function ReportsPage() {
             setShiftData(shiftHistory);
         } catch (error) {
             console.error('Failed to load report data:', error);
-            toast.error('Failed to load reports');
+            toast.error(t('reports.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -149,12 +154,12 @@ export default function ReportsPage() {
     }, []);
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(amount || 0);
+        return formatMoney(amount || 0);
     };
 
     const getCurrencyIcon = () => {
         switch (currency) {
-            case 'USD': return DollarSign;
+            case 'USD': return Banknote;
             case 'EUR': return Euro;
             case 'GBP': return PoundSterling;
             case 'JPY': return JapaneseYen;
@@ -171,14 +176,14 @@ export default function ReportsPage() {
             <div className="p-6 border-b border-dark-border">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold">Reports</h1>
-                        <p className="text-zinc-500">Analyze your sales and business performance</p>
+                        <h1 className="text-2xl font-bold">{t('reports.title')}</h1>
+                        <p className="text-zinc-500">{t('reports.subtitle')}</p>
                     </div>
                     <div className="flex items-center gap-3">
                         <Select
                             value={dateRange}
                             onChange={setDateRange}
-                            options={dateRanges}
+                            options={dateRanges()}
                             className="w-48"
                         />
                     </div>
@@ -195,9 +200,9 @@ export default function ReportsPage() {
                             activeTab === 'overview' ? 'text-accent-primary' : 'text-zinc-400 hover:text-white'
                         }`}
                     >
-                        Overview
+                        {t('reports.overview')}
                         {activeTab === 'overview' && (
-                            <div className="absolute bottom-[-5px] left-0 right-0 h-0.5 bg-accent-primary rounded-full" />
+                            <div className="absolute bottom-[-5px] start-0 end-0 h-0.5 bg-accent-primary rounded-full" />
                         )}
                     </button>
                     <button
@@ -206,9 +211,9 @@ export default function ReportsPage() {
                             activeTab === 'shifts' ? 'text-accent-primary' : 'text-zinc-400 hover:text-white'
                         }`}
                     >
-                        Shift History
+                        {t('reports.shifts')}
                         {activeTab === 'shifts' && (
-                            <div className="absolute bottom-[-5px] left-0 right-0 h-0.5 bg-accent-primary rounded-full" />
+                            <div className="absolute bottom-[-5px] start-0 end-0 h-0.5 bg-accent-primary rounded-full" />
                         )}
                     </button>
                 </div>
@@ -222,37 +227,37 @@ export default function ReportsPage() {
                         {/* Stats Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             <StatCard
-                                label="Total Revenue"
+                                label={t('reports.revenue')}
                                 value={formatCurrency(stats.total_revenue)}
                                 icon={getCurrencyIcon()}
                                 color="success"
                             />
                             <StatCard
-                                label="Total Profit"
+                                label={t('reports.profit')}
                                 value={formatCurrency(stats.total_profit)}
                                 icon={TrendingUp}
                                 color="success"
                             />
                             <StatCard
-                                label="Profit Margin"
+                                label={t('reports.margin')}
                                 value={`${stats.total_revenue > 0 ? ((stats.total_profit / stats.total_revenue) * 100).toFixed(1) : 0}%`}
                                 icon={BarChart3}
                                 color="primary"
                             />
                             <StatCard
-                                label="Transactions"
+                                label={t('reports.transactions')}
                                 value={stats.total_transactions}
                                 icon={ShoppingCart}
                                 color="primary"
                             />
                             <StatCard
-                                label="Average Sale"
+                                label={t('reports.average')}
                                 value={formatCurrency(stats.average_sale)}
                                 icon={TrendingUp}
                                 color="primary"
                             />
                             <StatCard
-                                label="Total Tax"
+                                label={t('reports.tax')}
                                 value={formatCurrency(stats.total_tax)}
                                 icon={getCurrencyIcon()}
                                 color="warning"
@@ -263,7 +268,7 @@ export default function ReportsPage() {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             {/* Sales Over Time */}
                             <Card>
-                                <h3 className="font-semibold mb-4">Sales Over Time</h3>
+                                <h3 className="font-semibold mb-4">{t('reports.overTime')}</h3>
                                 {salesByDate.length > 0 ? (
                                     <div className="h-72">
                                         <ResponsiveContainer width="100%" height="100%">
@@ -300,14 +305,14 @@ export default function ReportsPage() {
                                     </div>
                                 ) : (
                                     <div className="h-72 flex items-center justify-center text-zinc-500">
-                                        No sales data for this period
+                                        {t('reports.noSales')}
                                     </div>
                                 )}
                             </Card>
 
                             {/* Transactions by Day */}
                             <Card>
-                                <h3 className="font-semibold mb-4">Daily Transactions</h3>
+                                <h3 className="font-semibold mb-4">{t('reports.daily')}</h3>
                                 {salesByDate.length > 0 ? (
                                     <div className="h-72">
                                         <ResponsiveContainer width="100%" height="100%">
@@ -328,7 +333,7 @@ export default function ReportsPage() {
                                     </div>
                                 ) : (
                                     <div className="h-72 flex items-center justify-center text-zinc-500">
-                                        No transaction data for this period
+                                        {t('reports.noTx')}
                                     </div>
                                 )}
                             </Card>
@@ -338,7 +343,7 @@ export default function ReportsPage() {
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             {/* Sales by Category */}
                             <Card>
-                                <h3 className="font-semibold mb-4">Sales by Category</h3>
+                                <h3 className="font-semibold mb-4">{t('reports.byCategory')}</h3>
                                 {categoryData.length > 0 ? (
                                     <div className="h-64">
                                         <ResponsiveContainer width="100%" height="100%">
@@ -370,14 +375,14 @@ export default function ReportsPage() {
                                     </div>
                                 ) : (
                                     <div className="h-64 flex items-center justify-center text-zinc-500">
-                                        No category data
+                                        {t('reports.noCategory')}
                                     </div>
                                 )}
                             </Card>
 
                             {/* Payment Methods */}
                             <Card>
-                                <h3 className="font-semibold mb-4">Payment Methods</h3>
+                                <h3 className="font-semibold mb-4">{t('reports.payments')}</h3>
                                 {paymentMethods.length > 0 ? (
                                     <div className="space-y-3">
                                         {paymentMethods.map((method, index) => (
@@ -387,25 +392,25 @@ export default function ReportsPage() {
                                                         className="w-3 h-3 rounded-full"
                                                         style={{ backgroundColor: COLORS[index % COLORS.length] }}
                                                     />
-                                                    <span className="capitalize font-medium">{method.method}</span>
+                                                    <span className="font-medium">{paymentLabel(method.method)}</span>
                                                 </div>
-                                                <div className="text-right">
+                                                <div className="text-end">
                                                     <p className="font-semibold">{formatCurrency(method.total)}</p>
-                                                    <p className="text-xs text-zinc-400">{method.count} transactions</p>
+                                                    <p className="text-xs text-zinc-400">{t('reports.saleCount', { n: method.count })}</p>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
                                 ) : (
                                     <div className="h-64 flex items-center justify-center text-zinc-500">
-                                        No payment data
+                                        {t('reports.noPayments')}
                                     </div>
                                 )}
                             </Card>
 
                             {/* Top Products */}
                             <Card className="lg:col-span-1">
-                                <h3 className="font-semibold mb-4">Top Selling Products</h3>
+                                <h3 className="font-semibold mb-4">{t('reports.topProducts')}</h3>
                                 {topProducts.length > 0 ? (
                                     <div className="space-y-2 max-h-64 overflow-y-auto">
                                         {topProducts.map((product, index) => (
@@ -421,7 +426,7 @@ export default function ReportsPage() {
                                                     </span>
                                                     <span className="truncate max-w-32">{product.product_name}</span>
                                                 </div>
-                                                <div className="text-right">
+                                                <div className="text-end">
                                                     <p className="font-medium">{product.total_quantity}</p>
                                                     <p className="text-xs text-zinc-400">{formatCurrency(product.total_revenue)}</p>
                                                 </div>
@@ -430,7 +435,7 @@ export default function ReportsPage() {
                                     </div>
                                 ) : (
                                     <div className="h-64 flex items-center justify-center text-zinc-500">
-                                        No product data
+                                        {t('reports.noProducts')}
                                     </div>
                                 )}
                             </Card>
@@ -440,24 +445,25 @@ export default function ReportsPage() {
                     <div className="space-y-6">
                         <Card>
                             <div className="flex items-center justify-between mb-4">
-                                <h3 className="font-semibold">Shift History</h3>
+                                <h3 className="font-semibold">{t('reports.shifts')}</h3>
                             </div>
                             <Table>
                                 <TableHead>
                                     <TableRow>
-                                        <TableHeader>Start Time</TableHeader>
-                                        <TableHeader>End Time</TableHeader>
-                                        <TableHeader>Employee</TableHeader>
-                                        <TableHeader>Opening Cash</TableHeader>
-                                        <TableHeader>Total Sales</TableHeader>
-                                        <TableHeader>Cash</TableHeader>
-                                        <TableHeader>Card</TableHeader>
-                                        <TableHeader>Credit</TableHeader>
-                                        <TableHeader>Gift Card</TableHeader>
-                                        <TableHeader>Expected Cash</TableHeader>
-                                        <TableHeader>Closing Cash</TableHeader>
-                                        <TableHeader>Diff</TableHeader>
-                                        <TableHeader>Notes</TableHeader>
+                                        <TableHeader>{t('reports.start')}</TableHeader>
+                                        <TableHeader>{t('reports.end')}</TableHeader>
+                                        <TableHeader>{t('tx.employee')}</TableHeader>
+                                        <TableHeader>{t('shift.openingCash')}</TableHeader>
+                                        <TableHeader>{t('reports.totalSales')}</TableHeader>
+                                        <TableHeader>{t('pay.cash')}</TableHeader>
+                                        <TableHeader>{t('pay.card')}</TableHeader>
+                                        <TableHeader>{t('pay.transferShort')}</TableHeader>
+                                        <TableHeader>{t('pay.credit')}</TableHeader>
+                                        <TableHeader>{t('pay.giftCard')}</TableHeader>
+                                        <TableHeader>{t('reports.expectedCash')}</TableHeader>
+                                        <TableHeader>{t('reports.closingCash')}</TableHeader>
+                                        <TableHeader>{t('reports.diff')}</TableHeader>
+                                        <TableHeader>{t('customers.notes')}</TableHeader>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -465,13 +471,13 @@ export default function ReportsPage() {
                                         shiftData.map((shift) => (
                                             <TableRow key={shift.id}>
                                                 <TableCell className="whitespace-nowrap">
-                                                    <div>{format(new Date(shift.start_time), 'MMM d, h:mm a')}</div>
+                                                    <div>{formatLocalDate(shift.start_time, 'datetime')}</div>
                                                 </TableCell>
                                                 <TableCell className="whitespace-nowrap">
                                                     {shift.end_time ? (
-                                                        <div>{format(new Date(shift.end_time), 'MMM d, h:mm a')}</div>
+                                                        <div>{formatLocalDate(shift.end_time, 'datetime')}</div>
                                                     ) : (
-                                                        <span className="text-accent-primary font-medium">Active</span>
+                                                        <span className="text-accent-primary font-medium">{t('status.active')}</span>
                                                     )}
                                                 </TableCell>
                                                 <TableCell>{shift.employee_name}</TableCell>
@@ -479,6 +485,7 @@ export default function ReportsPage() {
                                                 <TableCell>{formatCurrency(shift.stats?.total_sales || 0)}</TableCell>
                                                 <TableCell className="text-emerald-400">{formatCurrency(shift.stats?.total_cash_sales || 0)}</TableCell>
                                                 <TableCell className="text-blue-400">{formatCurrency(shift.stats?.total_card_sales || 0)}</TableCell>
+                                                <TableCell className="text-sky-400">{formatCurrency(shift.stats?.total_transfer_sales || 0)}</TableCell>
                                                 <TableCell className="text-amber-400">{formatCurrency(shift.stats?.total_credit_sales || 0)}</TableCell>
                                                 <TableCell className="text-purple-400">{formatCurrency(shift.stats?.total_gift_card_sales || 0)}</TableCell>
                                                 <TableCell>{formatCurrency(shift.stats?.expected_cash || 0)}</TableCell>
@@ -496,7 +503,7 @@ export default function ReportsPage() {
                                     ) : (
                                         <TableRow>
                                             <TableCell colSpan={14} className="h-24 text-center">
-                                                No shifts found for this period
+                                                {t('reports.noShifts')}
                                             </TableCell>
                                         </TableRow>
                                     )}

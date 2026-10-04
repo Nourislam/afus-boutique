@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -28,7 +29,7 @@ export default function ReceiveStockModal({ isOpen, onClose, onComplete, purchas
             }
         } catch (error) {
             console.error('Failed to reload PO:', error);
-            toast.error('Failed to load item details');
+            toast.error(t('receive.itemsFailed'));
         }
     };
 
@@ -53,14 +54,14 @@ export default function ReceiveStockModal({ isOpen, onClose, onComplete, purchas
             }));
 
         if (itemsToReceive.length === 0) {
-            toast.error('Please enter quantity to receive for at least one item');
+            toast.error(t('receive.enterQty'));
             return;
         }
 
         // Check for over-receiving
         const overReceived = items.find(item => (item.received_quantity || 0) + item.receive_now > item.quantity);
         if (overReceived) {
-            if (!confirm(`You are receiving more than ordered for ${overReceived.product_name}. Continue?`)) {
+            if (!confirm(t('receive.overConfirm', { name: overReceived.product_name }))) {
                 return;
             }
         }
@@ -72,12 +73,12 @@ export default function ReceiveStockModal({ isOpen, onClose, onComplete, purchas
                 items: itemsToReceive,
                 notes
             });
-            toast.success('Stock Received (GRN Created)');
+            toast.success(t('receive.done'));
             onComplete();
             onClose();
         } catch (error) {
             console.error('GRN Error:', error);
-            toast.error('Failed to receive stock');
+            toast.error(t('receive.failed'));
         } finally {
             setLoading(false);
         }
@@ -88,21 +89,21 @@ export default function ReceiveStockModal({ isOpen, onClose, onComplete, purchas
             <ModalBody>
                 <div className="space-y-4">
                     <div className="bg-dark-secondary rounded-lg border border-dark-border overflow-hidden">
-                        <table className="w-full text-left text-sm">
+                        <table className="w-full text-start text-sm">
                             <thead className="bg-dark-tertiary text-zinc-400">
                                 <tr>
-                                    <th className="p-3">Product</th>
-                                    <th className="p-3 text-center">Ordered</th>
-                                    <th className="p-3 text-center">Received</th>
-                                    <th className="p-3 text-center">Remaining</th>
-                                    <th className="p-3 text-center w-32">Receive Now</th>
+                                    <th className="p-3">{t('inventory.product')}</th>
+                                    <th className="p-3 text-center">{t('receive.ordered')}</th>
+                                    <th className="p-3 text-center">{t('receive.received')}</th>
+                                    <th className="p-3 text-center">{t('receive.remaining')}</th>
+                                    <th className="p-3 text-center w-32">{t('receive.now')}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-dark-border">
                                 {items.length === 0 ? (
                                     <tr>
                                         <td colSpan="5" className="p-4 text-center text-zinc-500">
-                                            No items found in this Purchase Order.
+                                            {t('receive.noItems')}
                                         </td>
                                     </tr>
                                 ) : (
@@ -136,18 +137,18 @@ export default function ReceiveStockModal({ isOpen, onClose, onComplete, purchas
                     </div>
 
                     <div>
-                        <label className="block text-sm text-zinc-400 mb-1">GRN Notes</label>
+                        <label className="block text-sm text-zinc-400 mb-1">{t('receive.notes')}</label>
                         <Input
                             value={notes}
                             onChange={e => setNotes(e.target.value)}
-                            placeholder="Optional notes for this delivery..."
+                            placeholder={t('receive.notesPlaceholder')}
                         />
                     </div>
                 </div>
             </ModalBody>
             <ModalFooter>
-                <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                <Button onClick={handleSubmit} loading={loading}>Confirm Receipt</Button>
+                <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
+                <Button onClick={handleSubmit} loading={loading}>{t('receive.confirm')}</Button>
             </ModalFooter>
         </Modal>
     );

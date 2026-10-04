@@ -1,3 +1,6 @@
+import { t } from '../i18n';
+import { formatDate as formatLocalDate } from '../i18n/format';
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { Button } from '../components/ui/Button';
@@ -46,7 +49,7 @@ export default function TransactionsPage() {
             setFilteredReturns(returnsData);
         } catch (error) {
             console.error('Failed to load data:', error);
-            toast.error('Failed to load history');
+            toast.error(t('tx.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -66,10 +69,10 @@ export default function TransactionsPage() {
         const query = searchQuery.toLowerCase();
 
         // Filter Sales
-        const filteredSales = transactions.filter(t =>
-            t.receipt_number.toLowerCase().includes(query) ||
-            (t.customer_name && t.customer_name.toLowerCase().includes(query)) ||
-            (t.employee_name && t.employee_name.toLowerCase().includes(query))
+        const filteredSales = transactions.filter(tx =>
+            tx.receipt_number.toLowerCase().includes(query) ||
+            (tx.customer_name && tx.customer_name.toLowerCase().includes(query)) ||
+            (tx.employee_name && tx.employee_name.toLowerCase().includes(query))
         );
         setFilteredTransactions(filteredSales);
 
@@ -91,11 +94,11 @@ export default function TransactionsPage() {
                 setSelectedSale(fullSale);
                 setShowReceiptModal(true);
             } else {
-                toast.error('Transaction details not found');
+                toast.error(t('tx.notFound'));
             }
         } catch (error) {
             console.error('Failed to fetch sale details:', error);
-            toast.error('Failed to open receipt');
+            toast.error(t('tx.receiptFailed'));
         }
     };
 
@@ -119,28 +122,25 @@ export default function TransactionsPage() {
     }, []);
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: currency,
-        }).format(amount);
+        return formatMoney(amount);
     };
 
     const formatDate = (dateString) => {
-        return new Date(dateString).toLocaleString();
+        return formatLocalDate(dateString, 'datetime');
     };
 
     return (
         <div className="h-full flex flex-col gap-6 p-6">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-3xl font-bold text-white mb-2">Transaction History</h1>
+                    <h1 className="text-3xl font-bold text-white mb-2">{t('tx.title')}</h1>
                     <p className="text-zinc-400">
-                        {user?.role === 'admin' ? 'View all transactions' : 'View your transaction history'}
+                        {user?.role === 'admin' ? t('tx.subtitleAll') : t('tx.subtitleMine')}
                     </p>
                 </div>
                 <div className="flex gap-4">
                     <Button variant="outline" onClick={loadTransactions}>
-                        Refresh
+                        {t('common.refresh')}
                     </Button>
                 </div>
             </div>
@@ -149,8 +149,8 @@ export default function TransactionsPage() {
             <div className="w-full">
                 <Tabs
                     tabs={[
-                        { id: 'sales', label: 'Sales History' },
-                        { id: 'returns', label: 'Returns History' }
+                        { id: 'sales', label: t('tx.sales') },
+                        { id: 'returns', label: t('tx.returns') }
                     ]}
                     defaultTab={activeTab}
                     onChange={setActiveTab}
@@ -161,12 +161,12 @@ export default function TransactionsPage() {
                 {/* Filters */}
                 <div className="p-4 border-b border-dark-border flex gap-4">
                     <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                         <Input
-                            placeholder={activeTab === 'sales' ? "Search receipt based on customer,receipt #..." : "Search return based on return #, receipt #..."}
+                            placeholder={activeTab === 'sales' ? t('tx.searchSales') : t('tx.searchReturns')}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-10"
+                            className="ps-10"
                         />
                     </div>
                 </div>
@@ -174,31 +174,31 @@ export default function TransactionsPage() {
                 {/* Table Content */}
                 <div className="flex-1 overflow-auto">
                     {activeTab === 'sales' ? (
-                        <table className="w-full text-left border-collapse">
+                        <table className="w-full text-start border-collapse">
                             <thead className="sticky top-0 bg-dark-tertiary text-zinc-400 text-xs uppercase font-semibold">
                                 <tr>
-                                    <th className="p-4">Receipt #</th>
-                                    <th className="p-4">Date</th>
-                                    <th className="p-4">Customer</th>
-                                    <th className="p-4">Employee</th>
-                                    <th className="p-4 text-right">Total</th>
-                                    <th className="p-4">Status</th>
-                                    <th className="p-4 text-right">Actions</th>
+                                    <th className="p-4">{t('tx.receiptNo')}</th>
+                                    <th className="p-4">{t('tx.date')}</th>
+                                    <th className="p-4">{t('tx.customer')}</th>
+                                    <th className="p-4">{t('tx.employee')}</th>
+                                    <th className="p-4 text-end">{t('pos.total')}</th>
+                                    <th className="p-4">{t('inventory.status')}</th>
+                                    <th className="p-4 text-end">{t('inventory.actions')}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-dark-border">
                                 {loading ? (
-                                    <tr><td colSpan="7" className="p-8 text-center text-zinc-500">Loading sales...</td></tr>
+                                    <tr><td colSpan="7" className="p-8 text-center text-zinc-500">{t('tx.loadingSales')}</td></tr>
                                 ) : filteredTransactions.length === 0 ? (
-                                    <tr><td colSpan="7" className="p-8 text-center text-zinc-500">No sale transactions found</td></tr>
+                                    <tr><td colSpan="7" className="p-8 text-center text-zinc-500">{t('tx.noSales')}</td></tr>
                                 ) : (
                                     filteredTransactions.map((sale) => (
                                         <tr key={sale.id} className="hover:bg-dark-tertiary/50 transition-colors">
                                             <td className="p-4 font-mono text-accent-primary">{sale.receipt_number}</td>
                                             <td className="p-4 text-zinc-300">{formatDate(sale.created_at)}</td>
-                                            <td className="p-4 text-white">{sale.customer_name || 'Walk-in'}</td>
-                                            <td className="p-4 text-zinc-300">{sale.employee_name || 'Unknown'}</td>
-                                            <td className="p-4 text-right font-medium text-white">{formatCurrency(sale.total)}</td>
+                                            <td className="p-4 text-white">{sale.customer_name || t('tx.walkIn')}</td>
+                                            <td className="p-4 text-zinc-300">{sale.employee_name || t('tx.unknown')}</td>
+                                            <td className="p-4 text-end font-medium text-white">{formatCurrency(sale.total)}</td>
                                             <td className="p-4">
                                                 <span className={`px-2 py-1 rounded text-xs font-medium 
                                                     ${sale.status === 'completed' ? 'bg-green-500/10 text-green-400' :
@@ -209,14 +209,14 @@ export default function TransactionsPage() {
                                                     {sale.status.toUpperCase().replace('_', ' ')}
                                                 </span>
                                             </td>
-                                            <td className="p-4 text-right">
+                                            <td className="p-4 text-end">
                                                 <div className="flex justify-end gap-2">
                                                     <Button size="sm" variant="secondary" onClick={() => handleViewReceipt(sale.id)}>
-                                                        <Eye className="w-4 h-4 mr-2" /> View
+                                                        <Eye className="w-4 h-4 me-2" /> {t('tx.view')}
                                                     </Button>
                                                     {(sale.status === 'completed' || sale.status === 'partially_refunded') && (
                                                         <Button size="sm" variant="danger" onClick={() => { setSaleToReturn(sale); setShowReturnModal(true); }}>
-                                                            Return
+                                                            {t('po.return')}
                                                         </Button>
                                                     )}
                                                 </div>
@@ -227,35 +227,35 @@ export default function TransactionsPage() {
                             </tbody>
                         </table>
                     ) : (
-                        <table className="w-full text-left border-collapse">
+                        <table className="w-full text-start border-collapse">
                             <thead className="sticky top-0 bg-dark-tertiary text-zinc-400 text-xs uppercase font-semibold">
                                 <tr>
-                                    <th className="p-4">Return #</th>
-                                    <th className="p-4">Orig. Receipt</th>
-                                    <th className="p-4">Date</th>
-                                    <th className="p-4">Employee</th>
-                                    <th className="p-4">Reason</th>
-                                    <th className="p-4 text-right">Refund Amount</th>
-                                    <th className="p-4 text-right">Actions</th>
+                                    <th className="p-4">{t('tx.returnNo')}</th>
+                                    <th className="p-4">{t('tx.origReceipt')}</th>
+                                    <th className="p-4">{t('tx.date')}</th>
+                                    <th className="p-4">{t('tx.employee')}</th>
+                                    <th className="p-4">{t('inventory.reason')}</th>
+                                    <th className="p-4 text-end">{t('tx.refund')}</th>
+                                    <th className="p-4 text-end">{t('inventory.actions')}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-dark-border">
                                 {loading ? (
-                                    <tr><td colSpan="7" className="p-8 text-center text-zinc-500">Loading returns...</td></tr>
+                                    <tr><td colSpan="7" className="p-8 text-center text-zinc-500">{t('tx.loadingReturns')}</td></tr>
                                 ) : filteredReturns.length === 0 ? (
-                                    <tr><td colSpan="7" className="p-8 text-center text-zinc-500">No return records found</td></tr>
+                                    <tr><td colSpan="7" className="p-8 text-center text-zinc-500">{t('tx.noReturns')}</td></tr>
                                 ) : (
                                     filteredReturns.map((ret) => (
                                         <tr key={ret.id} className="hover:bg-dark-tertiary/50 transition-colors">
                                             <td className="p-4 font-mono text-red-400">{ret.return_number}</td>
                                             <td className="p-4 font-mono text-zinc-400">{ret.receipt_number}</td>
                                             <td className="p-4 text-zinc-300">{formatDate(ret.created_at)}</td>
-                                            <td className="p-4 text-zinc-300">{ret.employee_name || 'Unknown'}</td>
+                                            <td className="p-4 text-zinc-300">{ret.employee_name || t('tx.unknown')}</td>
                                             <td className="p-4 text-zinc-300 italic">{ret.reason || '-'}</td>
-                                            <td className="p-4 text-right font-medium text-red-400">{formatCurrency(ret.total_refund)}</td>
-                                            <td className="p-4 text-right">
+                                            <td className="p-4 text-end font-medium text-red-400">{formatCurrency(ret.total_refund)}</td>
+                                            <td className="p-4 text-end">
                                                 <Button size="sm" variant="secondary" onClick={() => { setSelectedReturn(ret); setShowReturnDetails(true); }}>
-                                                    <Eye className="w-4 h-4 mr-2" /> Details
+                                                    <Eye className="w-4 h-4 me-2" /> {t('tx.details')}
                                                 </Button>
                                             </td>
                                         </tr>

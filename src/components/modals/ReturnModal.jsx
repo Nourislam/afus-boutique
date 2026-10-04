@@ -1,3 +1,5 @@
+import { t } from '../../i18n';
+import { formatMoney } from '../../i18n/format';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -41,7 +43,7 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
             })));
         } catch (error) {
             console.error('Failed to fetch sale details:', error);
-            toast.error('Failed to load items');
+            toast.error(t('return.loadFailed'));
         }
     };
 
@@ -71,7 +73,7 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
         const itemsToReturn = items.filter(i => i.returnQty > 0);
 
         if (itemsToReturn.length === 0) {
-            toast.error('No items selected for return');
+            toast.error(t('return.noneSelected'));
             return;
         }
 
@@ -94,33 +96,33 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
             };
 
             await window.electronAPI.returns.create(returnData);
-            toast.success('Return processed successfully');
+            toast.success(t('return.done'));
             if (onReturnSuccess) onReturnSuccess();
             onClose();
         } catch (error) {
             console.error('Return failed:', error);
-            toast.error('Failed to process return');
+            toast.error(t('return.failed'));
         } finally {
             setLoading(false);
         }
     };
 
-    const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+    const formatCurrency = (val) => formatMoney(val);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Return for Receipt #${sale?.receipt_number}`} size="lg">
             <ModalBody>
                 <div className="space-y-4">
                     <div className="border border-dark-border rounded-lg">
-                        <table className="w-full text-left text-sm">
+                        <table className="w-full text-start text-sm">
                             <thead className="bg-dark-tertiary text-zinc-400 sticky top-0">
                                 <tr>
-                                    <th className="p-3">Product</th>
-                                    <th className="p-3">Sold Qty</th>
-                                    <th className="p-3">Price</th>
-                                    <th className="p-3">Return Qty</th>
-                                    <th className="p-3">Condition</th>
-                                    <th className="p-3 text-right">Refund</th>
+                                    <th className="p-3">{t('inventory.product')}</th>
+                                    <th className="p-3">{t('return.soldQty')}</th>
+                                    <th className="p-3">{t('qr.price')}</th>
+                                    <th className="p-3">{t('return.qty')}</th>
+                                    <th className="p-3">{t('return.condition')}</th>
+                                    <th className="p-3 text-end">{t('return.refund')}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-dark-border">
@@ -148,14 +150,14 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
                                                     value={item.condition}
                                                     onChange={(val) => handleConditionChange(item.id, val)}
                                                     options={[
-                                                        { value: 'sellable', label: 'Sellable (Restock)' },
-                                                        { value: 'damaged', label: 'Damaged' }
+                                                        { value: 'sellable', label: t('return.sellable') },
+                                                        { value: 'damaged', label: t('return.damaged') }
                                                     ]}
                                                     className="w-32"
                                                 />
                                             )}
                                         </td>
-                                        <td className="p-3 text-right font-medium text-accent-primary">
+                                        <td className="p-3 text-end font-medium text-accent-primary">
                                             {item.returnQty > 0 ? formatCurrency(item.returnQty * item.unit_price) : '-'}
                                         </td>
                                     </tr>
@@ -166,24 +168,24 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
 
                     <div className="flex gap-4 items-end">
                         <div className="flex-1">
-                            <label className="text-sm text-zinc-400 mb-1 block">Reason for Return</label>
+                            <label className="text-sm text-zinc-400 mb-1 block">{t('return.reason')}</label>
                             <Input
                                 value={returnReason}
                                 onChange={(e) => setReturnReason(e.target.value)}
-                                placeholder="Defective, Wrong item, etc."
+                                placeholder={t('return.reasonPlaceholder')}
                             />
                         </div>
-                        <div className="text-right p-4 bg-dark-tertiary rounded-lg min-w-[200px]">
-                            <p className="text-sm text-zinc-400">Total Refund</p>
+                        <div className="text-end p-4 bg-dark-tertiary rounded-lg min-w-[200px]">
+                            <p className="text-sm text-zinc-400">{t('return.total')}</p>
                             <p className="text-2xl font-bold text-accent-primary">{formatCurrency(calculateTotalRefund())}</p>
                         </div>
                     </div>
                 </div>
             </ModalBody>
             <ModalFooter>
-                <Button variant="secondary" onClick={onClose}>Cancel</Button>
+                <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
                 <Button variant="danger" loading={loading} onClick={handleSubmit} disabled={calculateTotalRefund() <= 0}>
-                    Confirm Return
+                    {t('return.confirm')}
                 </Button>
             </ModalFooter>
         </Modal>

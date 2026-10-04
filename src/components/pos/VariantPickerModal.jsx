@@ -1,17 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { Modal, ModalBody } from '../ui/Modal';
+import { t } from '../../i18n';
+import { colorHex, colorName, sizeLabel } from '../../lib/clothing';
 
 /**
- * Lets the cashier pick the exact colour and size of a clothing product.
- * Shows a colour × size grid with price and available stock per variant, so
- * the wrong variant is not sold by accident.
+ * Lets the cashier pick the exact colour, then the size, of a clothing
+ * product. Each choice shows the available stock (and the price when it
+ * differs), so the wrong variant is not sold by accident.
  */
 export function VariantPickerModal({ product, isOpen, onClose, onSelect, formatCurrency }) {
     const [variants, setVariants] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [color, setColor] = useState(null);
 
     useEffect(() => {
         if (!isOpen || !product) return;
+        setColor(null);
         setLoading(true);
         window.electronAPI.catalog.getVariants(product.id)
             .then(setVariants)
@@ -19,75 +24,97 @@ export function VariantPickerModal({ product, isOpen, onClose, onSelect, formatC
             .finally(() => setLoading(false));
     }, [isOpen, product]);
 
-    const { colors, sizes, byKey } = useMemo(() => {
-        const colorList = [];
-        const sizeList = [];
-        const map = new Map();
+    const colors = useMemo(() => {
+        const list = new Map();
         for (const v of variants) {
-            const c = v.color || '';
-            const s = v.size || '';
-            if (!colorList.includes(c)) colorList.push(c);
-            if (!sizeList.includes(s)) sizeList.push(s);
-            map.set(`${c}|${s}`, v);
+            const key = v.color || '';
+            const entry = list.get(key) || { key, sample: v, stock: 0 };
+            entry.stock += Math.max(0, v.stock_quantity ?? 0);
+            list.set(key, entry);
         }
-        return { colors: colorList, sizes: sizeList, byKey: map };
+        return [...list.values()];
     }, [variants]);
+
+    // Products with a single colour (or sizes only) go straight to the sizes
+    const activeColor = color ?? (colors.length === 1 ? colors[0].key : null);
+    const sizes = activeColor === null ? [] : variants.filter(v => (v.color || '') === activeColor);
 
     if (!product) return null;
 
     const priceOf = (v) => (v.price !== null && v.price !== undefined ? v.price : product.price);
+    const prices = new Set(variants.map(priceOf));
 
-    const Cell = ({ variant }) => {
-        if (!variant) return <div className="h-16 rounded-lg bg-dark-tertiary/40" />;
-        const out = (variant.stock_quantity ?? 0) <= 0;
-        const low = !out && variant.stock_quantity <= variant.min_stock_level;
-        return (
-            <button
-                type="button"
-                disabled={out}
-                onClick={() => onSelect(variant)}
-                className={`h-16 w-full rounded-lg border text-left px-2 py-1 transition-colors
-                    ${out ? 'border-dark-border bg-dark-tertiary/40 text-zinc-600 cursor-not-allowed' : 'border-dark-border bg-dark-tertiary hover:border-accent-primary hover:bg-accent-primary/10'}`}
-                title={variant.sku}
-            >
-                <div className="text-sm font-semibold">{formatCurrency(priceOf(variant))}</div>
-                <div className={`text-xs ${out ? 'text-red-400' : low ? 'text-amber-400' : 'text-zinc-400'}`}>
-                    {out ? 'Out of stock' : `${variant.stock_quantity} in stock`}
-                </div>
-            </button>
-        );
+    const stockText = (qty, min) => {
+        if (qty <= 0) return <span className="text-red-400">{t('variants.outOfStock')}</span>;
+        return <span className={qty <= min ? 'text-amber-400' : 'text-zinc-400'}>{t('variants.inStock', { n: qty })}</span>;
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Choose colour / size — ${product.name}`} size="xl">
+        <Modal isOpen={isOpen} onClose={onClose} title={product.name} size="lg">
             <ModalBody>
                 {loading ? (
-                    <div className="py-8 text-center text-zinc-500">Loading…</div>
+                    <div className="py-8 text-center text-zinc-500">{t('common.loading')}</div>
                 ) : variants.length === 0 ? (
-                    <div className="py-8 text-center text-zinc-500">This product has no active variants.</div>
+                    <div className="py-8 text-center text-zinc-500">{t('variants.noneActive')}</div>
+                ) : activeColor === null ? (
+                    <>
+                        <p className="text-sm text-zinc-400 mb-3">{t('variants.chooseColor')}</p>
+                        <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                            {colors.map(c => (
+                                <button
+                                    key={c.key}
+                                    type="button"
+                                    disabled={c.stock <= 0}
+                                    onClick={() => setColor(c.key)}
+                                    className={`rounded-xl border-2 p-3 flex flex-col items-center gap-2 transition-colors
+                                        ${c.stock <= 0 ? 'border-dark-border opacity-40 cursor-not-allowed' : 'border-dark-border hover:border-accent-primary hover:bg-accent-primary/10'}`}
+                                >
+                                    <span className="w-10 h-10 rounded-full border-2 border-zinc-600" style={{ background: colorHex(c.sample) || '#3f3f46' }} />
+                                    <span className="font-semibold text-sm">{colorName(c.sample) || '—'}</span>
+                                    <span className="text-xs">{stockText(c.stock, 0)}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full border-separate" style={{ borderSpacing: 6 }}>
-                            <thead>
-                                <tr>
-                                    <th className="text-left text-xs text-zinc-500 font-medium">Colour \ Size</th>
-                                    {sizes.map(s => <th key={s} className="text-sm font-semibold min-w-[90px]">{s || '—'}</th>)}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {colors.map(c => (
-                                    <tr key={c}>
-                                        <td className="text-sm font-semibold pr-2 whitespace-nowrap">{c || '—'}</td>
-                                        {sizes.map(s => (
-                                            <td key={s}><Cell variant={byKey.get(`${c}|${s}`)} /></td>
-                                        ))}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                    <>
+                        <div className="flex items-center gap-3 mb-3">
+                            {colors.length > 1 && (
+                                <button type="button" onClick={() => setColor(null)} className="p-1.5 rounded-lg bg-dark-tertiary hover:bg-zinc-700" title={t('common.back')}>
+                                    <ChevronLeft className="w-4 h-4 flip-rtl" />
+                                </button>
+                            )}
+                            {activeColor && (
+                                <span className="inline-flex items-center gap-2 font-semibold">
+                                    <span className="w-4 h-4 rounded-full border border-zinc-600" style={{ background: colorHex(sizes[0]) || '#3f3f46' }} />
+                                    {colorName(sizes[0])}
+                                </span>
+                            )}
+                            <span className="text-sm text-zinc-400">{t('variants.chooseSize')}</span>
+                        </div>
+                        <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
+                            {sizes.map(v => {
+                                const out = (v.stock_quantity ?? 0) <= 0;
+                                return (
+                                    <button
+                                        key={v.id}
+                                        type="button"
+                                        disabled={out}
+                                        onClick={() => onSelect(v)}
+                                        title={v.sku}
+                                        className={`rounded-xl border-2 py-3 px-2 flex flex-col items-center gap-1 transition-colors
+                                            ${out ? 'border-dark-border opacity-40 cursor-not-allowed' : 'border-dark-border hover:border-accent-primary hover:bg-accent-primary/10'}`}
+                                    >
+                                        <span className="text-xl font-bold">{sizeLabel(v.size) || '—'}</span>
+                                        <span className="text-xs">{stockText(v.stock_quantity ?? 0, v.min_stock_level ?? 0)}</span>
+                                        {prices.size > 1 && <span className="text-xs text-accent-primary">{formatCurrency(priceOf(v))}</span>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </>
                 )}
-                <p className="text-xs text-zinc-500 mt-3">Tip: scanning the variant&apos;s QR label adds it directly without this window.</p>
+                <p className="text-xs text-zinc-500 mt-4">{t('variants.scanTip')}</p>
             </ModalBody>
         </Modal>
     );

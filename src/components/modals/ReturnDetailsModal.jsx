@@ -1,3 +1,6 @@
+import { t } from '../../i18n';
+import { formatDate as formatLocalDate } from '../../i18n/format';
+import { formatMoney } from '../../i18n/format';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -30,8 +33,8 @@ export default function ReturnDetailsModal({ isOpen, onClose, returnData }) {
         }
     };
 
-    const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
-    const formatDate = (dateString) => new Date(dateString).toLocaleString();
+    const formatCurrency = (val) => formatMoney(val);
+    const formatDate = (dateString) => formatLocalDate(dateString, 'datetime');
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Return Details #${returnData?.return_number}`} size="lg">
@@ -41,39 +44,39 @@ export default function ReturnDetailsModal({ isOpen, onClose, returnData }) {
                         {/* Header Info */}
                         <div className="grid grid-cols-2 gap-4 text-sm">
                             <div className="p-3 bg-dark-tertiary rounded-lg">
-                                <p className="text-zinc-400">Original Receipt</p>
+                                <p className="text-zinc-400">{t('return.originalReceipt')}</p>
                                 <p className="font-mono font-medium">{returnData.receipt_number}</p>
                             </div>
                             <div className="p-3 bg-dark-tertiary rounded-lg">
-                                <p className="text-zinc-400">Processed By</p>
-                                <p className="font-medium">{returnData.employee_name || 'Unknown'}</p>
+                                <p className="text-zinc-400">{t('return.processedBy')}</p>
+                                <p className="font-medium">{returnData.employee_name || t('tx.unknown')}</p>
                             </div>
                             <div className="p-3 bg-dark-tertiary rounded-lg">
-                                <p className="text-zinc-400">Date</p>
+                                <p className="text-zinc-400">{t('tx.date')}</p>
                                 <p className="font-medium">{formatDate(returnData.created_at)}</p>
                             </div>
                             <div className="p-3 bg-dark-tertiary rounded-lg">
-                                <p className="text-zinc-400">Reason</p>
-                                <p className="font-medium italic">{returnData.reason || 'No reason provided'}</p>
+                                <p className="text-zinc-400">{t('inventory.reason')}</p>
+                                <p className="font-medium italic">{returnData.reason || t('return.noReason')}</p>
                             </div>
                         </div>
 
                         {/* Items Table */}
                         <div className="border border-dark-border rounded-lg overflow-hidden">
-                            <table className="w-full text-left text-sm">
+                            <table className="w-full text-start text-sm">
                                 <thead className="bg-dark-tertiary text-zinc-400">
                                     <tr>
-                                        <th className="p-3">Product</th>
-                                        <th className="p-3 text-center">Condition</th>
-                                        <th className="p-3 text-center">Qty</th>
-                                        <th className="p-3 text-right">Refund</th>
+                                        <th className="p-3">{t('inventory.product')}</th>
+                                        <th className="p-3 text-center">{t('return.condition')}</th>
+                                        <th className="p-3 text-center">{t('credit.qty')}</th>
+                                        <th className="p-3 text-end">{t('return.refund')}</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-dark-border">
                                     {loading ? (
-                                        <tr><td colSpan="4" className="p-4 text-center text-zinc-500">Loading details...</td></tr>
+                                        <tr><td colSpan="4" className="p-4 text-center text-zinc-500">{t('po.loadingDetails')}</td></tr>
                                     ) : items.length === 0 ? (
-                                        <tr><td colSpan="4" className="p-4 text-center text-zinc-500">No items found</td></tr>
+                                        <tr><td colSpan="4" className="p-4 text-center text-zinc-500">{t('return.noItems')}</td></tr>
                                     ) : (
                                         items.map((item, idx) => (
                                             <tr key={idx}>
@@ -81,19 +84,19 @@ export default function ReturnDetailsModal({ isOpen, onClose, returnData }) {
                                                 <td className="p-3 text-center">
                                                     <span className={`px-2 py-0.5 rounded text-xs ${item.condition === 'sellable' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
                                                         }`}>
-                                                        {item.condition?.toUpperCase()}
+                                                        {item.condition === 'sellable' ? t('return.sellable') : item.condition === 'damaged' ? t('return.damaged') : item.condition}
                                                     </span>
                                                 </td>
                                                 <td className="p-3 text-center">{item.quantity}</td>
-                                                <td className="p-3 text-right">{formatCurrency(item.refund_amount)}</td>
+                                                <td className="p-3 text-end">{formatCurrency(item.refund_amount)}</td>
                                             </tr>
                                         ))
                                     )}
                                 </tbody>
                                 <tfoot className="bg-dark-tertiary font-bold">
                                     <tr>
-                                        <td colSpan="3" className="p-3 text-right">Total Refund</td>
-                                        <td className="p-3 text-right text-accent-primary">{formatCurrency(returnData.total_refund)}</td>
+                                        <td colSpan="3" className="p-3 text-end">{t('return.total')}</td>
+                                        <td className="p-3 text-end text-accent-primary">{formatCurrency(returnData.total_refund)}</td>
                                     </tr>
                                 </tfoot>
                             </table>
@@ -102,7 +105,7 @@ export default function ReturnDetailsModal({ isOpen, onClose, returnData }) {
                 )}
             </ModalBody>
             <ModalFooter>
-                <Button variant="secondary" onClick={onClose}>Close</Button>
+                <Button variant="secondary" onClick={onClose}>{t('common.close')}</Button>
             </ModalFooter>
         </Modal>
     );

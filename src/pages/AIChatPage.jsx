@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { useState, useEffect, useRef } from 'react';
 import { 
     Send, Sparkles, Loader2, Bot, Upload, X, 
@@ -72,7 +73,7 @@ export default function AIChatPage() {
 
         const removeErrorListener = window.electronAPI.ai.onChatError((err) => {
             setIsStreaming(false);
-            toast.error('AI Error: ' + err);
+            toast.error(`${t('ai.error')} ${err}`);
             setMessages(prev => {
                 const newMsgs = [...prev];
                 const lastMsg = newMsgs[newMsgs.length - 1];
@@ -99,13 +100,13 @@ export default function AIChatPage() {
 
     const processFiles = (files) => {
         if (attachments.length + files.length > 3) {
-            toast.error('Maximum 3 items allowed');
+            toast.error(t('ai.max3'));
             return;
         }
 
         files.forEach(file => {
             if (!file.type.startsWith('image/')) {
-                toast.error(`Invalid file type: ${file.name}. Only images are supported.`);
+                toast.error(t('ai.imagesOnly', { name: file.name }));
                 return;
             }
 
@@ -208,10 +209,10 @@ export default function AIChatPage() {
                         <Bot className="text-white w-6 h-6" />
                     </div>
                     <div>
-                        <h1 className="text-lg font-bold text-white tracking-tight">AI Assistant</h1>
+                        <h1 className="text-lg font-bold text-white tracking-tight">{t('ai.assistant')}</h1>
                         <div className="flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                            <span className="text-xs text-zinc-400">Online & Ready</span>
+                            <span className="text-xs text-zinc-400">{t('ai.ready')}</span>
                         </div>
                     </div>
                 </div>
@@ -237,14 +238,14 @@ export default function AIChatPage() {
                             
                             {/* Role Label */}
                             <span className="text-xs text-zinc-500 mb-1 px-1">
-                                {msg.role === 'user' ? 'You' : 'AI'}
+                                {msg.role === 'user' ? t('ai.you') : t('ai.short')}
                             </span>
 
                             {/* Message Bubble */}
                             <div className={`p-4 rounded-2xl shadow-sm ${
                                 msg.role === 'user' 
-                                    ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-tr-sm' 
-                                    : 'bg-dark-tertiary text-zinc-100 border border-dark-border rounded-tl-sm'
+                                    ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-se-sm' 
+                                    : 'bg-dark-tertiary text-zinc-100 border border-dark-border rounded-ss-sm'
                             }`}>
                                 {/* Attachments Display */}
                                 {msg.attachments && msg.attachments.length > 0 && (
@@ -321,7 +322,7 @@ export default function AIChatPage() {
                                     <img src={att.preview} className="w-full h-full object-cover rounded-lg border border-indigo-500/50" />
                                     <button 
                                         onClick={() => removeAttachment(index)}
-                                        className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        className="absolute -top-1.5 -end-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                                     >
                                         <X size={12} />
                                     </button>
@@ -334,7 +335,7 @@ export default function AIChatPage() {
                         <button 
                             onClick={() => fileInputRef.current?.click()}
                             className="p-3 text-zinc-400 hover:text-white hover:bg-dark-tertiary rounded-xl transition-colors border border-transparent hover:border-dark-border"
-                            title="Upload Image"
+                            title={t('ai.upload')}
                         >
                             <ImageIcon size={20} />
                         </button>
@@ -352,7 +353,7 @@ export default function AIChatPage() {
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder="Ask the assistant anything..."
+                            placeholder={t('ai.askAnything')}
                             className="flex-1 bg-dark-tertiary border border-dark-border text-white rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none h-12 max-h-32 shadow-inner"
                         />
                         
@@ -370,7 +371,7 @@ export default function AIChatPage() {
                     </div>
                 </div>
                 <div className="text-center mt-2">
-                     <p className="text-[10px] text-zinc-500">The AI assistant can make mistakes. Consider checking important information.</p>
+                     <p className="text-[10px] text-zinc-500">{t('ai.disclaimer')}</p>
                 </div>
             </div>
         </div>

@@ -631,29 +631,8 @@ function seedDefaultData() {
         console.log('No employees found. Waiting for Setup Wizard initialization.');
     }
 
-    // Check if we have any categories
-    const catResult = db.exec('SELECT COUNT(*) as count FROM categories');
-    const categoryCount = catResult.length > 0 ? catResult[0].values[0][0] : 0;
-
-    if (categoryCount === 0) {
-        const defaultCategories = [
-            { name: 'T-Shirts', color: '#3b82f6', icon: 'shirt' },
-            { name: 'Shirts', color: '#8b5cf6', icon: 'shirt' },
-            { name: 'Pants & Jeans', color: '#0ea5e9', icon: 'shirt' },
-            { name: 'Dresses', color: '#ec4899', icon: 'shirt' },
-            { name: 'Jackets', color: '#f59e0b', icon: 'shirt' },
-            { name: 'Shoes', color: '#ef4444', icon: 'package' },
-            { name: 'Accessories', color: '#10b981', icon: 'package' },
-            { name: 'Other', color: '#6b7280', icon: 'package' },
-        ];
-
-        for (const cat of defaultCategories) {
-            db.run('INSERT INTO categories (id, name, color, icon) VALUES (?, ?, ?, ?)',
-                [uuid(), cat.name, cat.color, cat.icon]);
-        }
-
-        console.log('Default categories created');
-    }
+    // Categories are created by the first-launch setup, in the shop's language
+    // (see electron/shared/clothing.json), and can be edited at any time.
 
     // Initialize default settings
     const settingsResult = db.exec('SELECT COUNT(*) as count FROM settings');
@@ -666,13 +645,13 @@ function seedDefaultData() {
             businessAddress: '',
             businessPhone: '',
             businessEmail: '',
-            taxRate: 10,
+            taxRate: 0,
             taxType: 'inclusive',
-            taxName: 'Tax',
-            currency: 'USD',
-            currencySymbol: '$',
-            receiptHeader: 'Thank you for your purchase!',
-            receiptFooter: 'Please come again!',
+            taxName: 'TVA',
+            currency: 'DZD',
+            currencySymbol: 'DA',
+            receiptHeader: '',
+            receiptFooter: '',
         };
 
         for (const [key, value] of Object.entries(defaultSettings)) {

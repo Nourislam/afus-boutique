@@ -1,3 +1,6 @@
+import { t } from '../../i18n';
+import { formatDate as formatLocalDate } from '../../i18n/format';
+import { formatMoney } from '../../i18n/format';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -51,22 +54,22 @@ export default function GiftCardPrintModal({ isOpen, onClose, giftCard }) {
         try {
             // Pass the barcode image data to the backend
             const path = await window.electronAPI.giftCards.savePdf({ ...giftCard, barcodeImage });
-            if (path) toast.success('Saved to ' + path);
+            if (path) toast.success(t('common.savedTo', { path }));
         } catch (error) {
-            toast.error('Failed to save PDF');
+            toast.error(t('gift.pdfFailed'));
         }
     };
 
     const handleSendEmail = async () => {
-        if (!email) return toast.error("Please enter an email");
+        if (!email) return toast.error(t('gift.enterEmail'));
         setSending(true);
         try {
             await window.electronAPI.giftCards.sendEmail({ giftCard: { ...giftCard, barcodeImage }, email });
-            toast.success('Email sent successfully!');
+            toast.success(t('gift.emailSent'));
             setShowEmailInput(false);
         } catch (error) {
             console.error(error);
-            toast.error('Failed to send email. Check settings.');
+            toast.error(t('gift.emailFailed'));
         } finally {
             setSending(false);
         }
@@ -75,13 +78,10 @@ export default function GiftCardPrintModal({ isOpen, onClose, giftCard }) {
     if (!giftCard) return null;
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-        }).format(amount);
+        return formatMoney(amount);
     };
 
-    const modalTitle = giftCard.is_new ? "Gift Card Created" : "Gift Card Details";
+    const modalTitle = giftCard.is_new ? t('gift.createdTitle') : t('gift.detailsTitle');
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
@@ -104,11 +104,11 @@ export default function GiftCardPrintModal({ isOpen, onClose, giftCard }) {
                                         <Gift className="w-6 h-6 text-white" />
                                     </div>
                                     <div>
-                                        <h2 className="text-xl font-bold tracking-wider uppercase">Gift Card</h2>
-                                        <p className="text-xs text-indigo-200 uppercase tracking-widest">{companySettings?.name || 'POS System'}</p>
+                                        <h2 className="text-xl font-bold tracking-wider uppercase">{t('pay.giftCard')}</h2>
+                                        <p className="text-xs text-indigo-200 uppercase tracking-widest">{companySettings?.name || t('app.name')}</p>
                                     </div>
                                 </div>
-                                <div className="text-right">
+                                <div className="text-end">
                                     <h3 className="text-3xl font-bold text-white drop-shadow-md">
                                         {formatCurrency(giftCard.current_balance)}
                                     </h3>
@@ -117,7 +117,7 @@ export default function GiftCardPrintModal({ isOpen, onClose, giftCard }) {
 
                             {/* Middle Info */}
                             <div className="space-y-1">
-                                <p className="text-xs text-indigo-200">Card Number</p>
+                                <p className="text-xs text-indigo-200">{t('gift.number')}</p>
                                 <p className="font-mono text-lg tracking-widest text-white">{giftCard.code}</p>
                             </div>
 
@@ -125,30 +125,30 @@ export default function GiftCardPrintModal({ isOpen, onClose, giftCard }) {
                             <div className="mt-auto pt-4">
                                 <div className="bg-white p-3 rounded-lg shadow-lg flex justify-center items-center h-20">
                                     {barcodeImage ? (
-                                        <img src={barcodeImage} alt="Barcode" className="h-full object-contain" />
+                                        <img src={barcodeImage} alt={t('products.barcode')} className="h-full object-contain" />
                                     ) : (
-                                        <div className="text-black text-xs">Generating Barcode...</div>
+                                        <div className="text-black text-xs">{t('gift.generating')}</div>
                                     )}
                                 </div>
                                 <div className="flex justify-between items-end mt-2">
                                     <p className="text-[10px] text-indigo-300">
-                                        {giftCard.expires_at ? `Expires: ${new Date(giftCard.expires_at).toLocaleDateString()}` : 'No Expiration Date'}
+                                        {giftCard.expires_at ? `Expires: ${formatLocalDate(giftCard.expires_at, 'date')}` : t('gift.noExpiration')}
                                     </p>
-                                    <p className="text-[10px] text-indigo-300">Terms & Conditions Apply</p>
+                                    <p className="text-[10px] text-indigo-300">{t('gift.terms')}</p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <p className="text-sm text-zinc-500 text-center no-print">
-                        This preview shows how the gift card will look when printed.
+                        {t('gift.previewHint')}
                         Use a high-quality printer or card printer for best results.
                     </p>
                 </div>
 
                 {showEmailInput && (
                     <div className="max-w-md mx-auto mt-6 p-4 bg-zinc-800 rounded-lg no-print">
-                        <h3 className="text-sm font-bold mb-2">Send to Email</h3>
+                        <h3 className="text-sm font-bold mb-2">{t('gift.sendEmail')}</h3>
                         <div className="flex gap-2">
                             <Input
                                 placeholder="customer@example.com"
@@ -165,19 +165,19 @@ export default function GiftCardPrintModal({ isOpen, onClose, giftCard }) {
             </ModalBody>
             <ModalFooter>
                 <div className="flex justify-between w-full no-print">
-                    <Button variant="secondary" onClick={onClose}>Close</Button>
+                    <Button variant="secondary" onClick={onClose}>{t('common.close')}</Button>
                     <div className="flex gap-2">
                         <Button variant="outline" onClick={handlePrint}>
-                            <Printer className="w-4 h-4 mr-2" />
-                            Print
+                            <Printer className="w-4 h-4 me-2" />
+                            {t('common.print')}
                         </Button>
                         <Button variant="outline" onClick={() => setShowEmailInput(!showEmailInput)}>
-                            <Mail className="w-4 h-4 mr-2" />
-                            Email
+                            <Mail className="w-4 h-4 me-2" />
+                            {t('common.email')}
                         </Button>
                         <Button onClick={handleSavePdf}>
-                            <Download className="w-4 h-4 mr-2" />
-                            Save PDF
+                            <Download className="w-4 h-4 me-2" />
+                            {t('gift.savePdf')}
                         </Button>
                     </div>
                 </div>
