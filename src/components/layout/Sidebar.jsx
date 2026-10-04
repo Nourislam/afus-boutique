@@ -52,7 +52,7 @@ const NAV_GROUPS = [
 export function Sidebar() {
     const { currentEmployee, logout, hasPermission } = useAuthStore();
     const [currentShiftId, setCurrentShiftId] = useState(null);
-    const [showShiftSummary, setShowShiftSummary] = useState(false);
+    const [showShiftSummary, setShowShiftSummary] = useState(null); // 'logout' | 'close'
     const { t } = useT();
     const features = useSettingsStore(state => state.settings.features);
 
@@ -74,7 +74,7 @@ export function Sidebar() {
 
     // Leaving with an open cash drawer always goes through the closing screen
     const handleLogout = () => {
-        if (currentShiftId) setShowShiftSummary(true);
+        if (currentShiftId) setShowShiftSummary('logout');
         else logout();
     };
 
@@ -119,7 +119,7 @@ export function Sidebar() {
 
             <div className="p-2 border-t border-dark-border space-y-0.5">
                 {currentShiftId && (
-                    <button onClick={() => setShowShiftSummary(true)} className="sidebar-item w-full text-emerald-300 hover:bg-emerald-500/10">
+                    <button onClick={() => setShowShiftSummary('close')} className="sidebar-item w-full text-emerald-300 hover:bg-emerald-500/10">
                         <Banknote className="w-[18px] h-[18px]" />
                         <span>{t('nav.closeShift')}</span>
                     </button>
@@ -133,8 +133,14 @@ export function Sidebar() {
             {showShiftSummary && currentShiftId && (
                 <ShiftSummaryDialog
                     shiftId={currentShiftId}
-                    onClose={() => setShowShiftSummary(false)}
-                    onLogout={() => { setShowShiftSummary(false); setCurrentShiftId(null); logout(); }}
+                    mode={showShiftSummary}
+                    onClose={() => setShowShiftSummary(null)}
+                    onLogout={({ keptOpen = false } = {}) => {
+                        const leaving = showShiftSummary === 'logout';
+                        setShowShiftSummary(null);
+                        if (!keptOpen) setCurrentShiftId(null);
+                        if (leaving) logout();
+                    }}
                 />
             )}
         </aside>

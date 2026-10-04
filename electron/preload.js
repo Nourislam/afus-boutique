@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         getCurrent: (employeeId) => ipcRenderer.invoke('db:shifts:getCurrent', employeeId),
         getStats: (shiftId) => ipcRenderer.invoke('db:shifts:getStats', shiftId),
         getHistory: (range) => ipcRenderer.invoke('db:shifts:getHistory', range),
+        getOpen: () => ipcRenderer.invoke('db:shifts:getOpen'),
+        getLastClosed: () => ipcRenderer.invoke('db:shifts:getLastClosed'),
+        getActivity: (range) => ipcRenderer.invoke('db:shifts:getActivity', range),
     },
 
 

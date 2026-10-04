@@ -367,11 +367,18 @@ ipcMain.handle('db:shifts:start', (_, { employeeId, openingCash, notes }) => {
   return shift;
 });
 
-ipcMain.handle('db:shifts:end', (_, { shiftId, closingCash, notes }) => {
+ipcMain.handle('db:shifts:end', (_, { shiftId, closingCash, notes, closedBy }) => {
+  const expected = shiftService.getShiftStats(shiftId).expected_cash;
   const shift = shiftService.endShift(shiftId, closingCash, notes);
-  logSystemAction('shift_end', `Shift Ended`, { shiftId: shift.id, closingCash }, shift.employee_id);
+  logSystemAction('shift_end', `Shift Ended`, { shiftId: shift.id, closingCash, expectedCash: expected, closedBy: closedBy || shift.employee_id }, closedBy || shift.employee_id);
   return shift;
 });
+
+ipcMain.handle('db:shifts:getOpen', () => shiftService.getOpenShifts());
+
+ipcMain.handle('db:shifts:getLastClosed', () => shiftService.getLastClosedShift());
+
+ipcMain.handle('db:shifts:getActivity', (_, { startDate, endDate }) => shiftService.getEmployeeActivity(startDate, endDate));
 
 ipcMain.handle('db:shifts:getCurrent', (_, employeeId) => {
   return shiftService.getCurrentShift(employeeId);
