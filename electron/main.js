@@ -1,5 +1,5 @@
 console.log('=== MAIN.JS LOADED ===');
-const { app, BrowserWindow, ipcMain, dialog, protocol, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener } = require('./database/init');
@@ -56,7 +56,24 @@ function getStoreSettings() {
 
 let mainWindow;
 
+// Window colours per theme (title bar buttons on Windows, background while loading)
+const WINDOW_THEME = {
+  dark: { background: '#0b0b0d', bar: '#131316', symbols: '#a1a1aa' },
+  light: { background: '#f3f4f7', bar: '#ffffff', symbols: '#52525b' },
+};
+const themeFile = () => path.join(app.getPath('userData'), 'ui-theme.json');
+
+function savedWindowTheme() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(themeFile(), 'utf8'));
+    return saved.theme === 'light' ? 'light' : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
 function createWindow() {
+  const colors = WINDOW_THEME[savedWindowTheme()];
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -67,8 +84,8 @@ function createWindow() {
     // minimise / maximise / close buttons. No duplicated buttons.
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 13 } }
-      : { titleBarStyle: 'hidden', titleBarOverlay: { color: '#111113', symbolColor: '#a1a1aa', height: 40 } }),
-    backgroundColor: '#0b0b0d',
+      : { titleBarStyle: 'hidden', titleBarOverlay: { color: colors.bar, symbolColor: colors.symbols, height: 40 } }),
+    backgroundColor: colors.background,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -462,6 +479,21 @@ ipcMain.handle('backup:reset', async () => {
     console.error('Reset failed:', error);
     return { success: false, error: error.message };
   }
+});
+
+// Light / dark theme chosen in Settings
+ipcMain.handle('app:setTheme', (_, { theme, preference } = {}) => {
+  const value = theme === 'light' ? 'light' : 'dark';
+  const colors = WINDOW_THEME[value];
+  nativeTheme.themeSource = preference === 'system' ? 'system' : value;
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.setBackgroundColor(colors.background);
+    if (process.platform !== 'darwin' && typeof win.setTitleBarOverlay === 'function') {
+      try { win.setTitleBarOverlay({ color: colors.bar, symbolColor: colors.symbols, height: 40 }); } catch { /* no overlay on this window */ }
+    }
+  }
+  try { fs.writeFileSync(themeFile(), JSON.stringify({ theme: value, preference })); } catch { /* only the start-up colour */ }
+  return true;
 });
 
 ipcMain.handle('app:getInfo', () => ({

@@ -124,7 +124,7 @@ export default function DashboardPage() {
         );
     }
 
-    const tooltipStyle = { backgroundColor: '#1a1a1a', border: '1px solid #27272a', borderRadius: '8px', color: '#fff' };
+    const tooltipStyle = { backgroundColor: 'rgb(var(--surface-1))', border: '1px solid rgb(var(--surface-border))', borderRadius: '8px', color: 'rgb(var(--fg))' };
 
     return (
         <div className="h-full overflow-y-auto p-6">
@@ -203,12 +203,12 @@ export default function DashboardPage() {
                             <div className="h-56 ltr">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={salesTrend}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(113,113,122,0.25)" vertical={false} />
                                         <XAxis dataKey="date" stroke="#71717a" tick={{ fill: '#a1a1aa', fontSize: 12 }} axisLine={false} tickLine={false}
                                             tickFormatter={(value) => formatLocalDate(value, 'short')} />
                                         <YAxis stroke="#71717a" tick={{ fill: '#a1a1aa', fontSize: 12 }} axisLine={false} tickLine={false} width={90}
                                             tickFormatter={(value) => money(value)} />
-                                        <Tooltip cursor={{ fill: '#27272a', opacity: 0.4 }} contentStyle={tooltipStyle} itemStyle={{ color: '#fff' }}
+                                        <Tooltip cursor={{ fill: 'rgba(113,113,122,0.15)' }} contentStyle={tooltipStyle} itemStyle={{ color: 'rgb(var(--fg))' }}
                                             labelFormatter={(value) => formatLocalDate(value, 'date')}
                                             formatter={(value) => [money(value), t('dashboard.revenue')]} />
                                         <Bar dataKey="revenue" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={40} />

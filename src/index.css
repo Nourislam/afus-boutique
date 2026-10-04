@@ -5,21 +5,57 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Root Variables */
+/* Theme colours (space-separated RGB so Tailwind can add opacity).
+   Dark is the default; html.theme-light switches every surface and grey. */
 :root {
-  --bg-primary: #0b0b0d;
-  --bg-secondary: #131316;
-  --bg-tertiary: #1c1c21;
+  color-scheme: dark;
+  --surface-0: 11 11 13;
+  --surface-1: 19 19 22;
+  --surface-2: 28 28 33;
+  --surface-border: 38 38 44;
+  --fg: 244 244 245;
+  --scrollbar: 42 42 49;
+  --zinc-50: 250 250 250;
+  --zinc-100: 244 244 245;
+  --zinc-200: 228 228 231;
+  --zinc-300: 212 212 216;
+  --zinc-400: 161 161 170;
+  --zinc-500: 113 113 122;
+  --zinc-600: 82 82 91;
+  --zinc-700: 63 63 70;
+  --zinc-800: 39 39 42;
+  --zinc-900: 24 24 27;
+  --zinc-950: 9 9 11;
   --accent-primary: #6366f1;
   --accent-secondary: #8b5cf6;
   --accent-success: #22c55e;
   --accent-warning: #f59e0b;
   --accent-danger: #ef4444;
-  --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --border-color: #26262c;
   /* Space kept free for the native window buttons (set by TitleBar) */
   --titlebar-height: 40px;
+}
+
+/* Light theme: surfaces become light and the grey scale is reversed, so
+   "light grey text on dark" becomes "dark grey text on light" everywhere. */
+html.theme-light {
+  color-scheme: light;
+  --surface-0: 243 244 247;
+  --surface-1: 255 255 255;
+  --surface-2: 236 237 241;
+  --surface-border: 222 223 229;
+  --fg: 24 24 27;
+  --scrollbar: 205 206 213;
+  --zinc-50: 9 9 11;
+  --zinc-100: 24 24 27;
+  --zinc-200: 39 39 42;
+  --zinc-300: 63 63 70;
+  --zinc-400: 82 82 91;
+  --zinc-500: 113 113 122;
+  --zinc-600: 161 161 170;
+  --zinc-700: 212 212 216;
+  --zinc-800: 228 228 231;
+  --zinc-900: 244 244 245;
+  --zinc-950: 250 250 250;
 }
 
 /* Base Styles */
@@ -42,8 +78,8 @@ body {
      Windows and macOS: Inter for Latin text, Cairo for Arabic. */
   font-family: 'Inter Variable', 'Cairo Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-feature-settings: 'cv11', 'ss01';
-  background-color: #0b0b0d;
-  color: #f4f4f5;
+  background-color: rgb(var(--surface-0));
+  color: rgb(var(--fg));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -86,7 +122,7 @@ textarea.ltr {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a2a31;
+  background: rgb(var(--scrollbar));
   border-radius: 4px;
 }
 
@@ -96,7 +132,7 @@ textarea.ltr {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: rgb(var(--zinc-600));
 }
 
 /* Selection */
@@ -321,6 +357,105 @@ textarea.ltr {
   .segmented > button.active {
     @apply bg-dark-secondary text-white shadow-sm shadow-black/40;
   }
+}
+
+/* Light theme: "white" text means strong text, except on coloured buttons
+   and badges where it must stay white. */
+html.theme-light .text-white,
+html.theme-light .hover\:text-white:hover,
+html.theme-light .segmented > button.active,
+html.theme-light .segmented > button:hover {
+  color: rgb(var(--fg));
+}
+
+html.theme-light :is(.btn-primary, .btn-success, .btn-danger, .btn-warning, .numpad-btn-action, .numpad-btn-danger,
+  .gradient-primary, .gradient-success, .gradient-danger,
+  [class~="bg-indigo-500"], [class~="bg-indigo-600"], [class~="bg-emerald-500"], [class~="bg-emerald-600"],
+  [class~="bg-green-500"], [class~="bg-green-600"], [class~="bg-red-500"], [class~="bg-red-600"],
+  [class~="bg-amber-500"], [class~="bg-amber-600"], [class~="bg-purple-500"], [class~="bg-sky-500"],
+  [class~="bg-accent-primary"], [class~="bg-blue-500"], [class~="bg-blue-600"]),
+html.theme-light :is(.btn-primary, .btn-success, .btn-danger, .btn-warning, .numpad-btn-action, .numpad-btn-danger,
+  .gradient-primary, .gradient-success, .gradient-danger,
+  [class~="bg-indigo-500"], [class~="bg-indigo-600"], [class~="bg-emerald-500"], [class~="bg-emerald-600"],
+  [class~="bg-green-500"], [class~="bg-green-600"], [class~="bg-red-500"], [class~="bg-red-600"],
+  [class~="bg-amber-500"], [class~="bg-amber-600"], [class~="bg-purple-500"], [class~="bg-sky-500"],
+  [class~="bg-accent-primary"], [class~="bg-blue-500"], [class~="bg-blue-600"]) .text-white {
+  color: #fff;
+}
+
+/* Pale accent text (made for dark backgrounds) is darkened on light ones */
+  html.theme-light .text-indigo-100, html.theme-light .hover\:text-indigo-100:hover { color: #4338ca; }
+  html.theme-light .text-indigo-200, html.theme-light .hover\:text-indigo-200:hover { color: #4338ca; }
+  html.theme-light .text-indigo-300, html.theme-light .hover\:text-indigo-300:hover { color: #4338ca; }
+  html.theme-light .text-indigo-400, html.theme-light .hover\:text-indigo-400:hover { color: #4f46e5; }
+  html.theme-light .text-violet-100, html.theme-light .hover\:text-violet-100:hover { color: #6d28d9; }
+  html.theme-light .text-violet-200, html.theme-light .hover\:text-violet-200:hover { color: #6d28d9; }
+  html.theme-light .text-violet-300, html.theme-light .hover\:text-violet-300:hover { color: #6d28d9; }
+  html.theme-light .text-violet-400, html.theme-light .hover\:text-violet-400:hover { color: #7c3aed; }
+  html.theme-light .text-purple-100, html.theme-light .hover\:text-purple-100:hover { color: #7e22ce; }
+  html.theme-light .text-purple-200, html.theme-light .hover\:text-purple-200:hover { color: #7e22ce; }
+  html.theme-light .text-purple-300, html.theme-light .hover\:text-purple-300:hover { color: #7e22ce; }
+  html.theme-light .text-purple-400, html.theme-light .hover\:text-purple-400:hover { color: #9333ea; }
+  html.theme-light .text-fuchsia-100, html.theme-light .hover\:text-fuchsia-100:hover { color: #a21caf; }
+  html.theme-light .text-fuchsia-200, html.theme-light .hover\:text-fuchsia-200:hover { color: #a21caf; }
+  html.theme-light .text-fuchsia-300, html.theme-light .hover\:text-fuchsia-300:hover { color: #a21caf; }
+  html.theme-light .text-fuchsia-400, html.theme-light .hover\:text-fuchsia-400:hover { color: #c026d3; }
+  html.theme-light .text-pink-100, html.theme-light .hover\:text-pink-100:hover { color: #be185d; }
+  html.theme-light .text-pink-200, html.theme-light .hover\:text-pink-200:hover { color: #be185d; }
+  html.theme-light .text-pink-300, html.theme-light .hover\:text-pink-300:hover { color: #be185d; }
+  html.theme-light .text-pink-400, html.theme-light .hover\:text-pink-400:hover { color: #db2777; }
+  html.theme-light .text-rose-100, html.theme-light .hover\:text-rose-100:hover { color: #be123c; }
+  html.theme-light .text-rose-200, html.theme-light .hover\:text-rose-200:hover { color: #be123c; }
+  html.theme-light .text-rose-300, html.theme-light .hover\:text-rose-300:hover { color: #be123c; }
+  html.theme-light .text-rose-400, html.theme-light .hover\:text-rose-400:hover { color: #e11d48; }
+  html.theme-light .text-red-100, html.theme-light .hover\:text-red-100:hover { color: #b91c1c; }
+  html.theme-light .text-red-200, html.theme-light .hover\:text-red-200:hover { color: #b91c1c; }
+  html.theme-light .text-red-300, html.theme-light .hover\:text-red-300:hover { color: #b91c1c; }
+  html.theme-light .text-red-400, html.theme-light .hover\:text-red-400:hover { color: #dc2626; }
+  html.theme-light .text-orange-100, html.theme-light .hover\:text-orange-100:hover { color: #c2410c; }
+  html.theme-light .text-orange-200, html.theme-light .hover\:text-orange-200:hover { color: #c2410c; }
+  html.theme-light .text-orange-300, html.theme-light .hover\:text-orange-300:hover { color: #c2410c; }
+  html.theme-light .text-orange-400, html.theme-light .hover\:text-orange-400:hover { color: #ea580c; }
+  html.theme-light .text-amber-100, html.theme-light .hover\:text-amber-100:hover { color: #b45309; }
+  html.theme-light .text-amber-200, html.theme-light .hover\:text-amber-200:hover { color: #b45309; }
+  html.theme-light .text-amber-300, html.theme-light .hover\:text-amber-300:hover { color: #b45309; }
+  html.theme-light .text-amber-400, html.theme-light .hover\:text-amber-400:hover { color: #d97706; }
+  html.theme-light .text-yellow-100, html.theme-light .hover\:text-yellow-100:hover { color: #a16207; }
+  html.theme-light .text-yellow-200, html.theme-light .hover\:text-yellow-200:hover { color: #a16207; }
+  html.theme-light .text-yellow-300, html.theme-light .hover\:text-yellow-300:hover { color: #a16207; }
+  html.theme-light .text-yellow-400, html.theme-light .hover\:text-yellow-400:hover { color: #ca8a04; }
+  html.theme-light .text-green-100, html.theme-light .hover\:text-green-100:hover { color: #15803d; }
+  html.theme-light .text-green-200, html.theme-light .hover\:text-green-200:hover { color: #15803d; }
+  html.theme-light .text-green-300, html.theme-light .hover\:text-green-300:hover { color: #15803d; }
+  html.theme-light .text-green-400, html.theme-light .hover\:text-green-400:hover { color: #16a34a; }
+  html.theme-light .text-emerald-100, html.theme-light .hover\:text-emerald-100:hover { color: #047857; }
+  html.theme-light .text-emerald-200, html.theme-light .hover\:text-emerald-200:hover { color: #047857; }
+  html.theme-light .text-emerald-300, html.theme-light .hover\:text-emerald-300:hover { color: #047857; }
+  html.theme-light .text-emerald-400, html.theme-light .hover\:text-emerald-400:hover { color: #059669; }
+  html.theme-light .text-teal-100, html.theme-light .hover\:text-teal-100:hover { color: #0f766e; }
+  html.theme-light .text-teal-200, html.theme-light .hover\:text-teal-200:hover { color: #0f766e; }
+  html.theme-light .text-teal-300, html.theme-light .hover\:text-teal-300:hover { color: #0f766e; }
+  html.theme-light .text-teal-400, html.theme-light .hover\:text-teal-400:hover { color: #0d9488; }
+  html.theme-light .text-cyan-100, html.theme-light .hover\:text-cyan-100:hover { color: #0e7490; }
+  html.theme-light .text-cyan-200, html.theme-light .hover\:text-cyan-200:hover { color: #0e7490; }
+  html.theme-light .text-cyan-300, html.theme-light .hover\:text-cyan-300:hover { color: #0e7490; }
+  html.theme-light .text-cyan-400, html.theme-light .hover\:text-cyan-400:hover { color: #0891b2; }
+  html.theme-light .text-sky-100, html.theme-light .hover\:text-sky-100:hover { color: #0369a1; }
+  html.theme-light .text-sky-200, html.theme-light .hover\:text-sky-200:hover { color: #0369a1; }
+  html.theme-light .text-sky-300, html.theme-light .hover\:text-sky-300:hover { color: #0369a1; }
+  html.theme-light .text-sky-400, html.theme-light .hover\:text-sky-400:hover { color: #0284c7; }
+  html.theme-light .text-blue-100, html.theme-light .hover\:text-blue-100:hover { color: #1d4ed8; }
+  html.theme-light .text-blue-200, html.theme-light .hover\:text-blue-200:hover { color: #1d4ed8; }
+  html.theme-light .text-blue-300, html.theme-light .hover\:text-blue-300:hover { color: #1d4ed8; }
+  html.theme-light .text-blue-400, html.theme-light .hover\:text-blue-400:hover { color: #2563eb; }
+
+html.theme-light .modal-content,
+html.theme-light .segmented > button.active {
+  box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.18);
+}
+
+html.theme-light .modal-overlay {
+  background-color: rgb(24 24 27 / 0.45);
 }
 
 /* Gradient backgrounds */

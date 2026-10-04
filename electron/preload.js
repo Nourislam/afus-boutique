@@ -268,6 +268,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Application/version information and local data location
     app: {
         getInfo: () => ipcRenderer.invoke('app:getInfo'),
+        setTheme: (theme, preference) => ipcRenderer.invoke('app:setTheme', { theme, preference }),
     },
 
     // Printers installed in the operating system

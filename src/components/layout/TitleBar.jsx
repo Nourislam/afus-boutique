@@ -39,7 +39,7 @@ export function TitleBar({ bare = false }) {
 
     return (
         <div
-            className="h-10 flex-none bg-[#111113] border-b border-dark-border flex items-center gap-4 titlebar-drag select-none"
+            className="h-10 flex-none bg-dark-secondary border-b border-dark-border flex items-center gap-4 titlebar-drag select-none"
             style={reserved}
             onDoubleClick={() => window.electronAPI?.maximize()}
         >

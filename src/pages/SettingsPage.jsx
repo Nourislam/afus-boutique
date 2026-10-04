@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Building, Receipt, Percent, Database, Save, Download, Upload, Mail, Lock, CheckCircle, Printer, ScanLine, Hash,
-    Languages, Shirt, Tags, Users, ToggleRight, Globe, ScrollText, Settings as SettingsIcon,
+    Languages, Shirt, Tags, Users, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, TextArea } from '../components/ui/Input';
@@ -24,19 +24,20 @@ import { SystemLogs } from '../components/settings/SystemLogs';
 import { EcommerceSettings } from '../components/settings/EcommerceSettings';
 import { LANGUAGES, setLanguage, useT } from '../i18n';
 import { formatMoney } from '../i18n/format';
+import { getThemePreference, setThemePreference } from '../lib/theme';
 
-const BASE_TABS = ['business', 'language', 'receipt', 'printers', 'scanner', 'sku', 'catalog', 'features', 'backup'];
+const BASE_TABS = ['business', 'language', 'appearance', 'receipt', 'printers', 'scanner', 'sku', 'catalog', 'features', 'backup'];
 
 // Settings sections, grouped like the shop thinks about them
 const SECTION_GROUPS = [
-    { id: 'shop', ids: ['business', 'language', 'receipt'] },
+    { id: 'shop', ids: ['business', 'language', 'appearance', 'receipt'] },
     { id: 'devices', ids: ['printers', 'scanner'] },
     { id: 'catalog', ids: ['catalog', 'sku'] },
     { id: 'app', ids: ['features', 'mail', 'ecommerce', 'backup', 'logs'] },
 ];
 
 const SECTION_ICONS = {
-    business: Building, language: Languages, receipt: Receipt, printers: Printer, scanner: ScanLine,
+    business: Building, language: Languages, appearance: Palette, receipt: Receipt, printers: Printer, scanner: ScanLine,
     sku: Hash, catalog: Shirt, features: ToggleRight, mail: Mail, ecommerce: Globe, backup: Database, logs: ScrollText,
 };
 
@@ -65,6 +66,7 @@ export default function SettingsPage() {
         email_secure: false,
     });
     const [features, setFeatures] = useState(resolveFeatures());
+    const [theme, setTheme] = useState(getThemePreference);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -386,6 +388,44 @@ export default function SettingsPage() {
                                     </div>
                                 </Card>
                             </div>
+                        )}
+
+                        {activeTab === 'appearance' && (
+                            <Card className="space-y-6">
+                                <SectionHeader icon={Palette} color="bg-indigo-500/20 text-indigo-400" title={t('settings.tab.appearance')} text={t('settings.themeText')} />
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    {[
+                                        { id: 'dark', icon: Moon, preview: ['#0b0b0d', '#131316', '#1c1c21', '#f4f4f5'] },
+                                        { id: 'light', icon: Sun, preview: ['#f3f4f7', '#ffffff', '#ecedf1', '#18181b'] },
+                                        { id: 'system', icon: Monitor, preview: null },
+                                    ].map(({ id, icon: Icon, preview }) => (
+                                        <button key={id} type="button" onClick={() => { setTheme(id); setThemePreference(id); }}
+                                            aria-pressed={theme === id}
+                                            className={`rounded-xl border-2 p-2 text-start transition-colors ${theme === id ? 'border-indigo-500' : 'border-dark-border hover:border-zinc-600'}`}>
+                                            {/* Small picture of the screen in this theme */}
+                                            <div className="h-24 rounded-lg overflow-hidden flex" dir="ltr">
+                                                {(preview ? [preview] : [['#0b0b0d', '#131316', '#1c1c21', '#f4f4f5'], ['#f3f4f7', '#ffffff', '#ecedf1', '#18181b']]).map((p, i) => (
+                                                    <div key={i} className="flex-1 flex" style={{ background: p[0] }}>
+                                                        <div className="w-1/4 h-full" style={{ background: p[1], borderInlineEnd: `1px solid ${p[2]}` }} />
+                                                        <div className="flex-1 p-2 space-y-1.5">
+                                                            <div className="h-2 w-2/3 rounded" style={{ background: p[3], opacity: 0.8 }} />
+                                                            <div className="h-6 rounded" style={{ background: p[1], border: `1px solid ${p[2]}` }} />
+                                                            <div className="h-2 w-1/3 rounded bg-indigo-500" />
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="flex items-center gap-2 px-1 pt-2 pb-1">
+                                                <Icon className="w-4 h-4" />
+                                                <span className="font-medium text-sm flex-1">{t(`settings.theme.${id}`)}</span>
+                                                {theme === id && <CheckCircle className="w-4 h-4 text-indigo-400" />}
+                                            </div>
+                                            <p className="px-1 text-xs text-zinc-500">{t(`settings.theme.${id}Hint`)}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="form-hint">{t('settings.themeNote')}</p>
+                            </Card>
                         )}
 
                         {activeTab === 'receipt' && (

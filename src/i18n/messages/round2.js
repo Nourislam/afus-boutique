@@ -207,4 +207,13 @@ export default {
     'reports.qtySold': ["Pieces sold", "Pièces vendues", "القطع المباعة"],
     'reports.share': ["Share", "Part", "الحصة"],
     'reports.otherPayments': ["Card, transfer, kridi…", "Carte, virement, crédit…", "بطاقة، تحويل، كريدي…"],
+    'settings.tab.appearance': ["Appearance", "Apparence", "المظهر"],
+    'settings.themeText': ["Colours of the application: dark, light, or the same as the computer.", "Couleurs de l'application : sombre, clair, ou comme l'ordinateur.", "ألوان التطبيق: داكن، فاتح، أو مثل الحاسوب."],
+    'settings.theme.dark': ["Dark", "Sombre", "داكن"],
+    'settings.theme.darkHint': ["Easy on the eyes in the evening and in dim shops.", "Repose les yeux le soir et dans les boutiques peu éclairées.", "مريح للعين في المساء وفي المحلات قليلة الإضاءة."],
+    'settings.theme.light': ["Light", "Clair", "فاتح"],
+    'settings.theme.lightHint': ["Easier to read in a bright shop or in daylight.", "Plus lisible dans une boutique lumineuse ou en plein jour.", "أوضح للقراءة في محل مضيء أو في ضوء النهار."],
+    'settings.theme.system': ["Like the computer", "Comme l'ordinateur", "مثل الحاسوب"],
+    'settings.theme.systemHint': ["Follows the Windows or macOS setting, also when it changes during the day.", "Suit le réglage de Windows ou macOS, même s’il change dans la journée.", "يتبع إعداد ويندوز أو ماك، حتى عندما يتغير خلال اليوم."],
+    'settings.themeNote': ["Applied immediately and kept on this computer; each computer of the shop can have its own theme. Receipts and labels always print in black on white.", "Appliqué tout de suite et gardé sur cet ordinateur ; chaque poste peut avoir son thème. Les tickets et étiquettes s'impriment toujours en noir sur blanc.", "يُطبَّق فوراً ويُحفظ على هذا الحاسوب؛ يمكن لكل حاسوب في المحل أن يكون له مظهره. التذاكر والملصقات تُطبع دائماً بالأسود على الأبيض."],
 };

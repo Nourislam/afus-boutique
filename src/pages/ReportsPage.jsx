@@ -135,7 +135,7 @@ export default function ReportsPage() {
     };
 
     const formatCurrency = (amount) => formatMoney(amount || 0);
-    const tooltipStyle = { backgroundColor: '#131316', border: '1px solid #26262c', borderRadius: '8px' };
+    const tooltipStyle = { backgroundColor: 'rgb(var(--surface-1))', border: '1px solid rgb(var(--surface-border))', borderRadius: '8px', color: 'rgb(var(--fg))' };
     const share = (value, total) => (total > 0 ? Math.round((value / total) * 100) : 0);
     const paymentsTotal = paymentMethods.reduce((sum, m) => sum + (m.total || 0), 0);
     const categoryTotal = categoryData.reduce((sum, c) => sum + (c.value || 0), 0);
@@ -196,7 +196,7 @@ export default function ReportsPage() {
                                                         <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
                                                     </linearGradient>
                                                 </defs>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#26262c" vertical={false} />
+                                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(113,113,122,0.25)" vertical={false} />
                                                 <XAxis dataKey="dateLabel" stroke="#52525b" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
                                                 <YAxis stroke="#52525b" tick={{ fill: '#a1a1aa', fontSize: 12 }} width={70} tickFormatter={(v) => new Intl.NumberFormat('fr-DZ', { notation: 'compact' }).format(v)} />
                                                 <Tooltip contentStyle={tooltipStyle} formatter={(value) => formatCurrency(value)} />
@@ -261,7 +261,7 @@ export default function ReportsPage() {
                                     <div className="h-56" dir="ltr">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <BarChart data={salesByDate}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#26262c" vertical={false} />
+                                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(113,113,122,0.25)" vertical={false} />
                                                 <XAxis dataKey="dateLabel" stroke="#52525b" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
                                                 <YAxis stroke="#52525b" tick={{ fill: '#a1a1aa', fontSize: 12 }} allowDecimals={false} />
                                                 <Tooltip contentStyle={tooltipStyle} />
