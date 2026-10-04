@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { translateError } from '../i18n/errors';
-import { Check, ChevronRight, ChevronLeft, Store, User, Percent, Printer, Languages, WifiOff, Shirt } from 'lucide-react';
+import { Check, ChevronRight, ChevronLeft, Store, User, Percent, Printer, Languages, WifiOff } from 'lucide-react';
+import { AfusLogo } from './brand/AfusLogo';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Select } from './ui/Select';
@@ -159,9 +160,7 @@ export default function SetupWizard({ onComplete }) {
             case 'welcome':
                 return (
                     <div className="text-center py-6">
-                        <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                            <Shirt className="w-12 h-12 text-white" />
-                        </div>
+                        <AfusLogo size={96} className="mx-auto mb-6" title={t('app.name')} />
                         <h2 className="text-3xl font-bold mb-2">{t('setup.welcome', { app: t('app.name') })}</h2>
                         <p className="text-zinc-400 text-lg max-w-md mx-auto">{t('setup.welcomeText')}</p>
 

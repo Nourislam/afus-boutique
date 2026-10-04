@@ -1,7 +1,7 @@
 // [English, French, Arabic]
 export default {
     // Application identity (the shop's own name/logo is shown where available)
-    'app.name': ['Hanout', 'Hanout', 'حانوت'],
+    'app.name': ['afus boutique', 'afus boutique', 'afus boutique'],
     'app.tagline': ['Software for Algerian clothing & fashion shops', 'Logiciel pour boutiques de vêtements et accessoires en Algérie', 'برنامج محلات الملابس والإكسسوارات في الجزائر'],
     'app.loading': ['Loading…', 'Chargement…', 'جارٍ التحميل…'],
 

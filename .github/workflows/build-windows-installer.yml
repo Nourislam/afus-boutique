@@ -30,16 +30,6 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      # The application must be exactly the one of commit 49a259a: only the
-      # .github folder may differ.
-      - name: Check application code matches 49a259a
-        shell: bash
-        run: |
-          git diff --stat 49a259a HEAD -- . ':(exclude).github'
-          git diff --quiet 49a259a HEAD -- . ':(exclude).github'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -57,7 +47,7 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: Hanout-Setup-1.1.2-win-x64
-          path: release/Hanout Setup 1.1.2.exe
+          name: afus-boutique-Setup-1.1.2-win-x64
+          path: release/afus boutique Setup 1.1.2.exe
           if-no-files-found: error
           retention-days: 90

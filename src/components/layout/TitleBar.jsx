@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { WifiOff } from 'lucide-react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { ShopLogo } from '../shop/ShopLogo';
+import { AfusLogo } from '../brand/AfusLogo';
 import { useT } from '../../i18n';
 import { formatDate as formatLocalDate } from '../../i18n/format';
 
@@ -30,8 +31,9 @@ export function TitleBar({ bare = false }) {
     if (bare) {
         // Setup and loading screens: only a strip to move the window
         return (
-            <div className="h-10 flex-none titlebar-drag flex items-center text-xs text-zinc-600" style={reserved}
+            <div className="h-10 flex-none titlebar-drag flex items-center gap-2 text-xs text-zinc-500" style={reserved}
                 onDoubleClick={() => window.electronAPI?.maximize()}>
+                <AfusLogo size={18} />
                 {t('app.name')}
             </div>
         );
@@ -46,7 +48,11 @@ export function TitleBar({ bare = false }) {
             <div className="flex items-center gap-2.5 min-w-0">
                 <ShopLogo fileName={settings.shopLogo} size={22} />
                 <span className="font-semibold text-sm text-white truncate max-w-[260px]">{settings.businessName || t('app.name')}</span>
-                <span className="text-[11px] text-zinc-600 hidden md:inline">· {t('app.name')}</span>
+                <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] text-zinc-500 whitespace-nowrap">
+                    <span className="text-zinc-600">·</span>
+                    <AfusLogo size={14} />
+                    {t('app.name')}
+                </span>
             </div>
 
             <div className="flex-1" />

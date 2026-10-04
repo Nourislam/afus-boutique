@@ -446,7 +446,7 @@ class InvoiceService {
 
         return await emailService.sendEmail({
             to,
-            subject: `Invoice ${creditSale.invoice_number} from ${businessInfo.businessName || 'Hanout'}`,
+            subject: `Invoice ${creditSale.invoice_number} from ${businessInfo.businessName || 'afus boutique'}`,
             html,
             attachments: pdfPath ? [{
                 filename: `Invoice_${creditSale.invoice_number}.pdf`,

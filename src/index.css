@@ -510,3 +510,8 @@ html.theme-light .modal-overlay {
   outline: none !important;
   box-shadow: none !important;
 }
+/* afus logo: blue square on the dark theme, white square on the light theme */
+.afus-logo-bg { fill: #1239B0; }
+.afus-logo-a { fill: #FFFFFF; }
+html.theme-light .afus-logo-bg { fill: #FFFFFF; }
+html.theme-light .afus-logo-a { fill: #1239B0; }

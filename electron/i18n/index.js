@@ -101,7 +101,7 @@ const MESSAGES = {
     'dialog.backupFiles': ['Backup (SQLite)', 'Sauvegarde (SQLite)', 'نسخة احتياطية (SQLite)'],
     'dialog.imageFiles': ['Images', 'Images', 'الصور'],
     'dialog.dataFolder': ['Data folder', 'Dossier des données', 'مجلد البيانات'],
-    'app.name': ['Hanout', 'Hanout', 'حانوت'],
+    'app.name': ['afus boutique', 'afus boutique', 'afus boutique'],
     'labels.sampleName': ['Classic T-shirt', 'T-shirt classique', 'تيشيرت كلاسيك'],
 };
 

@@ -190,7 +190,7 @@ if (!gotTheLock) {
       console.error('Database initialization failed:', error);
       // The shop's language is not known yet: show the message in the three languages
       const lines = ['ar', 'fr', 'en'].map(l => `${i18n.translate(l, 'dialog.dbFailed')}\n${i18n.translate(l, 'dialog.dataFolder')}: ${app.getPath('userData')}`);
-      dialog.showErrorBox(i18n.translate('fr', 'dialog.startFailed', { app: 'Hanout' }),
+      dialog.showErrorBox(i18n.translate('fr', 'dialog.startFailed', { app: 'afus boutique' }),
         `${lines.join('\n\n')}\n\n${error.message}`);
       app.quit();
       return;
@@ -3588,7 +3588,7 @@ ipcMain.handle('creditInvoice:sendEmail', async (_, { creditSaleId, email }) => 
       to: email || creditSale.customer_email,
       creditSale,
       businessInfo: {
-        businessName: settings.businessName || 'Hanout',
+        businessName: settings.businessName || 'afus boutique',
         businessAddress: settings.businessAddress,
         businessPhone: settings.businessPhone,
         businessEmail: settings.businessEmail
@@ -3636,7 +3636,7 @@ ipcMain.handle('creditInvoice:sendReminder', async (_, { creditSaleId, email }) 
     to: email || creditSale.customer_email,
     creditSale,
     businessInfo: {
-      businessName: settings.businessName || 'Hanout',
+      businessName: settings.businessName || 'afus boutique',
       businessPhone: settings.businessPhone,
       businessEmail: settings.businessEmail
     }
@@ -3725,7 +3725,7 @@ ipcMain.handle('email:sendGiftCard', async (_, { giftCard, email }) => {
     if (emailService.initEmailService(emailConfig)) {
       await emailService.sendEmail({
         to: email,
-        subject: `Your Gift Card from ${settings.businessName || 'Hanout'}`,
+        subject: `Your Gift Card from ${settings.businessName || 'afus boutique'}`,
         html: `
                 <h2>Here is your Gift Card!</h2>
                 <p>Enjoy your gift card of <strong>${receiptService.formatCurrency(giftCard.current_balance)}</strong>.</p>
