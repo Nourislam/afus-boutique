@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Package, Trash2, Shirt } from 'lucide-react';
+import { Trash2, Shirt, ImagePlus, Wand2, Barcode, ChevronDown } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 import { Button } from '../ui/Button';
 import { Input, TextArea } from '../ui/Input';
@@ -7,6 +7,8 @@ import { Select } from '../ui/Select';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { toast } from '../ui/Toast';
 import { VariantEditor } from './VariantEditor';
+import { CategoryManagerModal } from './CategoryManagerModal';
+import { Combobox } from '../ui/Combobox';
 import { QrPreview } from './QrPreview';
 import { useAuthStore } from '../../stores/authStore';
 import { t } from '../../i18n';
@@ -59,7 +61,7 @@ function toRow(v) {
  * each with its own SKU (encoded in its QR label), stock, price and cost.
  * Simple products without variants work exactly as before.
  */
-export function ProductFormModal({ isOpen, onClose, product, categories, onSave, initialValues }) {
+export function ProductFormModal({ isOpen, onClose, product, categories, onSave, initialValues, onCategoriesChanged }) {
     const [formData, setFormData] = useState(EMPTY_PRODUCT);
     const [hasVariants, setHasVariants] = useState(false);
     const [variants, setVariants] = useState([]);
@@ -69,6 +71,8 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
     const [loadingVariants, setLoadingVariants] = useState(false);
     const [imagePreview, setImagePreview] = useState(null);
     const [errors, setErrors] = useState([]);
+    const [showMore, setShowMore] = useState(false);
+    const [showCategories, setShowCategories] = useState(false);
     const { currentEmployee } = useAuthStore();
 
     useEffect(() => {
@@ -164,6 +168,18 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
 
         setLoading(true);
         try {
+            // Pieces whose SKU is not generated yet get one now
+            let rows = variants;
+            const missing = useVariants ? rows.filter(v => v.is_active && !String(v.sku || '').trim()) : [];
+            if (missing.length) {
+                const skus = await window.electronAPI.catalog.generateSkus(
+                    { name: formData.name, sku: formData.sku },
+                    missing.map(v => ({ id: v.id || null, color: v.color, color_code: v.color_code, size: v.size })),
+                    rows.map(v => String(v.sku || '').trim().toUpperCase()).filter(Boolean));
+                const byKey = new Map(missing.map((v, i) => [v.key, skus[i]]));
+                rows = rows.map(v => (byKey.has(v.key) ? { ...v, sku: byKey.get(v.key) } : v));
+                setVariants(rows);
+            }
             const data = {
                 ...formData,
                 id: product?.id || uuid(),
@@ -180,7 +196,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 barcode: formData.barcode.trim() || null,
             };
             const variantPayload = useVariants
-                ? variants.map(v => ({
+                ? rows.map(v => ({
                     id: v.isNew ? null : v.id,
                     color: v.color,
                     color_code: v.color_code || null,
@@ -216,129 +232,187 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
         }
     };
 
+    const generateSimpleSku = async () => {
+        if (!formData.name.trim()) return toast.error(t('variants.nameFirst'));
+        try {
+            const [sku] = await window.electronAPI.catalog.generateSkus({ name: formData.name, sku: '' }, [{ id: null }], []);
+            set('sku', sku);
+        } catch (error) {
+            toast.error(translateErrorLines(error).join(' '));
+        }
+        return undefined;
+    };
+
+    const generateSimpleBarcode = async () => {
+        try {
+            const [code] = await window.electronAPI.catalog.generateBarcodes(1, []);
+            set('barcode', code);
+        } catch (error) {
+            toast.error(translateErrorLines(error).join(' '));
+        }
+    };
+
+    const createBrand = async (name) => {
+        try {
+            await window.electronAPI.brands.create({ name });
+            setBrands(await window.electronAPI.brands.getAll().then(list => list.filter(b => b.is_active)));
+        } catch { /* already exists */ }
+        return name.trim();
+    };
+
+    const brandOptions = brands.map(b => ({ value: b.name, label: b.name }));
+    if (formData.brand && !brandOptions.some(o => o.value === formData.brand)) brandOptions.unshift({ value: formData.brand, label: formData.brand });
+
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={product ? t('products.edit') : t('products.add')} size="full">
-            <form onSubmit={handleSubmit}>
-                <ModalBody className="max-h-[75vh] overflow-y-auto">
-                    <p className="text-xs text-zinc-500 mb-3">{t('products.requiredHint')}</p>
-                    <div className="grid grid-cols-4 gap-4">
-                        <div className="col-span-1">
-                            <label className="form-label mb-2 block">{t('products.image')}</label>
-                            <div className="aspect-square bg-dark-tertiary rounded-lg flex flex-col items-center justify-center overflow-hidden relative border-2 border-dashed border-zinc-600 hover:border-zinc-500 transition-colors">
+        <Modal isOpen={isOpen} onClose={onClose} title={product ? t('products.edit') : t('products.add')} size="xl" closeOnOverlay={false}>
+            <form onSubmit={handleSubmit} className="flex flex-col min-h-0">
+                <ModalBody className="space-y-6">
+                    {/* Essentials */}
+                    <section className="flex gap-5 items-start">
+                        <div className="w-32 flex-none">
+                            <div className="aspect-[4/5] bg-dark-primary rounded-xl flex flex-col items-center justify-center overflow-hidden relative border border-dashed border-zinc-700 hover:border-zinc-500 transition-colors">
                                 {imagePreview ? (
                                     <>
-                                        <img src={imagePreview} alt={t('products.preview')} className="w-full h-full object-cover" />
-                                        <button type="button" onClick={handleRemoveImage} className="absolute top-2 end-2 p-1 bg-red-500 rounded-full hover:bg-red-600">
-                                            <Trash2 className="w-4 h-4 text-white" />
+                                        <img src={imagePreview} alt="" className="w-full h-full object-cover" />
+                                        <button type="button" onClick={handleRemoveImage} className="absolute top-1.5 end-1.5 p-1 bg-black/70 rounded-full hover:bg-red-500" aria-label={t('common.delete')}>
+                                            <Trash2 className="w-3.5 h-3.5 text-white" />
                                         </button>
                                     </>
                                 ) : (
-                                    <label className="cursor-pointer flex flex-col items-center p-4 text-center">
-                                        <Package className="w-10 h-10 text-zinc-500 mb-2" />
-                                        <span className="text-sm text-zinc-400">{t('products.clickUpload')}</span>
-                                        <span className="text-xs text-zinc-500 mt-1">{t('products.imageHint')}</span>
+                                    <label className="cursor-pointer w-full h-full flex flex-col items-center justify-center p-2 text-center">
+                                        <ImagePlus className="w-7 h-7 text-zinc-500 mb-1.5" />
+                                        <span className="text-xs text-zinc-400">{t('products.image')}</span>
                                         <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
                                     </label>
                                 )}
                             </div>
-                            <label className="flex items-center gap-2 mt-4 text-sm">
+                        </div>
+                        <div className="flex-1 min-w-0 grid grid-cols-2 gap-x-4 gap-y-3">
+                            <Input label={t('products.name')} value={formData.name} onChange={(e) => set('name', e.target.value)}
+                                placeholder={t('products.namePlaceholder')} containerClassName="col-span-2" autoFocus={!product} />
+                            <Input label={t('products.sellPrice')} type="number" min="0" step="1" value={formData.price}
+                                onChange={(e) => set('price', e.target.value)} placeholder="0" className="tabular" />
+                            <div className="form-group">
+                                <label className="form-label flex items-center justify-between">
+                                    {t('products.category')}
+                                    <button type="button" onClick={() => setShowCategories(true)} className="text-xs text-indigo-300 hover:text-indigo-200">{t('products.manageCategoriesShort')}</button>
+                                </label>
+                                <Select value={formData.category_id} onChange={(v) => set('category_id', v)}
+                                    options={[{ value: '', label: t('categories.none') }, ...categories.map(c => ({ value: c.id, label: c.name }))]} />
+                            </div>
+                            <Combobox
+                                label={t('products.brand')}
+                                value={formData.brand}
+                                onChange={(v) => set('brand', v)}
+                                options={brandOptions}
+                                placeholder={t('brands.pick')}
+                                createLabel={t('brands.addNew')}
+                                onCreate={createBrand}
+                                emptyText={t('common.noResults')}
+                            />
+                            <label className="flex items-center gap-2 text-sm self-end h-10 cursor-pointer">
                                 <input type="checkbox" checked={formData.is_active} onChange={(e) => set('is_active', e.target.checked)} className="w-4 h-4 rounded" />
                                 {t('products.activeHint')}
                             </label>
+                            <p className="col-span-2 form-hint">{t('products.requiredHint')}</p>
                         </div>
+                    </section>
 
-                        <div className="col-span-3 grid grid-cols-3 gap-4 content-start">
-                            <Input label={t('products.name')} value={formData.name} onChange={(e) => set('name', e.target.value)}
-                                placeholder={t('products.namePlaceholder')} containerClassName="col-span-2" />
-                            <div className="form-group">
-                                <label className="form-label">{t('products.brand')}</label>
-                                <input
-                                    className="input"
-                                    list="brand-options"
-                                    value={formData.brand}
-                                    onChange={(e) => set('brand', e.target.value)}
-                                    placeholder={t('brands.pick')}
-                                />
-                                <datalist id="brand-options">
-                                    {brands.map(b => <option key={b.id} value={b.name} />)}
-                                </datalist>
-                            </div>
-                            <Select label={t('products.category')} value={formData.category_id} onChange={(v) => set('category_id', v)}
-                                options={[{ value: '', label: t('categories.none') }, ...categories.map(c => ({ value: c.id, label: c.name }))]} />
-                            <Select label={t('products.supplier')} value={formData.supplier_id} onChange={(v) => set('supplier_id', v)}
-                                options={[{ value: '', label: t('products.noSupplier') }, ...suppliers.map(s => ({ value: s.id, label: s.name }))]} />
-                            <Select label={t('products.gender')} value={formData.gender} onChange={(v) => set('gender', v)}
-                                options={[{ value: '', label: '—' }, ...GENDERS.map(g => ({ value: g.code, label: genderLabel(g.code) }))]} />
-                            <Select label={t('products.season')} value={formData.season} onChange={(v) => set('season', v)}
-                                options={[
-                                    { value: '', label: '—' },
-                                    ...SEASONS.map(x => ({ value: x.code, label: seasonLabel(x.code) })),
-                                    // Free text typed in an older version stays selectable
-                                    ...(formData.season && !SEASONS.some(x => x.code === formData.season) ? [{ value: formData.season, label: formData.season }] : []),
-                                ]} />
-                            <Input label={t('products.collection')} value={formData.collection} onChange={(e) => set('collection', e.target.value)}
-                                placeholder={t('products.collectionPlaceholder')} />
-                            <Input label={hasVariants ? t('products.basePrice') : t('products.sellPrice')} type="number" step="0.01" value={formData.price}
-                                onChange={(e) => set('price', e.target.value)} placeholder="0.00" />
-                            <Input label={hasVariants ? t('products.baseCost') : t('products.cost')} type="number" step="0.01" value={formData.cost}
-                                onChange={(e) => set('cost', e.target.value)} placeholder="0.00" />
-                            <Input label={t('products.taxRate')} type="number" step="0.1" value={formData.tax_rate}
-                                onChange={(e) => set('tax_rate', e.target.value)} />
-                            <div className="col-span-2">
-                                <TextArea label={t('products.description')} value={formData.description} onChange={(e) => set('description', e.target.value)} className="min-h-[60px]" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="mt-6 pt-4 border-t border-dark-border">
-                        <label className="flex items-center gap-3 cursor-pointer">
-                            <input type="checkbox" checked={hasVariants} onChange={(e) => setHasVariants(e.target.checked)} className="w-4 h-4 rounded" />
-                            <Shirt className="w-4 h-4 text-accent-primary" />
+                    {/* Colours and sizes */}
+                    <section className="rounded-xl border border-dark-border">
+                        <label className="flex items-center gap-3 px-4 h-12 cursor-pointer select-none">
+                            <span className={`relative w-9 h-5 rounded-full transition-colors ${hasVariants ? 'bg-indigo-500' : 'bg-zinc-700'}`}>
+                                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${hasVariants ? 'start-[18px]' : 'start-0.5'}`} />
+                            </span>
+                            <input type="checkbox" checked={hasVariants} onChange={(e) => setHasVariants(e.target.checked)} className="sr-only" />
+                            <Shirt className="w-4 h-4 text-indigo-300" />
                             <span className="font-medium">{t('products.hasVariants')}</span>
                         </label>
-                        {product && !product.has_variants && hasVariants && (
-                            <p className="text-xs text-amber-400 mt-2">
-                                The current stock of this product ({product.stock_quantity}) will be replaced by the stock you enter per variant.
-                            </p>
-                        )}
-                    </div>
-
-                    {hasVariants ? (
-                        <div className="mt-4 space-y-3">
-                            <Input
-                                label={t('products.productCode')}
-                                value={formData.sku}
-                                onChange={(e) => set('sku', e.target.value.toUpperCase())}
-                                containerClassName="max-w-xs"
-                            />
-                            {loadingVariants ? (
-                                <div className="text-sm text-zinc-500">{t('products.loadingVariants')}</div>
-                            ) : (
-                                <VariantEditor
-                                    suggestedSizeSet={sizeSetForCategory(categories.find(c => c.id === formData.category_id)?.name)}
-                                    product={{ name: formData.name, sku: formData.sku, price: formData.price, cost: formData.cost }}
-                                    variants={variants}
-                                    onChange={setVariants}
-                                />
+                        <div className="border-t border-dark-border p-4">
+                            {product && !product.has_variants && hasVariants && (
+                                <p className="text-xs text-amber-300 mb-3">{t('products.stockReplaced', { n: product.stock_quantity })}</p>
                             )}
-                        </div>
-                    ) : (
-                        <div className="mt-4 grid grid-cols-4 gap-4 items-start">
-                            <Input label={t('products.colSku')} value={formData.sku} onChange={(e) => set('sku', e.target.value)} placeholder={t('products.skuHint')} data-scan-passthrough />
-                            <Input label={t('products.barcode')} value={formData.barcode} onChange={(e) => set('barcode', e.target.value)} placeholder={t('products.barcodeHint')} data-scan-passthrough />
-                            <Input label={t('products.stock')} type="number" value={formData.stock_quantity} onChange={(e) => set('stock_quantity', e.target.value)} />
-                            <Input label={t('products.minStock')} type="number" value={formData.min_stock_level} onChange={(e) => set('min_stock_level', e.target.value)} />
-                            {(formData.sku || formData.barcode) && (
-                                <div className="col-span-4 flex items-center gap-3 text-xs text-zinc-500">
-                                    <QrPreview value={(formData.sku || formData.barcode).trim().toUpperCase()} size={64} />
-                                    QR label content: <span className="font-mono">{(formData.sku || formData.barcode).trim().toUpperCase()}</span>
+                            {hasVariants ? (
+                                loadingVariants ? (
+                                    <div className="text-sm text-zinc-500">{t('products.loadingVariants')}</div>
+                                ) : (
+                                    <VariantEditor
+                                        suggestedSizeSet={sizeSetForCategory(categories.find(c => c.id === formData.category_id)?.name)}
+                                        product={{ name: formData.name, sku: formData.sku, price: formData.price, cost: formData.cost }}
+                                        variants={variants}
+                                        onChange={setVariants}
+                                    />
+                                )
+                            ) : (
+                                <div className="grid grid-cols-4 gap-4 items-end">
+                                    <Input label={t('products.stock')} type="number" min="0" value={formData.stock_quantity} onChange={(e) => set('stock_quantity', e.target.value)} />
+                                    <Input label={t('products.minStock')} type="number" min="0" value={formData.min_stock_level} onChange={(e) => set('min_stock_level', e.target.value)} />
+                                    <div className="form-group">
+                                        <label className="form-label">{t('products.colSku')}</label>
+                                        <div className="flex gap-1.5">
+                                            <input className="input font-mono uppercase ltr" value={formData.sku} onChange={(e) => set('sku', e.target.value.toUpperCase())} placeholder={t('products.skuHint')} data-scan-passthrough />
+                                            <Button type="button" variant="secondary" size="icon" onClick={generateSimpleSku} title={t('variants.regenerateSkus')}><Wand2 className="w-4 h-4" /></Button>
+                                        </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">{t('products.barcode')}</label>
+                                        <div className="flex gap-1.5">
+                                            <input className="input font-mono ltr" value={formData.barcode} onChange={(e) => set('barcode', e.target.value)} placeholder={t('products.barcodeHint')} data-scan-passthrough />
+                                            <Button type="button" variant="secondary" size="icon" onClick={generateSimpleBarcode} title={t('variants.generateBarcodes')}><Barcode className="w-4 h-4" /></Button>
+                                        </div>
+                                    </div>
+                                    {(formData.sku || formData.barcode) && (
+                                        <div className="col-span-4 flex items-center gap-3 text-xs text-zinc-500">
+                                            <QrPreview value={(formData.sku || formData.barcode).trim().toUpperCase()} size={56} />
+                                            {t('products.qrContent')} <span className="font-mono ltr">{(formData.sku || formData.barcode).trim().toUpperCase()}</span>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
-                    )}
+                    </section>
+
+                    {/* Optional details */}
+                    <section className="rounded-xl border border-dark-border">
+                        <button type="button" onClick={() => setShowMore(!showMore)} className="w-full flex items-center justify-between px-4 h-12">
+                            <span className="font-medium">{t('products.moreDetails')}</span>
+                            <span className="flex items-center gap-2 text-xs text-zinc-500">
+                                {t('products.moreDetailsHint')}
+                                <ChevronDown className={`w-4 h-4 transition-transform ${showMore ? 'rotate-180' : ''}`} />
+                            </span>
+                        </button>
+                        {showMore && (
+                            <div className="border-t border-dark-border p-4 grid grid-cols-3 gap-4">
+                                <Input label={t('products.cost')} type="number" min="0" value={formData.cost}
+                                    onChange={(e) => set('cost', e.target.value)} placeholder="0" />
+                                <Select label={t('products.supplier')} value={formData.supplier_id} onChange={(v) => set('supplier_id', v)}
+                                    options={[{ value: '', label: t('products.noSupplier') }, ...suppliers.map(sp => ({ value: sp.id, label: sp.name }))]} />
+                                <Input label={t('products.taxRate')} type="number" min="0" step="0.1" value={formData.tax_rate}
+                                    onChange={(e) => set('tax_rate', e.target.value)} />
+                                <Select label={t('products.gender')} value={formData.gender} onChange={(v) => set('gender', v)}
+                                    options={[{ value: '', label: '—' }, ...GENDERS.map(g => ({ value: g.code, label: genderLabel(g.code) }))]} />
+                                <Select label={t('products.season')} value={formData.season} onChange={(v) => set('season', v)}
+                                    options={[
+                                        { value: '', label: '—' },
+                                        ...SEASONS.map(x => ({ value: x.code, label: seasonLabel(x.code) })),
+                                        // Free text typed in an older version stays selectable
+                                        ...(formData.season && !SEASONS.some(x => x.code === formData.season) ? [{ value: formData.season, label: formData.season }] : []),
+                                    ]} />
+                                <Input label={t('products.collection')} value={formData.collection} onChange={(e) => set('collection', e.target.value)}
+                                    placeholder={t('products.collectionPlaceholder')} />
+                                {hasVariants && (
+                                    <Input label={t('products.productCode')} value={formData.sku} className="font-mono uppercase ltr"
+                                        onChange={(e) => set('sku', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))} />
+                                )}
+                                <div className={hasVariants ? 'col-span-2' : 'col-span-3'}>
+                                    <TextArea label={t('products.description')} value={formData.description} onChange={(e) => set('description', e.target.value)} className="min-h-[60px]" />
+                                </div>
+                            </div>
+                        )}
+                    </section>
 
                     {errors.length > 0 && (
-                        <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-300 space-y-1">
+                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-300 space-y-1">
                             {errors.map((err, i) => <div key={i}>{err}</div>)}
                         </div>
                     )}
@@ -350,6 +424,12 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                     </Button>
                 </ModalFooter>
             </form>
+            <CategoryManagerModal
+                isOpen={showCategories}
+                onClose={() => setShowCategories(false)}
+                categories={categories}
+                onSave={() => onCategoriesChanged?.()}
+            />
         </Modal>
     );
 }

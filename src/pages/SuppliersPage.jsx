@@ -13,8 +13,9 @@ import {
     Trash
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
-import { Input } from '../components/ui/Input';
+import { Input, SearchInput } from '../components/ui/Input';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import { toast } from '../components/ui/Toast';
 import SupplierHistoryModal from '../components/modals/SupplierHistoryModal';
@@ -122,31 +123,22 @@ export default function SuppliersPage() {
     );
 
     return (
-        <div className="h-full flex flex-col">
-            <div className="p-6 border-b border-dark-border flex justify-between items-center">
-                <div>
-                    <h1 className="text-2xl font-bold mb-1">{t('suppliers.title')}</h1>
-                    <p className="text-zinc-400">{t('suppliers.subtitle')}</p>
-                </div>
-                <Button onClick={() => setShowModal(true)}>
-                    <Plus className="w-5 h-5 me-2" />
-                    {t('suppliers.add')}
-                </Button>
-            </div>
+        <div className="page">
+            <PageHeader
+                icon={Truck}
+                title={t('suppliers.title')}
+                subtitle={t('suppliers.subtitle')}
+                actions={(
+                    <Button onClick={() => setShowModal(true)}>
+                        <Plus className="w-4 h-4" />
+                        {t('suppliers.add')}
+                    </Button>
+                )}
+            >
+                <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder={t('suppliers.search')} className="max-w-md" />
+            </PageHeader>
 
-            <div className="p-4 border-b border-dark-border bg-dark-primary">
-                <div className="max-w-md relative">
-                    <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
-                    <Input
-                        placeholder={t('suppliers.search')}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="ps-10"
-                    />
-                </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="page-body">
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {filteredSuppliers.map(supplier => (
                         <Card key={supplier.id} className="p-4 hover:border-accent-primary transition-colors group">

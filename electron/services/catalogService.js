@@ -190,6 +190,37 @@ function generateSkus(api, product, variants, settings = {}, reserved = new Set(
     });
 }
 
+/** EAN-13 check digit for the first 12 digits. */
+function ean13CheckDigit(digits12) {
+    const d = String(digits12);
+    let sum = 0;
+    for (let i = 0; i < 12; i++) sum += Number(d[i]) * (i % 2 === 0 ? 1 : 3);
+    return String((10 - (sum % 10)) % 10);
+}
+
+/**
+ * Barcodes for the shop's own articles: EAN-13 in the in-store range
+ * (starting with 2, never used by manufacturers), never already used by an
+ * article, a variant or a gift card.
+ */
+function generateInternalBarcodes(api, count = 1, reserved = new Set(), random = Math.random) {
+    const taken = new Set([...reserved].map(normalizeCode));
+    const codes = [];
+    for (let attempts = 0; codes.length < count && attempts < count * 200; attempts++) {
+        let body = '2';
+        for (let i = 0; i < 11; i++) body += Math.floor(random() * 10);
+        const code = body + ean13CheckDigit(body);
+        if (taken.has(code)) continue;
+        if (findIdentifierOwner(api, code)) continue;
+        const gift = api.get('SELECT id FROM gift_cards WHERE code = ? LIMIT 1', [code]);
+        if (gift) continue;
+        taken.add(code);
+        codes.push(code);
+    }
+    if (codes.length < count) throw codedError('SKU_EXHAUSTED', { stem: '2' });
+    return codes;
+}
+
 function effectivePrice(product, variant) {
     if (variant && variant.price !== null && variant.price !== undefined && variant.price !== '') {
         return Number(variant.price);
@@ -585,4 +616,6 @@ module.exports = {
     getLowStock,
     COLOR_CODES,
     paletteCode,
+    ean13CheckDigit,
+    generateInternalBarcodes,
 };

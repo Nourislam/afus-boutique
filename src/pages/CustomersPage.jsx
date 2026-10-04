@@ -4,6 +4,7 @@ import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { Plus, Search, Edit2, Trash2, Users, Star, ShoppingBag, Phone, Mail } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { PageHeader } from '../components/ui/PageHeader';
 import { Input, SearchInput, TextArea } from '../components/ui/Input';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader, EmptyState } from '../components/ui/Table';
@@ -99,15 +100,13 @@ export default function CustomersPage() {
     };
 
     return (
-        <div className="h-full flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="p-6 border-b border-dark-border">
-                <div className="flex items-center justify-between mb-6">
-                    <div>
-                        <h1 className="text-2xl font-bold">{t('customers.title')}</h1>
-                        <p className="text-zinc-500">{t('customers.subtitle')}</p>
-                    </div>
-                    <div className="flex gap-2">
+        <div className="page">
+            <PageHeader
+                icon={Users}
+                title={t('customers.title')}
+                subtitle={t('customers.subtitle')}
+                actions={(
+                    <>
                         <Button variant="secondary" onClick={() => setShowImportModal(true)}>
                             <FileSpreadsheet className="w-4 h-4" />
                             {t('common.importExcel')}
@@ -116,41 +115,19 @@ export default function CustomersPage() {
                             <Plus className="w-4 h-4" />
                             {t('customers.add')}
                         </Button>
-                    </div>
+                    </>
+                )}
+            >
+                <div className="flex flex-wrap items-center gap-4">
+                    <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder={t('customers.search')} className="w-80" />
+                    <span className="text-sm text-zinc-400">{t('customers.total')}: <b className="text-white tabular">{totalCustomers}</b></span>
+                    <span className="text-sm text-zinc-400">{t('customers.points')}: <b className="text-amber-300 tabular">{totalLoyaltyPoints.toLocaleString('fr-FR')}</b></span>
+                    <span className="text-sm text-zinc-400">{t('customers.spent')}: <b className="text-emerald-300 tabular">{formatCurrency(totalSpent)}</b></span>
                 </div>
-
-                {/* Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <StatCard
-                        label={t('customers.total')}
-                        value={totalCustomers}
-                        icon={Users}
-                        color="primary"
-                    />
-                    <StatCard
-                        label={t('customers.points')}
-                        value={totalLoyaltyPoints.toLocaleString()}
-                        icon={Star}
-                        color="warning"
-                    />
-                    <StatCard
-                        label={t('customers.spent')}
-                        value={formatCurrency(totalSpent)}
-                        icon={ShoppingBag}
-                        color="success"
-                    />
-                </div>
-
-                <SearchInput
-                    value={searchQuery}
-                    onChange={setSearchQuery}
-                    placeholder={t('customers.search')}
-                    className="max-w-md"
-                />
-            </div>
+            </PageHeader>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="page-body">
                 {loading ? (
                     <div className="flex items-center justify-center h-64">
                         <div className="w-10 h-10 border-4 border-accent-primary border-t-transparent rounded-full animate-spin" />

@@ -248,3 +248,25 @@ describe('catalog service', () => {
         expect(low[0]).toMatchObject({ sku: 'L-1', size: 'M' });
     });
 });
+
+describe('in-shop barcodes', () => {
+    it('generates valid, unique EAN-13 codes that no article uses', async () => {
+        const db = await createLegacyDb();
+        applyMigrations(db);
+        const api = createApi(db);
+        catalog.saveProduct(api, { id: 'p1', name: 'Tee', price: 10, barcode: '2000000000008' }, [], { isNew: true });
+        // A random source that first proposes the code already used
+        const digits = ['2', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'];
+        let n = 0;
+        const random = () => (n < 11 ? Number(digits[1 + n++]) / 10 : Math.random());
+        const codes = catalog.generateInternalBarcodes(api, 5, new Set(), random);
+        expect(codes).toHaveLength(5);
+        expect(new Set(codes).size).toBe(5);
+        expect(codes).not.toContain('2000000000008');
+        for (const code of codes) {
+            expect(code).toMatch(/^2\d{12}$/);
+            expect(code[12]).toBe(catalog.ean13CheckDigit(code.slice(0, 12)));
+        }
+        expect(catalog.ean13CheckDigit('400638133393')).toBe('1');
+    });
+});

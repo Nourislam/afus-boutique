@@ -377,6 +377,7 @@ export default function ProductsPage() {
                     product={editingProduct}
                     categories={categories}
                     initialValues={initialValues}
+                    onCategoriesChanged={loadData}
                     onSave={() => { loadData(); setShowProductModal(false); }}
                 />
 

@@ -588,6 +588,10 @@ ipcMain.handle('catalog:generateSkus', (_, { product, variants, reserved }) => {
   return catalog.generateSkus(dbApi, product, variants, getSettingValue('sku_settings') || {}, new Set(reserved || []));
 });
 
+ipcMain.handle('catalog:generateBarcodes', (_, { count = 1, reserved = [] } = {}) => {
+  return catalog.generateInternalBarcodes(dbApi, Math.min(Math.max(parseInt(count, 10) || 1, 1), 500), new Set(reserved));
+});
+
 ipcMain.handle('catalog:checkIdentifier', (_, { code, excludeVariantId, excludeProductId }) => {
   const formatError = catalog.validateIdentifier(code, 'code');
   if (formatError) return { valid: false, message: formatError };
