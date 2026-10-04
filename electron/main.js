@@ -592,6 +592,16 @@ ipcMain.handle('catalog:generateBarcodes', (_, { count = 1, reserved = [] } = {}
   return catalog.generateInternalBarcodes(dbApi, Math.min(Math.max(parseInt(count, 10) || 1, 1), 500), new Set(reserved));
 });
 
+ipcMain.handle('catalog:generateFreeCodes', (_, { type = 'ean13', count = 1, reserved = [] } = {}) => {
+  const n = Math.min(Math.max(parseInt(count, 10) || 1, 1), 500);
+  return dbApi.transaction(() => catalog.generateFreeCodes(dbApi, { type, count: n, reserved }));
+});
+
+// Which of these codes are already used by an article, a variant or a gift card
+ipcMain.handle('catalog:findUsedCodes', (_, codes = []) => {
+  return (codes || []).slice(0, 1000).filter(code => code && catalog.isCodeUsed(dbApi, code));
+});
+
 ipcMain.handle('catalog:checkIdentifier', (_, { code, excludeVariantId, excludeProductId }) => {
   const formatError = catalog.validateIdentifier(code, 'code');
   if (formatError) return { valid: false, message: formatError };
@@ -1728,13 +1738,32 @@ function getLabelSettings(overrides = {}) {
   return { ...labelService.DEFAULT_LABEL_SETTINGS, ...(getSettingValue('label_settings') || {}), ...overrides };
 }
 
-// items: [{ variantId?, productId?, quantity }]
-function buildLabelData(items) {
+// Code printed on an article label when the layout asks for a barcode instead of the QR
+function articleSymbology(layout, value) {
+  const type = layout && layout.codeType;
+  if (!type || type === 'qr') return null;
+  if (type === 'ean13' && !/^\d{12,13}$/.test(String(value || ''))) return 'code128';
+  return type;
+}
+
+// items: [{ variantId?, productId?, quantity }] or free labels [{ code, symbology, title?, price?, quantity }]
+function buildLabelData(items, layout = {}) {
   const settings = getStoreSettings();
   const labels = [];
   for (const item of items || []) {
     const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
-    if (item.variantId) {
+    if (item.code) {
+      labels.push({
+        productName: item.title || '',
+        variantLabel: '',
+        sku: String(item.code),
+        qrValue: String(item.code),
+        symbology: item.symbology || 'code128',
+        price: item.price === '' || item.price === undefined || item.price === null ? null : Number(item.price),
+        currency: settings.currency,
+        quantity,
+      });
+    } else if (item.variantId) {
       const variant = getOne('SELECT * FROM product_variants WHERE id = ?', [item.variantId]);
       if (!variant) throw catalog.codedError('VARIANT_GONE', { product: '' });
       const product = getOne('SELECT * FROM products WHERE id = ?', [variant.product_id]);
@@ -1743,6 +1772,9 @@ function buildLabelData(items) {
         variantLabel: catalog.variantLabel(variant),
         sku: variant.sku,
         qrValue: variant.qr_code || variant.sku,
+        ...(articleSymbology(layout, variant.barcode || variant.sku)
+          ? { symbology: articleSymbology(layout, variant.barcode || variant.sku), qrValue: variant.barcode || variant.sku }
+          : {}),
         price: catalog.effectivePrice(product || {}, variant),
         currency: settings.currency,
         currencySymbol: settings.currencySymbol,
@@ -1759,6 +1791,9 @@ function buildLabelData(items) {
         variantLabel: '',
         sku: product.sku || product.barcode,
         qrValue: code,
+        ...(articleSymbology(layout, product.barcode || code)
+          ? { symbology: articleSymbology(layout, product.barcode || code), qrValue: product.barcode || code }
+          : {}),
         price: product.price,
         currency: settings.currency,
         currencySymbol: settings.currencySymbol,
@@ -1769,13 +1804,14 @@ function buildLabelData(items) {
   return labels;
 }
 
-function buildLabelsDocument(items, layoutOverrides) {
+function buildLabelsDocument(items, layoutOverrides, { preview = false } = {}) {
   const layout = getLabelSettings(layoutOverrides);
   const shop = getShopSettingsForPrint();
-  const html = labelService.buildLabelsHtml(buildLabelData(items), layout, {
+  const html = labelService.buildLabelsHtml(buildLabelData(items, layout), layout, {
     name: shop.businessName,
     logo: shop.shopLogoDataUri,
     lang: i18n.normalizeLanguage(shop.defaultLanguage),
+    preview,
   });
   return { html, layout };
 }
@@ -1788,7 +1824,7 @@ ipcMain.handle('labels:getTemplates', () => ({
 ipcMain.handle('labels:getSettings', () => getLabelSettings());
 
 ipcMain.handle('labels:preview', (_, { items, layout }) => {
-  const doc = buildLabelsDocument(items, layout);
+  const doc = buildLabelsDocument(items, layout, { preview: true });
   return { html: doc.html, page: labelService.getPageSize(labelService.resolveLayout(doc.layout)) };
 });
 

@@ -1,17 +1,13 @@
 import { t } from '../i18n';
 import { formatMoney } from '../i18n/format';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { QrCode, Printer, FileDown, Trash2, Search, Barcode, Save, Boxes } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { QrCode, Trash2, Search, Boxes } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { Select } from '../components/ui/Select';
-import { Input } from '../components/ui/Input';
 import { toast } from '../components/ui/Toast';
-import { useSettingsStore } from '../stores/settingsStore';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { variantLabel } from '../lib/clothing';
-
-const cleanError = (error) => String(error?.message || error).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+import { LabelLayoutPanel, useLabelSetup, cleanError } from '../components/labels/LabelLayoutPanel';
 
 /**
  * QR label printing for clothing variants (and simple products).
@@ -23,16 +19,8 @@ export default function QrLabelsPage() {
     const [query, setQuery] = useState('');
     const [variantResults, setVariantResults] = useState([]);
     const [queue, setQueue] = useState([]); // { key, variantId?, productId?, name, label, sku, price, stock, quantity }
-    const [templates, setTemplates] = useState({});
-    const [layout, setLayout] = useState(null);
-    const [printers, setPrinters] = useState([]);
-    const [printerName, setPrinterName] = useState('');
-    const [preview, setPreview] = useState(null);
-    const [busy, setBusy] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
-    const navigate = useNavigate();
-    const { settings } = useSettingsStore();
-    const previewTimer = useRef(null);
+    const setup = useLabelSetup();
 
     const formatCurrency = (amount) => {
         try {
@@ -43,24 +31,9 @@ export default function QrLabelsPage() {
     };
 
     useEffect(() => {
-        (async () => {
-            try {
-                const [productList, tpl, savedLayout, printerSettings, printerList] = await Promise.all([
-                    window.electronAPI.products.getAll(),
-                    window.electronAPI.labels.getTemplates(),
-                    window.electronAPI.labels.getSettings(),
-                    window.electronAPI.printers.getSettings(),
-                    window.electronAPI.printers.list().catch(() => []),
-                ]);
-                setProducts(productList);
-                setTemplates(tpl.templates);
-                setLayout(savedLayout);
-                setPrinterName(printerSettings.label.printerName || '');
-                setPrinters(printerList);
-            } catch (error) {
-                toast.error(`${t('common.loadFailed')}: ${cleanError(error)}`);
-            }
-        })();
+        window.electronAPI.products.getAll()
+            .then(setProducts)
+            .catch(error => toast.error(`${t('common.loadFailed')}: ${cleanError(error)}`));
     }, []);
 
     // Search variants as the user types
@@ -106,11 +79,11 @@ export default function QrLabelsPage() {
         if (product.variant_count > 0) {
             const variants = await window.electronAPI.catalog.getVariants(product.id);
             variants.forEach(v => addVariant(v, product, quantityFromStock ? Math.max(1, v.stock_quantity || 0) : 1));
-            toast.success(`${variants.length} variants of ${product.name} added`);
+            toast.success(t('labels.variantsAdded', { n: variants.length, name: product.name }));
             return;
         }
         if (!product.sku && !product.barcode) {
-            toast.error(`"${product.name}" has no SKU or barcode. Edit the product to add one first.`);
+            toast.error(t('labels.noCode', { name: product.name }));
             return;
         }
         setQueue(prev => {
@@ -146,112 +119,29 @@ export default function QrLabelsPage() {
             toast.error(t('qr.unknownCode', { code }));
         } else if (result.type === 'variant') {
             addVariant(result.variant, result.product);
-            toast.success(`${result.product.name} ${result.variant.label || ''} added`);
+            toast.success(t('labels.added', { name: `${result.product.name} ${result.variant.label || ''}`.trim() }));
         } else {
             addProduct({ ...result.product, variant_count: result.needsVariant ? 1 : 0 });
         }
     });
 
-    const items = queue.map(i => ({ variantId: i.variantId, productId: i.productId, quantity: i.quantity }));
+    const items = useMemo(() => queue.map(i => ({ variantId: i.variantId, productId: i.productId, quantity: i.quantity })), [queue]);
     const totalLabels = queue.reduce((sum, i) => sum + (parseInt(i.quantity, 10) || 0), 0);
 
-    // Live preview (debounced)
-    useEffect(() => {
-        if (!layout) return undefined;
-        clearTimeout(previewTimer.current);
-        if (queue.length === 0) {
-            setPreview(null);
-            return undefined;
-        }
-        previewTimer.current = setTimeout(async () => {
-            try {
-                // Preview only the first few labels to keep it fast
-                const sample = [];
-                let left = layout.mode === 'sheet' ? (layout.columns || 1) * (layout.rows || 1) : 3;
-                for (const i of items) {
-                    if (left <= 0) break;
-                    const qty = Math.min(i.quantity, left);
-                    sample.push({ ...i, quantity: qty });
-                    left -= qty;
-                }
-                const result = await window.electronAPI.labels.preview(sample, layout);
-                const sampleCount = sample.reduce((sum, i) => sum + i.quantity, 0);
-                setPreview({ ...result, pages: layout.mode === 'sheet' ? 1 : Math.max(1, sampleCount) });
-            } catch (error) {
-                setPreview({ error: cleanError(error) });
-            }
-        }, 250);
-        return () => clearTimeout(previewTimer.current);
-    }, [queue, layout]);
-
-    const setLayoutField = (patch) => setLayout(prev => ({ ...prev, ...patch }));
-
-    const chooseTemplate = (id) => {
-        if (id === 'custom') setLayoutField({ template: 'custom' });
-        else setLayoutField({ template: id, ...(templates[id] || {}), name: undefined });
-    };
-
-    const handlePrint = async () => {
-        if (totalLabels === 0) return toast.error(t('qr.addOne'));
-        setBusy(true);
-        try {
-            const result = await window.electronAPI.labels.print(items, layout, { printerName });
-            if (result?.success) toast.success(`${totalLabels} label${totalLabels > 1 ? 's' : ''} sent to the printer`);
-        } catch (error) {
-            toast.error(t('barcode.printFailed', { error: cleanError(error) }));
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    const handlePdf = async () => {
-        if (totalLabels === 0) return toast.error(t('qr.addOne'));
-        setBusy(true);
-        try {
-            const file = await window.electronAPI.labels.savePdf(items, layout);
-            if (file) toast.success(t('common.savedTo', { path: file }));
-        } catch (error) {
-            toast.error(`${t('po.pdfFailed')}: ${cleanError(error)}`);
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    const saveAsDefault = async () => {
-        await window.electronAPI.settings.set({ key: 'label_settings', value: layout });
-        toast.success(t('qr.savedDefault'));
-    };
-
-    const templateOptions = [
-        ...Object.entries(templates).map(([id, tpl]) => ({
-            value: id,
-            label: tpl.mode === 'sheet'
-                ? t('labels.sheetTemplate', { paper: tpl.paper || 'A4', cols: tpl.columns, rows: tpl.rows, w: tpl.widthMm, h: tpl.heightMm })
-                : t('labels.rollTemplate', { w: tpl.widthMm, h: tpl.heightMm }),
-        })),
-        { value: 'custom', label: t('labels.custom') },
+    const codeType = setup.layout?.codeType || 'qr';
+    const fields = [
+        ['showShopName', t('labels.showShopName')],
+        ...(codeType === 'qr' ? [['showLogo', t('labels.showLogo')]] : []),
+        ['showProductName', t('labels.showProductName')],
+        ['showVariant', t('labels.showVariant')],
+        ...(codeType === 'qr' ? [['showSku', 'SKU'], ['showBarcode', t('labels.showBarcodeShort')]] : []),
+        ['showPrice', t('labels.showPrice')],
     ];
 
-    // Scale the preview page to fit the panel (CSS mm -> px at 96 dpi)
-    const previewWidthPx = preview?.page ? preview.page.width * 96 / 25.4 : 0;
-    const previewHeightPx = preview?.page ? preview.page.height * 96 / 25.4 : 0;
-    const scale = previewWidthPx ? Math.min(1.6, 360 / previewWidthPx) : 1;
-
     return (
-        <div className="h-full flex flex-col overflow-hidden">
-            <div className="p-6 border-b border-dark-border flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold flex items-center gap-3"><QrCode className="w-7 h-7 text-accent-primary" /> {t('qr.title')}</h1>
-                    <p className="text-zinc-500">{t('qr.subtitle')}</p>
-                </div>
-                <Button variant="secondary" onClick={() => navigate('/barcode-generator')}>
-                    <Barcode className="w-4 h-4" /> {t('qr.otherFormats')}
-                </Button>
-            </div>
-
-            <div className="flex-1 overflow-hidden grid grid-cols-12 gap-0">
-                {/* Search & queue */}
-                <div className="col-span-7 flex flex-col overflow-hidden border-e border-dark-border">
+        <div className="h-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+            {/* Search & queue */}
+            <div className="lg:col-span-7 flex flex-col overflow-hidden border-e border-dark-border min-h-0">
                     <div className="p-4 border-b border-dark-border relative">
                         <Search className="absolute start-7 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
                         <input
@@ -266,14 +156,14 @@ export default function QrLabelsPage() {
                                     <button key={v.id} type="button" onClick={() => { addVariant(v); setQuery(''); }}
                                         className="w-full text-start px-4 py-2 hover:bg-dark-tertiary flex justify-between">
                                         <span>{v.product_name} <span className="text-accent-primary">{variantLabel(v)}</span></span>
-                                        <span className="font-mono text-xs text-zinc-500">{v.sku} · stock {v.stock_quantity}</span>
+                                        <span className="font-mono text-xs text-zinc-500">{v.sku} · {t('labels.stockN', { n: v.stock_quantity })}</span>
                                     </button>
                                 ))}
                                 {simpleMatches.map(p => (
                                     <button key={p.id} type="button" onClick={() => { addProduct(p); setQuery(''); }}
                                         className="w-full text-start px-4 py-2 hover:bg-dark-tertiary flex justify-between">
                                         <span>{p.name}</span>
-                                        <span className="font-mono text-xs text-zinc-500">{p.sku || p.barcode || 'no code'} · stock {p.stock_quantity}</span>
+                                        <span className="font-mono text-xs text-zinc-500">{p.sku || p.barcode || t('barcode.noBarcode')} · {t('labels.stockN', { n: p.stock_quantity })}</span>
                                     </button>
                                 ))}
                             </div>
@@ -313,7 +203,7 @@ export default function QrLabelsPage() {
                                                         onChange={(e) => setQueue(prev => prev.map(i => (i.key === item.key ? { ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) } : i)))} />
                                                     <button type="button" className="text-xs text-zinc-400 hover:text-white" title={t('qr.onePerItem')}
                                                         onClick={() => setQueue(prev => prev.map(i => (i.key === item.key ? { ...i, quantity: Math.max(1, item.stock || 0) } : i)))}>
-                                                        = stock ({item.stock ?? 0})
+                                                        {t('labels.eqStock', { n: item.stock ?? 0 })}
                                                     </button>
                                                 </div>
                                             </td>
@@ -332,10 +222,10 @@ export default function QrLabelsPage() {
 
                     {queue.length > 0 && (
                         <div className="p-4 border-t border-dark-border flex items-center justify-between text-sm">
-                            <span>{totalLabels} label{totalLabels === 1 ? '' : 's'} in total</span>
+                            <span>{t('labels.total', { n: totalLabels })}</span>
                             <div className="flex gap-2">
                                 <Button variant="ghost" size="sm" onClick={() => setQueue(prev => prev.map(i => ({ ...i, quantity: Math.max(1, i.stock || 0) })))}>
-                                    <Boxes className="w-4 h-4" /> All = stock
+                                    <Boxes className="w-4 h-4" /> {t('labels.allEqStock')}
                                 </Button>
                                 <Button variant="ghost" size="sm" onClick={() => setQueue([])}>{t('qr.clear')}</Button>
                             </div>
@@ -344,93 +234,20 @@ export default function QrLabelsPage() {
                 </div>
 
                 {/* Layout, printer and preview */}
-                <div className="col-span-5 overflow-y-auto p-4 space-y-4">
-                    {layout && (
-                        <>
-                            <div className="grid grid-cols-2 gap-3">
-                                <Select label={t('labels.size')} value={layout.template || 'roll-40x30'} onChange={chooseTemplate} options={templateOptions} />
-                                <Select
-                                    label={t('printers.printer')}
-                                    value={printerName}
-                                    onChange={setPrinterName}
-                                    options={[
-                                        { value: '', label: t('qr.chooseInDialog') },
-                                        ...printers.map(p => ({ value: p.name, label: `${p.displayName}${p.isDefault ? ' (default)' : ''}` })),
-                                    ]}
-                                />
-                                {layout.template === 'custom' && (
-                                    <>
-                                        <Select label={t('labels.layout')} value={layout.mode || 'roll'} onChange={(v) => setLayoutField({ mode: v })}
-                                            options={[{ value: 'roll', label: t('qr.roll') }, { value: 'sheet', label: t('qr.sheet') }]} />
-                                        <div />
-                                        <Input label={t('qr.width')} type="number" step="0.1" value={layout.widthMm} onChange={(e) => setLayoutField({ widthMm: parseFloat(e.target.value) || '' })} />
-                                        <Input label={t('qr.height')} type="number" step="0.1" value={layout.heightMm} onChange={(e) => setLayoutField({ heightMm: parseFloat(e.target.value) || '' })} />
-                                        {layout.mode === 'sheet' && (
-                                            <>
-                                                <Input label={t('qr.perRow')} type="number" value={layout.columns} onChange={(e) => setLayoutField({ columns: parseInt(e.target.value, 10) || 1 })} />
-                                                <Input label={t('qr.rows')} type="number" value={layout.rows} onChange={(e) => setLayoutField({ rows: parseInt(e.target.value, 10) || 1 })} />
-                                            </>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                            <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
-                                {[
-                                    ['showShopName', t('labels.showShopName')], ['showLogo', t('labels.showLogo')], ['showProductName', t('labels.showProductName')],
-                                    ['showVariant', t('labels.showVariant')], ['showSku', 'SKU'], ['showPrice', t('labels.showPrice')],
-                                    ['showBarcode', t('labels.showBarcodeShort')],
-                                ].map(([key, text]) => (
-                                    <label key={key} className="flex items-center gap-2 cursor-pointer">
-                                        <input type="checkbox" checked={!!layout[key]} onChange={(e) => setLayoutField({ [key]: e.target.checked })} className="w-4 h-4 rounded" />
-                                        {text}
-                                    </label>
+                <div className="lg:col-span-5 overflow-y-auto p-4">
+                    <LabelLayoutPanel setup={setup} items={items} totalLabels={totalLabels} fields={fields}>
+                        <div>
+                            <span className="form-label">{t('labels.codeOnLabel')}</span>
+                            <div className="segmented w-full">
+                                {[['qr', t('labels.codeQr')], ['ean13', 'EAN-13'], ['code128', 'Code 128']].map(([id, text]) => (
+                                    <button key={id} type="button" className={`flex-1 ${codeType === id ? 'active' : ''}`}
+                                        onClick={() => setup.setLayout(prev => ({ ...prev, codeType: id }))}>{text}</button>
                                 ))}
                             </div>
-                            <button type="button" onClick={saveAsDefault} className="text-xs text-zinc-400 hover:text-white flex items-center gap-1">
-                                <Save className="w-3 h-3" /> {t('qr.saveDefault')}
-                            </button>
-                        </>
-                    )}
-
-                    <div className="rounded-lg bg-zinc-800 p-4 flex items-start justify-center min-h-[220px] overflow-hidden">
-                        {!preview ? (
-                            <span className="text-sm text-zinc-500 self-center">{t('qr.previewHere')}</span>
-                        ) : preview.error ? (
-                            <span className="text-sm text-red-400 self-center">{preview.error}</span>
-                        ) : (
-                            <div style={{ width: previewWidthPx * scale, height: previewHeightPx * scale * preview.pages }}>
-                                <iframe
-                                    title={t('qr.preview')}
-                                    sandbox=""
-                                    scrolling="no"
-                                    src={`data:text/html;charset=utf-8,${encodeURIComponent(preview.html)}`}
-                                    style={{
-                                        width: previewWidthPx,
-                                        height: previewHeightPx * preview.pages,
-                                        transform: `scale(${scale})`,
-                                        transformOrigin: 'top left',
-                                        background: 'white',
-                                        border: 0,
-                                    }}
-                                />
-                            </div>
-                        )}
-                    </div>
-                    <p className="text-xs text-zinc-500">
-                        Preview at real proportions ({preview?.page ? `${preview.page.width} × ${preview.page.height} mm page` : '—'}).
-                        Test one label first: printers may need the label size set in their Windows driver as well.
-                    </p>
-
-                    <div className="flex gap-2">
-                        <Button className="flex-1" onClick={handlePrint} loading={busy} disabled={totalLabels === 0}>
-                            <Printer className="w-4 h-4" /> Print {totalLabels || ''} label{totalLabels === 1 ? '' : 's'}
-                        </Button>
-                        <Button variant="secondary" onClick={handlePdf} disabled={busy || totalLabels === 0}>
-                            <FileDown className="w-4 h-4" /> PDF
-                        </Button>
-                    </div>
+                            {codeType === 'ean13' && <p className="form-hint">{t('labels.ean13Fallback')}</p>}
+                        </div>
+                    </LabelLayoutPanel>
                 </div>
-            </div>
         </div>
     );
 }

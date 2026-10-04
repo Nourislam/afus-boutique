@@ -19,7 +19,7 @@ export default {
     'nav.giftCards': ['Gift cards', 'Cartes cadeaux', 'بطاقات الهدايا'],
     'nav.bundles': ['Packs', 'Packs', 'الباكات'],
     'nav.promotions': ['Promotions & sales', 'Promotions & soldes', 'التخفيضات والعروض'],
-    'nav.labels': ['QR labels', 'Étiquettes QR', 'ملصقات QR'],
+    'nav.labels': ['Labels & barcodes', 'Étiquettes & codes-barres', 'الملصقات والباركود'],
     'nav.employees': ['Employees', 'Employés', 'العمال'],
     'nav.reports': ['Reports', 'Rapports', 'التقارير'],
     'nav.ai': ['AI assistant', 'Assistant IA', 'المساعد الذكي'],

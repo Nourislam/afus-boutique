@@ -207,8 +207,9 @@ function generateInternalBarcodes(api, count = 1, reserved = new Set(), random =
     const taken = new Set([...reserved].map(normalizeCode));
     const codes = [];
     for (let attempts = 0; codes.length < count && attempts < count * 200; attempts++) {
-        let body = '2';
-        for (let i = 0; i < 11; i++) body += Math.floor(random() * 10);
+        // 20…–28…: article codes. 29… is kept for free labels (generateFreeCodes)
+        let body = '2' + Math.min(Math.floor(random() * 9), 8);
+        for (let i = 0; i < 10; i++) body += Math.floor(random() * 10);
         const code = body + ean13CheckDigit(body);
         if (taken.has(code)) continue;
         if (findIdentifierOwner(api, code)) continue;
@@ -218,6 +219,68 @@ function generateInternalBarcodes(api, count = 1, reserved = new Set(), random =
         codes.push(code);
     }
     if (codes.length < count) throw codedError('SKU_EXHAUSTED', { stem: '2' });
+    return codes;
+}
+
+/** GS1 check digit (EAN-8, EAN-13, UPC-A, ITF-14): weights 3,1,3… from the right. */
+function gs1CheckDigit(body) {
+    const d = String(body);
+    let sum = 0;
+    for (let i = 0; i < d.length; i++) sum += Number(d[d.length - 1 - i]) * (i % 2 === 0 ? 3 : 1);
+    return String((10 - (sum % 10)) % 10);
+}
+
+// Free label formats: how a sequence number becomes a valid code
+const FREE_CODE_FORMATS = {
+    ean13: (n) => { const b = '29' + String(n).padStart(10, '0'); return b + gs1CheckDigit(b); },
+    ean8: (n) => { const b = '2' + String(n).padStart(6, '0'); return b + gs1CheckDigit(b); },
+    upca: (n) => { const b = '2' + String(n).padStart(10, '0'); return b + gs1CheckDigit(b); },
+    itf14: (n) => { const b = '29' + String(n).padStart(11, '0'); return b + gs1CheckDigit(b); },
+    code: (n) => 'HN' + String(n).padStart(8, '0'),
+};
+const FREE_CODE_LIMITS = { ean13: 1e10, ean8: 1e6, upca: 1e10, itf14: 1e11, code: 1e8 };
+const FREE_CODE_SEQ_KEY = 'free_barcode_seq';
+
+/** Which free-code family a barcode symbology uses. */
+function freeCodeFormat(type) {
+    if (type === 'ean13' || type === 'ean8' || type === 'upca' || type === 'itf14') return type;
+    if (type === 'interleaved2of5') return 'itf14';
+    return 'code';
+}
+
+function isCodeUsed(api, code) {
+    if (findIdentifierOwner(api, code)) return true;
+    return !!api.get('SELECT id FROM gift_cards WHERE UPPER(code) = ? LIMIT 1', [normalizeCode(code)]);
+}
+
+/**
+ * Codes for labels printed without an article (a roll of stickers that is
+ * scanned into articles later). A sequence kept in settings guarantees a code
+ * is never handed out twice, even before it is attached to an article, and
+ * every code is also checked against articles, variants and gift cards.
+ */
+function generateFreeCodes(api, { type = 'ean13', count = 1, reserved = [] } = {}) {
+    const format = freeCodeFormat(type);
+    const make = FREE_CODE_FORMATS[format];
+    const taken = new Set([...reserved].map(normalizeCode));
+    const row = api.get('SELECT value FROM settings WHERE key = ?', [FREE_CODE_SEQ_KEY]);
+    let seqs = {};
+    try { seqs = row ? JSON.parse(row.value) || {} : {}; } catch { seqs = {}; }
+    if (typeof seqs !== 'object') seqs = {};
+    let seq = Number(seqs[format]) || 0;
+    const codes = [];
+    while (codes.length < count) {
+        seq += 1;
+        if (seq >= FREE_CODE_LIMITS[format]) throw codedError('SKU_EXHAUSTED', { stem: format });
+        const code = make(seq);
+        if (taken.has(code) || isCodeUsed(api, code)) continue;
+        taken.add(code);
+        codes.push(code);
+    }
+    seqs[format] = seq;
+    const value = JSON.stringify(seqs);
+    if (row) api.run('UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?', [value, FREE_CODE_SEQ_KEY]);
+    else api.run('INSERT INTO settings (key, value) VALUES (?, ?)', [FREE_CODE_SEQ_KEY, value]);
     return codes;
 }
 
@@ -618,4 +681,8 @@ module.exports = {
     paletteCode,
     ean13CheckDigit,
     generateInternalBarcodes,
+    gs1CheckDigit,
+    generateFreeCodes,
+    freeCodeFormat,
+    isCodeUsed,
 };

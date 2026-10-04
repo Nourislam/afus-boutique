@@ -66,12 +66,11 @@ const INDUSTRY_PRESETS = {
 const BARCODE_TYPES = {
     // 1D Barcodes
     'upca': { name: 'UPC-A', digits: 12, type: '1D', region: 'US/Canada' },
-    'upce': { name: 'UPC-E', digits: 8, type: '1D', region: 'US/Canada' },
     'ean13': { name: 'EAN-13', digits: 13, type: '1D', region: 'International' },
     'ean8': { name: 'EAN-8', digits: 8, type: '1D', region: 'International' },
     'code128': { name: 'Code 128', digits: 'Variable', type: '1D', region: 'Universal' },
     'code39': { name: 'Code 39', digits: 'Variable', type: '1D', region: 'Industrial' },
-    'interleaved2of5': { name: 'ITF-14', digits: 14, type: '1D', region: 'Logistics' },
+    'itf14': { name: 'ITF-14', digits: 14, type: '1D', region: 'Logistics' },
     // 2D Barcodes
     'qrcode': { name: 'QR Code', digits: 'Variable', type: '2D', region: 'Universal' },
     'datamatrix': { name: 'DataMatrix', digits: 'Variable', type: '2D', region: 'Industrial/Pharma' },
@@ -110,9 +109,8 @@ class BarcodeService {
      * Generate a barcode image as base64 PNG
      */
     async generateBarcode(options) {
+        let { type = 'ean13', data } = options;
         const {
-            type = 'ean13',
-            data,
             width = 200,
             height = 100,
             includeText = true,
@@ -120,6 +118,12 @@ class BarcodeService {
             backgroundColor = '#ffffff',
             barcodeColor = '#000000',
         } = options;
+
+        // Older saved settings used these names
+        if (type === 'interleaved2of5') type = 'itf14';
+        if (type === 'upce') type = 'upca';
+        // Code 39 only has capital letters
+        if (type === 'code39') data = String(data || '').toUpperCase();
 
         try {
             // Validate data for specific barcode types
@@ -137,7 +141,7 @@ class BarcodeService {
 
             // Only add height for 1D barcodes
             if (!is2D) {
-                bwipOptions.height = 10;
+                bwipOptions.height = options.barHeight || 10;
                 bwipOptions.textxalign = 'center';
             }
 
@@ -175,16 +179,13 @@ class BarcodeService {
             throw new Error(`Unsupported barcode type: ${type}`);
         }
 
+        if (!data || !String(data).trim()) throw new Error('empty');
         if (typeof specs.digits === 'number') {
             // Handle check digit calculation for UPC/EAN
-            const requiredLength = type === 'upca' ? 11 :
-                type === 'upce' ? 7 :
-                    type === 'ean13' ? 12 :
-                        type === 'ean8' ? 7 :
-                            specs.digits;
+            const requiredLength = specs.digits - 1;
 
             if (data.length !== requiredLength && data.length !== specs.digits) {
-                throw new Error(`${specs.name} requires ${specs.digits} digits (or ${requiredLength} without check digit)`);
+                throw new Error(`${specs.name}: ${specs.digits} / ${requiredLength}`);
             }
 
             if (!/^\d+$/.test(data)) {
@@ -345,22 +346,11 @@ class BarcodeService {
     /**
      * Calculate check digit for EAN/UPC
      */
-    calculateCheckDigit(data, type) {
-        const digits = data.split('').map(Number);
-        let sum = 0;
-
-        if (type === 'ean13' || type === 'upca') {
-            for (let i = 0; i < digits.length; i++) {
-                sum += digits[i] * (i % 2 === 0 ? 1 : 3);
-            }
-        } else if (type === 'ean8') {
-            for (let i = 0; i < digits.length; i++) {
-                sum += digits[i] * (i % 2 === 0 ? 3 : 1);
-            }
-        }
-
-        const checkDigit = (10 - (sum % 10)) % 10;
-        return checkDigit.toString();
+    calculateCheckDigit(data) {
+        // GS1 (EAN-8/13, UPC-A, ITF-14): weights 3,1,3… from the right
+        const digits = String(data).split('').map(Number).reverse();
+        const sum = digits.reduce((acc, d, i) => acc + d * (i % 2 === 0 ? 3 : 1), 0);
+        return String((10 - (sum % 10)) % 10);
     }
 
     /**
@@ -386,6 +376,11 @@ class BarcodeService {
                 data += Math.floor(Math.random() * 10);
             }
             data += this.calculateCheckDigit(data, 'ean8');
+        } else if (type === 'itf14' || type === 'interleaved2of5') {
+            for (let i = 0; i < 13; i++) {
+                data += Math.floor(Math.random() * 10);
+            }
+            data += this.calculateCheckDigit(data);
         } else {
             // For variable length, generate a reasonable length
             const length = 10;

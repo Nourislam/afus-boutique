@@ -30,6 +30,10 @@ const LABEL_TEMPLATES = {
     'roll-50x30': { name: '50 × 30 mm (roll)', mode: 'roll', widthMm: 50, heightMm: 30 },
     'roll-50x25': { name: '50 × 25 mm (roll)', mode: 'roll', widthMm: 50, heightMm: 25 },
     'roll-60x40': { name: '60 × 40 mm (roll)', mode: 'roll', widthMm: 60, heightMm: 40 },
+    'roll-58x40': { name: '58 × 40 mm (roll)', mode: 'roll', widthMm: 58, heightMm: 40 },
+    'tag-35x55': { name: '35 × 55 mm (hang tag)', mode: 'roll', widthMm: 35, heightMm: 55 },
+    'round-30': { name: 'Ø 30 mm (round)', mode: 'roll', widthMm: 30, heightMm: 30, shape: 'round' },
+    'round-40': { name: 'Ø 40 mm (round)', mode: 'roll', widthMm: 40, heightMm: 40, shape: 'round' },
     'sheet-a4-3x8': {
         name: 'A4 sheet, 3 × 8 (70 × 37 mm)', mode: 'sheet', widthMm: 70, heightMm: 37,
         paper: 'A4', columns: 3, rows: 8, pageMarginTopMm: 0.5, pageMarginLeftMm: 0, gapXMm: 0, gapYMm: 0,
@@ -63,7 +67,42 @@ const DEFAULT_LABEL_SETTINGS = {
     showBarcode: false,
     extraText: '',
     qrErrorCorrection: 'M',
+    // rect | rounded | round: drawn as a cut guide and keeps content inside round stickers
+    shape: 'rect',
 };
+
+// Symbologies a free label can use (bwip-js ids)
+const SYMBOLOGIES = {
+    ean13: { bcid: 'ean13', twoD: false },
+    ean8: { bcid: 'ean8', twoD: false },
+    upca: { bcid: 'upca', twoD: false },
+    itf14: { bcid: 'itf14', twoD: false },
+    code128: { bcid: 'code128', twoD: false },
+    code39: { bcid: 'code39', twoD: false },
+    qrcode: { bcid: 'qrcode', twoD: true },
+    datamatrix: { bcid: 'datamatrix', twoD: true },
+};
+
+/** Vector image of a code in any supported symbology (throws on invalid data). */
+function codeSvg(symbology, text, { includeText = true, eclevel = 'M' } = {}) {
+    const spec = SYMBOLOGIES[symbology] || SYMBOLOGIES.code128;
+    let value = String(text || '').trim();
+    if (!value) throw new Error('Code is empty');
+    if (spec.bcid === 'code39') value = value.toUpperCase();
+    const options = { bcid: spec.bcid, text: value, paddingwidth: 0, paddingheight: 0 };
+    if (spec.twoD) {
+        if (spec.bcid === 'qrcode') options.eclevel = eclevel;
+    } else {
+        options.height = 12;
+        if (includeText) {
+            options.includetext = true;
+            options.textxalign = 'center';
+            options.textsize = 9;
+        }
+        if (spec.bcid === 'itf14') options.showborder = false;
+    }
+    return bwipjs.toSVG(options);
+}
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -97,6 +136,11 @@ function resolveLayout(settings = {}) {
     merged.gapXMm = Math.max(0, parseFloat(merged.gapXMm) || 0);
     merged.gapYMm = Math.max(0, parseFloat(merged.gapYMm) || 0);
     merged.mode = merged.mode === 'sheet' ? 'sheet' : 'roll';
+    if (settings.template && settings.template !== 'custom' && LABEL_TEMPLATES[settings.template]) {
+        // Round stickers come from their template; other templates keep rect/rounded
+        merged.shape = template.shape || (settings.shape === 'rounded' ? 'rounded' : 'rect');
+    }
+    if (!['rect', 'rounded', 'round'].includes(merged.shape)) merged.shape = 'rect';
     return merged;
 }
 
@@ -166,6 +210,51 @@ function renderLabel(label, layout, shop) {
 }
 
 /**
+ * A label made around one code (free labels with no article, or articles
+ * printed with a barcode instead of a QR): shop name and title on top, the
+ * code in the middle, the price below.
+ */
+function renderCodeLabel(label, layout, shop) {
+    const round = layout.shape === 'round';
+    // Inside a round sticker only the inscribed square is safe
+    const inset = round ? Math.min(layout.widthMm, layout.heightMm) * 0.146 : 0;
+    const pad = layout.paddingMm + inset;
+    const innerW = layout.widthMm - pad * 2;
+    const innerH = layout.heightMm - pad * 2;
+    const base = Math.max(1.4, Math.min(layout.heightMm / 11, layout.widthMm / 14, 3));
+    const spec = SYMBOLOGIES[label.symbology] || SYMBOLOGIES.code128;
+
+    const top = [];
+    if (layout.showShopName && shop.name) top.push(`<div class="shop c">${escapeHtml(shop.name)}</div>`);
+    if (layout.showProductName && label.productName) top.push(`<div class="name c">${escapeHtml(label.productName)}</div>`);
+    if (layout.showVariant && label.variantLabel) top.push(`<div class="variant c">${escapeHtml(label.variantLabel)}</div>`);
+    const bottom = [];
+    if (layout.showPrice && label.price !== null && label.price !== undefined && label.price !== '') {
+        bottom.push(`<div class="price c">${escapeHtml(formatMoney(label.price, shop.lang, label.currency))}</div>`);
+    }
+    if (layout.extraText) bottom.push(`<div class="extra c">${escapeHtml(layout.extraText)}</div>`);
+    // A 2D code needs its value printed under it; 1D codes carry the digits
+    if (spec.twoD && layout.showSku !== false) bottom.push(`<div class="sku c">${escapeHtml(label.qrValue)}</div>`);
+
+    const textLines = top.length + bottom.length;
+    const codeH = Math.max(5, innerH - textLines * base * 1.35);
+    const codeBox = spec.twoD
+        ? `width:${Math.min(codeH, innerW).toFixed(2)}mm;height:${Math.min(codeH, innerW).toFixed(2)}mm`
+        : `width:${innerW.toFixed(2)}mm;height:${codeH.toFixed(2)}mm`;
+
+    return `
+        <div class="label code-label ${layout.shape || 'rect'}" style="width:${layout.widthMm}mm;height:${layout.heightMm}mm;padding:${pad.toFixed(2)}mm;font-size:${base.toFixed(2)}mm">
+            ${top.join('')}
+            <div class="code" style="${codeBox}">${codeSvg(label.symbology, label.qrValue, { eclevel: layout.qrErrorCorrection })}</div>
+            ${bottom.join('')}
+        </div>`;
+}
+
+function renderAny(label, layout, shop) {
+    return label.symbology && label.symbology !== 'qr-side' ? renderCodeLabel(label, layout, shop) : renderLabel(label, layout, shop);
+}
+
+/**
  * Build the printable HTML for a list of labels.
  * @param {Array} labels [{ productName, variantLabel, sku, qrValue, price, currency, quantity }]
  * @param {object} settings label settings (see DEFAULT_LABEL_SETTINGS)
@@ -184,12 +273,12 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
 
     let body;
     if (layout.mode === 'roll') {
-        body = expanded.map(l => `<div class="page roll">${renderLabel(l, layout, shop)}</div>`).join('');
+        body = expanded.map(l => `<div class="page roll">${renderAny(l, layout, shop)}</div>`).join('');
     } else {
         const perPage = layout.columns * layout.rows;
         const pages = [];
         for (let i = 0; i < expanded.length; i += perPage) {
-            const cells = expanded.slice(i, i + perPage).map(l => renderLabel(l, layout, shop)).join('');
+            const cells = expanded.slice(i, i + perPage).map(l => renderAny(l, layout, shop)).join('');
             pages.push(`
                 <div class="page sheet" style="padding:${layout.pageMarginTopMm}mm 0 0 ${layout.pageMarginLeftMm}mm;
                     grid-template-columns:repeat(${layout.columns}, ${layout.widthMm}mm);
@@ -222,8 +311,19 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
     .sku { font-family: "Courier New", monospace; font-size: 0.8em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .price { font-weight: 800; font-size: 1.25em; white-space: nowrap; overflow: hidden; }
     .extra { font-size: 0.7em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .code-label { flex-direction: column; justify-content: center; gap: 0.15em; text-align: center; }
+    .code-label .c { width: 100%; text-align: center; }
+    .code-label .code { flex: none; display: flex; align-items: center; justify-content: center; }
+    .code-label .code svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+    .code-label .shop { justify-content: center; }
+    .code-label .name { -webkit-line-clamp: 1; font-size: 0.85em; }
+    .code-label .variant { font-size: 0.8em; }
+    .code-label .sku { font-size: 0.75em; }
+    .code-label .price { font-size: 1.15em; }
+    .preview .label.rounded { outline: 0.2mm dashed #bbb; outline-offset: -0.2mm; border-radius: 2.5mm; }
+    .preview .label.round { outline: 0.2mm dashed #bbb; outline-offset: -0.2mm; border-radius: 50%; }
 </style></head>
-<body>${body}</body></html>`;
+<body${shop.preview ? ' class="preview"' : ''}>${body}</body></html>`;
 }
 
 /**
@@ -295,5 +395,7 @@ module.exports = {
     printLabels,
     labelsToPdf,
     qrSvg,
+    codeSvg,
+    SYMBOLOGIES,
     escapeHtml,
 };

@@ -270,3 +270,29 @@ describe('in-shop barcodes', () => {
         expect(catalog.ean13CheckDigit('400638133393')).toBe('1');
     });
 });
+
+describe('free label codes', () => {
+    it('never hands out the same code twice and skips codes already used', async () => {
+        const db = await createLegacyDb();
+        applyMigrations(db);
+        const api = createApi(db);
+        const first = '290000000001' + catalog.gs1CheckDigit('290000000001');
+        // An article already owns the first code of the reserved range
+        catalog.saveProduct(api, { id: 'p1', name: 'Jean', price: 10, barcode: first }, [], { isNew: true });
+        const a = catalog.generateFreeCodes(api, { type: 'ean13', count: 3 });
+        const b = catalog.generateFreeCodes(api, { type: 'ean13', count: 3 });
+        expect(a).not.toContain(first);
+        expect(new Set([...a, ...b]).size).toBe(6);
+        for (const code of [...a, ...b]) {
+            expect(code).toMatch(/^29\d{11}$/);
+            expect(code[12]).toBe(catalog.ean13CheckDigit(code.slice(0, 12)));
+        }
+        const ean8 = catalog.generateFreeCodes(api, { type: 'ean8', count: 2 });
+        ean8.forEach(code => expect(code.slice(-1)).toBe(catalog.gs1CheckDigit(code.slice(0, 7))));
+        expect(catalog.generateFreeCodes(api, { type: 'code39', count: 1 })[0]).toMatch(/^HN\d{8}$/);
+        expect(catalog.generateFreeCodes(api, { type: 'itf14', count: 1 })[0]).toMatch(/^29\d{12}$/);
+        // Article barcodes never fall in the reserved 29… range
+        const own = catalog.generateInternalBarcodes(api, 50);
+        own.forEach(code => expect(code.startsWith('29')).toBe(false));
+    });
+});

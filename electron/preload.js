@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         saveProduct: (data) => ipcRenderer.invoke('catalog:saveProduct', data),
         generateSkus: (product, variants, reserved = []) => ipcRenderer.invoke('catalog:generateSkus', { product, variants, reserved }),
         generateBarcodes: (count = 1, reserved = []) => ipcRenderer.invoke('catalog:generateBarcodes', { count, reserved }),
+        generateFreeCodes: (type, count = 1, reserved = []) => ipcRenderer.invoke('catalog:generateFreeCodes', { type, count, reserved }),
+        findUsedCodes: (codes) => ipcRenderer.invoke('catalog:findUsedCodes', codes),
         checkIdentifier: (code, { excludeVariantId = null, excludeProductId = null } = {}) =>
             ipcRenderer.invoke('catalog:checkIdentifier', { code, excludeVariantId, excludeProductId }),
         lookupCode: (code) => ipcRenderer.invoke('catalog:lookupCode', code),
