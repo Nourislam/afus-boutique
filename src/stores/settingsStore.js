@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { resolveFeatures } from '../lib/features';
+import { resolveUiMode } from '../lib/uiMode';
 import { useLanguageStore, normalizeLanguage } from '../i18n';
 import { formatMoney } from '../i18n/format';
 
@@ -19,6 +20,7 @@ export const useSettingsStore = create((set, get) => ({
         receiptHeader: '',
         receiptFooter: '',
         features: resolveFeatures(),
+        uiMode: 'full',
     },
     loading: false,
     error: null,
@@ -44,6 +46,7 @@ export const useSettingsStore = create((set, get) => ({
             }
 
             parsedSettings.features = resolveFeatures(data.features);
+            parsedSettings.uiMode = resolveUiMode(data.ui_mode);
 
             // The language saved with the shop settings wins over the local cache
             if (parsedSettings.defaultLanguage) {

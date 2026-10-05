@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
 import { WifiOff } from 'lucide-react';
-import { useSettingsStore } from '../../stores/settingsStore';
-import { ShopLogo } from '../shop/ShopLogo';
 import { AfusLogo } from '../brand/AfusLogo';
 import { useT } from '../../i18n';
 import { formatDate as formatLocalDate } from '../../i18n/format';
@@ -16,7 +14,6 @@ const PLATFORM = typeof window !== 'undefined' ? window.electronAPI?.platform : 
  */
 export function TitleBar({ bare = false }) {
     const [time, setTime] = useState(new Date());
-    const { settings } = useSettingsStore();
     const { t } = useT();
 
     useEffect(() => {
@@ -45,14 +42,10 @@ export function TitleBar({ bare = false }) {
             style={reserved}
             onDoubleClick={() => window.electronAPI?.maximize()}
         >
-            <div className="flex items-center gap-2.5 min-w-0">
-                <ShopLogo fileName={settings.shopLogo} name={settings.businessName} size={22} />
-                <span className="font-semibold text-sm text-white truncate max-w-[260px]">{settings.businessName || t('app.name')}</span>
-                <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] text-zinc-500 whitespace-nowrap">
-                    <span className="text-zinc-600">·</span>
-                    <AfusLogo size={14} />
-                    {t('app.name')}
-                </span>
+            {/* The program (Afus). The shop's own logo and name are in the menu. */}
+            <div className="flex items-center gap-2 min-w-0 text-xs text-zinc-400" title={t('titlebar.program')}>
+                <AfusLogo size={16} />
+                <span className="font-medium truncate">{t('app.name')}</span>
             </div>
 
             <div className="flex-1" />

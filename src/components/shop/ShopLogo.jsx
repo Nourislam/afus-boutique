@@ -34,8 +34,10 @@ function colorsFor(name) {
 /**
  * The shop's logo (stored locally in the images folder). Without a logo it
  * shows the initials of the shop name (`name`), or a neutral shop icon.
+ * maxWidth: lets a wide logo keep its proportions (height = size) instead of
+ * being shrunk into a square.
  */
-export function ShopLogo({ fileName, name = '', size = 24, className = '', rounded = 'rounded-lg' }) {
+export function ShopLogo({ fileName, name = '', size = 24, className = '', rounded = 'rounded-lg', maxWidth }) {
     const [src, setSrc] = useState(fileName ? cache.get(fileName) || null : null);
 
     useEffect(() => {
@@ -61,7 +63,8 @@ export function ShopLogo({ fileName, name = '', size = 24, className = '', round
     const style = { width: size, height: size };
 
     if (src) {
-        return <img src={src} alt={t('shop.logo')} style={style} className={`object-contain ${rounded} ${className}`} />;
+        const imgStyle = maxWidth ? { height: size, width: 'auto', maxWidth } : style;
+        return <img src={src} alt={t('shop.logo')} style={imgStyle} className={`object-contain ${rounded} ${className}`} />;
     }
     const initials = shopInitials(name);
     if (initials) {

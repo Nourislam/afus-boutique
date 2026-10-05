@@ -138,6 +138,8 @@ export default function SetupWizard({ onComplete }) {
             });
             await createDefaultCategories();
             await setLanguage(shop.defaultLanguage);
+            // A new shop starts with the simple menu (full mode in Settings › Modules)
+            await window.electronAPI.settings.set({ key: 'ui_mode', value: 'simple' });
             await window.electronAPI.settings.set({ key: 'setup_completed', value: 'true' });
 
             setCreatedAdmin({ id: adminEmployee.id, name: adminEmployee.name, role: 'admin' });

@@ -30,6 +30,7 @@ import { useT, t as translate } from './i18n';
 function App() {
     const { isAuthenticated, checkAuth, startSession } = useAuthStore();
     const { loadSettings } = useSettingsStore();
+    const uiMode = useSettingsStore(state => state.settings.uiMode);
     const [isLoading, setIsLoading] = useState(true);
     const [showSetupWizard, setShowSetupWizard] = useState(false);
     // Subscribing to the language re-renders the whole tree when it changes
@@ -117,11 +118,14 @@ function App() {
         <HashRouter>
             <MainLayout>
                 <Routes>
-                    <Route path="/" element={
-                        <ProtectedRoute permission={PERMISSIONS.DASHBOARD_VIEW}>
-                            <DashboardPage />
-                        </ProtectedRoute>
-                    } />
+                    <Route path="/" element={uiMode === 'simple'
+                        // The simple menu has no dashboard: the sales screen is home
+                        ? <Navigate to="/pos" replace />
+                        : (
+                            <ProtectedRoute permission={PERMISSIONS.DASHBOARD_VIEW}>
+                                <DashboardPage />
+                            </ProtectedRoute>
+                        )} />
                     <Route path="/pos" element={
                         <ProtectedRoute permission={PERMISSIONS.POS_VIEW}>
                             <POSPage />

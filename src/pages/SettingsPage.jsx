@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { translateError } from '../i18n/errors';
 import {
     Building, Receipt, Percent, Database, Save, Download, Upload, Mail, Lock, CheckCircle, Printer, ScanLine, Hash,
-    Languages, Tags, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor, Eye, FlaskConical,
+    Languages, Tags, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor, Eye, FlaskConical, Rows3, LayoutGrid,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, TextArea } from '../components/ui/Input';
@@ -20,6 +20,7 @@ import { ScannerSettingsForm } from '../components/settings/ScannerSettingsForm'
 import { DEFAULT_SHOP, loadShopConfiguration, saveShopConfiguration } from '../lib/shopSettings';
 import { DEFAULT_FEATURES, resolveFeatures } from '../lib/features';
 import { colorName } from '../lib/clothing';
+import { saveUiMode } from '../lib/uiMode';
 import { useSettingsStore } from '../stores/settingsStore';
 import { SystemLogs } from '../components/settings/SystemLogs';
 import { EcommerceSettings } from '../components/settings/EcommerceSettings';
@@ -86,6 +87,16 @@ export default function SettingsPage() {
     const [sku, setSku] = useState(null);
     const [appInfo, setAppInfo] = useState(null);
     const reloadStoreSettings = useSettingsStore(state => state.loadSettings);
+    const uiMode = useSettingsStore(state => state.settings.uiMode);
+    const chooseUiMode = async (mode) => {
+        if (mode === uiMode) return;
+        try {
+            await saveUiMode(mode);
+            toast.success(t(mode === 'simple' ? 'nav.mode.nowSimple' : 'nav.mode.nowFull'));
+        } catch (error) {
+            toast.error(translateError(error));
+        }
+    };
 
     const { isAdmin } = useAuthStore();
     const tabIds = [
@@ -579,6 +590,21 @@ export default function SettingsPage() {
                         )}
 
                         {activeTab === 'features' && (
+                            <div className="space-y-4">
+                            {/* Simple or full menu: applied at once, for the whole shop */}
+                            <Card className="space-y-4">
+                                <SectionHeader icon={Rows3} color="bg-emerald-500/20 text-emerald-400" title={t('nav.mode.title')} text={t('nav.mode.text')} />
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {[{ id: 'simple', icon: Rows3 }, { id: 'full', icon: LayoutGrid }].map(({ id, icon: Icon }) => (
+                                        <button key={id} type="button" onClick={() => chooseUiMode(id)} aria-pressed={uiMode === id}
+                                            className={`p-4 rounded-lg border text-start transition-colors ${uiMode === id ? 'border-indigo-500 bg-indigo-500/10' : 'border-dark-border hover:border-zinc-600'}`}>
+                                            <p className="text-sm font-semibold flex items-center gap-2"><Icon className="w-4 h-4 flex-none" /> {t(`nav.mode.${id}`)}</p>
+                                            <p className="text-xs text-zinc-500 mt-1">{t(`nav.mode.${id}Hint`)}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-xs text-zinc-500">{t('nav.mode.appliedNow')}</p>
+                            </Card>
                             <Card className="space-y-4">
                                 <SectionHeader icon={ToggleRight} color="bg-indigo-500/20 text-indigo-400" title={t('settings.tab.features')} text={t('settings.featuresText')} />
                                 {Object.keys(DEFAULT_FEATURES).map(key => (
@@ -597,6 +623,7 @@ export default function SettingsPage() {
                                 ))}
                                 <p className="text-xs text-zinc-500">{t('settings.featuresSaveHint')}</p>
                             </Card>
+                            </div>
                         )}
 
                         {activeTab === 'mail' && (
