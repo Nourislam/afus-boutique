@@ -512,5 +512,3 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
         </Modal>
     );
 }
-
-
