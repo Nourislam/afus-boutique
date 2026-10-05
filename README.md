@@ -1,31 +1,51 @@
 # Afus Boutique
 
-Afus Boutique is the Afus application for clothing and accessory shops: an offline point of sale
-and stock manager, built as a Windows desktop application
-(Electron + React + SQLite). It works without an account, without activation and without
-internet: all data lives in a local database on the shop's computer.
+**Afus Boutique** is the [Afus](docs/NAMING.md) application for clothing and accessory shops:
+an offline point of sale and stock manager for Windows and macOS (Electron + React + SQLite).
+It works without an account, without activation and without internet: all data lives in a
+local database on the shop's computer.
+
+> **بالعربية:** Afus Boutique برنامج من شركة Afus لمحلات الملابس والإكسسوارات: بيع، مخزون
+> بالألوان والمقاسات، ملصقات QR وباركود، تذاكر، كريدي، تقارير. يعمل بدون إنترنت وبدون حساب،
+> وكل البيانات تبقى على حاسوب المحل. الواجهة بالعربية (من اليمين إلى اليسار) والفرنسية والإنجليزية.
 
 ## Features
 
-- **First-launch shop setup** – shop name and logo (required), owner, phone, address,
-  wilaya/city, currency, tax, receipt texts and printers. Editable later in *Settings*.
-- **Clothing catalog** – products with colour × size variants. Each variant has its own SKU,
-  QR identifier, optional barcode, price, cost, stock and minimum stock. Products without
-  variants work as simple products.
-- **Variant-level inventory** – sales, returns, goods receiving, purchase returns and manual
-  adjustments move the stock of the exact variant and are recorded in the stock history.
-  Low-stock alerts per variant.
-- **QR codes** – generated locally (bwip-js). A QR contains only the variant's stable
-  identifier (its SKU at creation time), never price or stock, so labels stay valid when
-  prices change.
-- **QR labels** – sizes in millimetres (30×20, 40×30, 50×30, … or custom), label rolls or
-  A4 sticker sheets, printed through Electron to any Windows printer, or saved as PDF.
-- **USB scanners** – standard keyboard-wedge barcode/QR scanners, no SDK. Codes are read
-  correctly even when Windows uses an Arabic or French (AZERTY) keyboard layout.
-- **Receipts** – 58/80 mm thermal receipts with the shop logo and details, variant and SKU
-  per line, optional automatic printing after each sale.
-- Customers, credit sales, gift cards, promotions, bundles, suppliers, purchase orders,
-  reports, employees with PIN login and roles (admin / manager / cashier).
+- **Shop setup on first launch** – name and logo, owner, address and wilaya, legal numbers,
+  currency (DZD by default), tax, ticket texts, printers. Editable later in *Settings*.
+- **Three languages** – Arabic (right to left), French and English; light, dark or system theme.
+- **Clothing catalogue** – articles with colour × size variants; each variant has its own SKU,
+  QR identifier, optional barcode, price, cost and stock. Brands, categories, the shop's own
+  colours and size sets, suppliers and customers in one *Catalogue* screen.
+- **Stock per variant** – sales, returns, goods receiving, purchase returns and manual
+  adjustments move the stock of the exact variant and are kept in the stock history; low-stock
+  alerts per variant. A sale can never take more than the stock, and a return never more
+  pieces than were sold.
+- **Labels and barcodes** – QR, EAN-13, Code 128, Code 39 or DataMatrix, one code per variant
+  or per article; codes missing on existing articles are created when printing. Label size,
+  shape and content are set once in *Settings*; roll printers or A4 sticker sheets, or PDF.
+  Codes only hold the article's identifier, never the price, so labels stay valid when prices
+  change.
+- **USB scanners** – any keyboard-mode (HID) barcode/QR scanner, no driver or SDK. Codes are
+  read correctly even when Windows uses an Arabic or French (AZERTY) keyboard layout.
+- **Tickets** – 58/80 mm thermal tickets with the shop logo, printed directly, previewed or
+  not printed, as chosen in *Settings*.
+- **Sales screen** – cash, card, transfer, gift card, split payment and customer credit
+  (*kridi*, allowed by a manager or admin), tickets on hold, cash drawer opened at login and
+  closed at logout.
+- Customers and credit, gift cards, promotions and packs, suppliers and purchase orders,
+  reports, employees with PIN login and roles (admin / manager / cashier), backups.
+
+## Installing (shops)
+
+One installer, `Afus Boutique Setup <version>.exe`, for Windows 10 and 11 (64-bit, 32-bit and
+ARM), which can be copied to a USB key. The shop needs nothing else: no Node.js, no internet.
+The program is `AfusBoutique.exe`; uninstalling keeps the shop's data.
+
+macOS: `Afus Boutique.app` in `Afus-Boutique-<version>-<arch>.dmg` (Intel and Apple silicon).
+
+The printers (ticket and label) must be installed in Windows or macOS with their driver;
+scanners work in their default keyboard (HID) mode.
 
 ## Development
 
@@ -36,26 +56,30 @@ npm ci                 # install dependencies
 npm run electron:dev   # Vite dev server + Electron
 npm test               # unit tests (vitest)
 npm run lint
-npm run electron:build # production build + installer for the current OS
-node scripts/generate-icons.js   # rebuild icon.png / icon-512.png / icon.ico from public/icon.svg
+npm run electron:build:win -- --publish never   # Windows installer (run on Windows)
+node scripts/generate-icons.js                  # icons from public/icon.svg
 ```
 
-The Windows installer (NSIS, `Afus Boutique Setup <version>.exe`, program `AfusBoutique.exe`)
-is produced by `npm run electron:build:win -- --publish never` on Windows, or by the
-`Build Windows Installer` GitHub workflow (artifact `Afus-Boutique-Setup-<version>-win-x64`,
-nothing published). macOS: `Afus Boutique.app` in `Afus-Boutique-<version>-<arch>.dmg`. Building the
-Windows installer on Linux requires Wine. Customers only need the installer – no Node.js or
-other tools.
+Building the Windows installer on Linux requires Wine; build it on Windows or with GitHub
+Actions. Nothing is ever published: the application has no auto-update.
+
+| Workflow | When | Result |
+|---|---|---|
+| `Build Windows Installer` | started by hand (*Actions › Run workflow*), or when the workflow file changes | artifact `Afus-Boutique-Setup-<version>-win-x64` |
+| `Release` | a `v*` tag is pushed | Windows, macOS and Linux files as artifacts |
+| `CI` | pushes and pull requests to `main` | lint, tests, Windows build |
 
 ## Data
 
-- Database: `%APPDATA%\AfusBoutique\afus-boutique.db` (product images and the logo are in
-  `%APPDATA%\AfusBoutique\images`). On macOS: `~/Library/Application Support/AfusBoutique`.
-  The folder also holds the window settings, browser storage and cache. It is independent of
-  any other application: nothing is imported automatically.
-- Schema changes are versioned in `electron/database/migrations.js`; a backup copy of the
-  database file is written before an existing database is upgraded.
-- Settings › Backup exports (`afus-boutique-backup-<date>.db`) and imports the database.
+- Database: `%APPDATA%\AfusBoutique\afus-boutique.db`; images and logo in
+  `%APPDATA%\AfusBoutique\images` (macOS: `~/Library/Application Support/AfusBoutique`).
+  The folder also holds the window settings and browser storage. It is independent of any
+  other application: nothing is imported automatically.
+- Every sale, return, payment and purchase order is written in one transaction: either all of
+  it is saved or nothing is.
+- Schema changes are versioned in `electron/database/migrations.js`; a copy of the database
+  file is written before an existing database is upgraded.
+- *Settings › Backup* exports (`afus-boutique-backup-<date>.db`) and restores the database.
 
 ## Identity
 
@@ -70,32 +94,30 @@ checks they match. Naming rules for the other Afus products: [docs/NAMING.md](do
 electron/
   main.js                 IPC handlers, window, printing entry points
   preload.js              contextIsolation bridge (window.electronAPI)
-  database/
-    init.js               load/save, legacy migrations, transactions
-    migrations.js         versioned migrations (variants, ...)
-    api.js                strict DB adapter used by services
-  services/
-    catalogService.js     variants, SKU generation, identifier checks, code lookup, stock moves
-    labelService.js       QR label layout (mm) and printing / PDF
-    receiptService.js     receipts and documents
-  sync/SyncManager.js     optional sync boundary (disabled, see below)
+  brand.js, shared/       product identity, clothing reference data
+  database/               init (load/save, transactions), migrations, strict adapter
+  services/               catalogue, labels, receipts, printing, shifts, ...
 src/
-  pages/                  POS, Products, Inventory, QR Labels, Settings, ...
-  components/products/    product form, variant editor, QR preview
-  components/settings/    shop, printer, scanner forms
-  hooks/useBarcodeScanner.js, lib/scanner.js   keyboard-wedge scanner handling
-tests/                    vitest tests for migrations, catalog and scanner logic
+  pages/                  sales, products, stock, labels, catalogue, reports, settings, ...
+  components/             screens' parts (products, labels, settings, POS, ...)
+  i18n/                   Arabic / French / English texts
+  hooks/useBarcodeScanner.js, lib/scanner.js   keyboard-mode scanner handling
+tests/                    vitest tests (migrations, catalogue, scanner, printing, identity)
+docs/NAMING.md            naming rules for Afus products
 ```
 
 ## Future online store
 
-The local POS is the authoritative system. A future online store must talk to a secure
+The local application is the authoritative system. A future online store must talk to a secure
 cloud API fed by a synchronization service – it must never access the local SQLite file.
-`electron/sync/SyncManager.js` is the boundary for that: it tracks unsynced rows
-(`is_synced`) and hands batches to a transport. No transport is bundled, so sync is off and
-nothing leaves the computer.
+`electron/sync/SyncManager.js` is the boundary for that; no transport is bundled, so sync is off
+and nothing leaves the computer.
+
+## Security
+
+See [SECURITY.md](SECURITY.md).
 
 ## License
 
 MIT – see [LICENSE.txt](LICENSE.txt). Part of the code comes from earlier MIT-licensed
-open-source software; its copyright notice is kept in LICENSE.txt as that license requires.
+open-source software; its copyright notice is kept in LICENSE.txt, as that license requires.
