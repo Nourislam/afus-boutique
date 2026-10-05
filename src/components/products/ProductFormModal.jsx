@@ -15,6 +15,7 @@ import { t } from '../../i18n';
 import { translateErrorLines } from '../../i18n/errors';
 import { GENDERS, SEASONS, genderLabel, seasonLabel, sizeSetForCategory } from '../../lib/clothing';
 import { printArticleLabels, labelResultMessages } from '../../lib/labels';
+import { resizeImageDataUrl } from '../../lib/imageResize';
 
 const EMPTY_PRODUCT = {
     name: '',
@@ -139,7 +140,8 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
         if (!file) return;
         const reader = new FileReader();
         reader.onload = async (event) => {
-            const base64Data = event.target.result;
+            // Resized (800 px) and turned into JPEG here, whatever the format chosen
+            const base64Data = await resizeImageDataUrl(event.target.result, { maxSize: 800, type: 'image/jpeg', quality: 0.85 });
             setImagePreview(base64Data);
             try {
                 const result = await window.electronAPI.images.save({ base64Data, originalName: file.name });

@@ -5,6 +5,7 @@ import { Input, TextArea } from '../ui/Input';
 import { toast } from '../ui/Toast';
 import { useT } from '../../i18n';
 import { wilayaOptions } from '../../data/wilayas';
+import { resizeImageDataUrl } from '../../lib/imageResize';
 
 /**
  * Shop identity fields: name, logo, contact details. Used by the first-launch
@@ -41,8 +42,10 @@ export function ShopInfoForm({ value, onChange, requireLogo = false }) {
         reader.onload = async (event) => {
             setUploading(true);
             try {
+                // PNG keeps the logo's transparency; 600 px is enough for tickets and labels
+                const base64Data = await resizeImageDataUrl(event.target.result, { maxSize: 600, type: 'image/png' });
                 const result = await window.electronAPI.images.saveLogo({
-                    base64Data: event.target.result,
+                    base64Data,
                     originalName: file.name,
                 });
                 if (!result.success) throw new Error(result.error || t('shop.logoSaveFailed'));
@@ -78,7 +81,7 @@ export function ShopInfoForm({ value, onChange, requireLogo = false }) {
                             <ImagePlus className="w-10 h-10 text-zinc-500 mb-2" />
                             <span className="text-sm text-zinc-400">{uploading ? t('common.saving') : t('products.clickUpload')}</span>
                             <span className="text-xs text-zinc-500 mt-1">{t('products.imageHint')}</span>
-                            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleLogoSelect} className="hidden" />
+                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml" onChange={handleLogoSelect} className="hidden" />
                         </label>
                     )}
                 </div>
