@@ -48,6 +48,4 @@ jobs:
       - name: Install Dependencies
         run: npm ci
       - name: Build Electron App
-        run: npm run electron:build
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: npm run electron:build -- --publish never

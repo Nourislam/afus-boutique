@@ -700,15 +700,16 @@ function runInsert(sql, params = []) {
         return true;
     } catch (error) {
         console.error('Insert error:', error);
-        // Inside a transaction a failed write must abort the whole unit of work
-        if (transactionDepth > 0) throw error;
-        return false;
+        // Always reported: the interface shows the error instead of a "saved"
+        // message for a change that was not written (and inside a transaction
+        // the whole unit of work is rolled back)
+        throw error;
     }
 }
 
 /**
- * Execute a write statement and throw on failure (unlike runInsert, which
- * logs and returns false outside of transactions). Used by the newer services.
+ * Execute a write statement and throw on failure (runInsert does the same and
+ * also logs the error). Used by the newer services.
  */
 function runStatement(sql, params = []) {
     db.run(sql, bindable(params));

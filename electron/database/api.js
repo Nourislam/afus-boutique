@@ -1,6 +1,6 @@
 /**
  * Database adapter used by the services in electron/services.
- * Unlike runQuery/runInsert in init.js, every call here throws on error so a
+ * Unlike runQuery in init.js (which logs and returns no rows), every call here throws on error so a
  * failing statement can never go unnoticed (or be half-applied inside a
  * transaction).
  */
