@@ -10,7 +10,7 @@ const pkg = require('../package.json');
 const { dataDirectory, databasePath } = require('../electron/brand');
 
 // Names of products this code base no longer belongs to
-const OLD_NAMES = /storepos|store-pos|store_pos|com\.storepos|hanout|cirvex/i;
+const OLD_NAMES = /storepos|store-pos|store_pos|com\.storepos|hanout|cirvex|storeclothes/i;
 
 function filesUnder(dir) {
     return fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((entry) => {
@@ -22,6 +22,8 @@ function filesUnder(dir) {
 describe('product identity', () => {
     it('package.json uses the identity of electron/shared/brand.json', () => {
         expect(pkg.name).toBe(BRAND.packageName);
+        expect(pkg.productName).toBe(BRAND.productName);
+        expect(pkg.build.win.publisherName).toBe(BRAND.companyName);
         expect(pkg.build.appId).toBe(BRAND.appId);
         expect(pkg.build.productName).toBe(BRAND.productName);
         expect(pkg.build.executableName).toBe(BRAND.executableName);

@@ -217,7 +217,8 @@ addDatabaseChangeListener(() => {
 });
 
 // ==========================================
-// Cloud Sync IPC (REALTIME)
+// Optional sync boundary: no transport is bundled, so nothing is sent
+// anywhere (see electron/sync/SyncManager.js). Kept for a future online module.
 // ==========================================
 ipcMain.handle('sync:trigger', async () => {
   if (SyncManager) {
@@ -257,7 +258,7 @@ ipcMain.handle('sync:get-status', async () => {
 });
 
 ipcMain.handle('sync:set-token', async () => {
-  // No-op in Realtime mode
+  // Nothing to authenticate against: no sync transport is bundled
   return true;
 });
 
@@ -284,14 +285,6 @@ ipcMain.handle('sync:force-push', async () => {
   SyncManager.forceSyncNow();
   return true;
 });
-
-// Supabase API Proxy
-
-
-
-
-
-
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {

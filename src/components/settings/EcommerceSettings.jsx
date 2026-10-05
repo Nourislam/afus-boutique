@@ -57,6 +57,15 @@ export function EcommerceSettings() {
         loadConnections();
     }, []);
 
+    // The online store is the only part that needs internet: say so plainly when it is off
+    const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine !== false));
+    useEffect(() => {
+        const update = () => setOnline(navigator.onLine !== false);
+        window.addEventListener('online', update);
+        window.addEventListener('offline', update);
+        return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); };
+    }, []);
+
     const loadConnections = async () => {
         try {
             const data = await window.electronAPI.ecommerce.getConnections();
@@ -233,6 +242,12 @@ export function EcommerceSettings() {
 
     return (
         <div className="space-y-6">
+            {!online && (
+                <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm" role="status" data-testid="ecommerce-offline">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 flex-none mt-0.5" />
+                    <p><span className="font-medium text-amber-300">{t('ecommerce.offlineTitle')}</span> {t('ecommerce.offlineText')}</p>
+                </div>
+            )}
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">

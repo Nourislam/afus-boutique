@@ -41,4 +41,7 @@ export default {
     'ecommerce.allMapped': ["All products with SKUs are mapped!", "Tous les articles avec SKU sont reliés.", "كل السلع ذات SKU مرتبطة."],
     'ecommerce.notFound': ["Not found on platform", "Introuvable en ligne", "غير موجودة في المتجر"],
     'ecommerce.needsSku': ["Needs SKU", "SKU requis", "يتطلب SKU"],
+    // Shown only inside the online store when there is no internet; the rest of the program works offline
+    'ecommerce.offlineTitle': ["No internet connection.", "Pas de connexion internet.", "لا يوجد اتصال بالإنترنت."],
+    'ecommerce.offlineText': ["The online store needs internet to send and receive stock. Everything else in Afus Boutique keeps working without it.", "La boutique en ligne a besoin d'internet pour envoyer et recevoir le stock. Tout le reste d'Afus Boutique fonctionne sans.", "المتجر الإلكتروني يحتاج الإنترنت لإرسال واستقبال المخزون. باقي Afus Boutique يعمل بدونه بشكل عادي."],
 };

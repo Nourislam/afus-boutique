@@ -723,7 +723,7 @@ class EcommerceSyncManager {
     // ==========================================
 
     /**
-     * Start listening for webhook events from Firestore
+     * Accept webhook events from the connected online store (passed in through IPC)
      * These events are pushed by the website API routes when e-commerce
      * platforms send inventory update webhooks
      */
@@ -738,7 +738,7 @@ class EcommerceSyncManager {
     }
 
     /**
-     * Process an incoming webhook event from Firestore
+     * Process an incoming webhook event from the connected online store
      */
     async processWebhookEvent(event) {
         const { runQuery, runInsert } = require('../database/init');

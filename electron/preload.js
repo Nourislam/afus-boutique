@@ -358,7 +358,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         updateCreditSettings: (data) => ipcRenderer.invoke('db:customers:updateCreditSettings', data),
     },
 
-    // Cloud Sync
+    // Optional sync boundary (no transport bundled: nothing leaves the computer)
     sync: {
         trigger: () => ipcRenderer.invoke('sync:trigger'),
         forcePush: () => ipcRenderer.invoke('sync:force-push'),
