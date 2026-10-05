@@ -1,0 +1,511 @@
+/**
+ * QR label generation and printing.
+ *
+ * - QR codes are generated locally with bwip-js as vector SVG, so they stay
+ *   sharp at any printer resolution (no external QR service).
+ * - The QR only encodes the variant's stable identifier (its qr_code, which
+ *   defaults to the SKU) - never price or stock - so prices can change without
+ *   reprinting labels.
+ * - All physical sizes are in millimetres.
+ * - Two layouts:
+ *     roll  - one label per page, for thermal/label printers with label rolls
+ *     sheet - a grid of labels on a sheet (e.g. A4 sticker sheets) for normal printers
+ * - Printing uses a hidden Electron window and webContents.print() with an
+ *   explicit page size, which is more reliable than window.print().
+ */
+
+const bwipjs = require('bwip-js');
+const { formatMoney } = require('../i18n');
+const { loadHtml, hiddenWindow, printContents } = require('./printDocument');
+
+const PAPER_SIZES_MM = {
+    A4: { width: 210, height: 297 },
+    A5: { width: 148, height: 210 },
+    Letter: { width: 215.9, height: 279.4 },
+};
+
+// Common clothing label formats. Users can also enter any custom size.
+const LABEL_TEMPLATES = {
+    'roll-30x20': { name: '30 × 20 mm (roll)', mode: 'roll', widthMm: 30, heightMm: 20 },
+    'roll-40x30': { name: '40 × 30 mm (roll)', mode: 'roll', widthMm: 40, heightMm: 30 },
+    'roll-50x30': { name: '50 × 30 mm (roll)', mode: 'roll', widthMm: 50, heightMm: 30 },
+    'roll-50x25': { name: '50 × 25 mm (roll)', mode: 'roll', widthMm: 50, heightMm: 25 },
+    'roll-60x40': { name: '60 × 40 mm (roll)', mode: 'roll', widthMm: 60, heightMm: 40 },
+    'roll-58x40': { name: '58 × 40 mm (roll)', mode: 'roll', widthMm: 58, heightMm: 40 },
+    'tag-35x55': { name: '35 × 55 mm (hang tag)', mode: 'roll', widthMm: 35, heightMm: 55 },
+    'round-30': { name: 'Ø 30 mm (round)', mode: 'roll', widthMm: 30, heightMm: 30, shape: 'round' },
+    'round-40': { name: 'Ø 40 mm (round)', mode: 'roll', widthMm: 40, heightMm: 40, shape: 'round' },
+    'sheet-a4-3x8': {
+        name: 'A4 sheet, 3 × 8 (70 × 37 mm)', mode: 'sheet', widthMm: 70, heightMm: 37,
+        paper: 'A4', columns: 3, rows: 8, pageMarginTopMm: 0.5, pageMarginLeftMm: 0, gapXMm: 0, gapYMm: 0,
+    },
+    'sheet-a4-4x10': {
+        name: 'A4 sheet, 4 × 10 (48.5 × 25.4 mm)', mode: 'sheet', widthMm: 48.5, heightMm: 25.4,
+        paper: 'A4', columns: 4, rows: 10, pageMarginTopMm: 21.5, pageMarginLeftMm: 8, gapXMm: 0, gapYMm: 0,
+    },
+};
+
+const DEFAULT_LABEL_SETTINGS = {
+    template: 'roll-40x30',
+    mode: 'roll',
+    widthMm: 40,
+    heightMm: 30,
+    paddingMm: 1.5,
+    paper: 'A4',
+    columns: 3,
+    rows: 8,
+    pageMarginTopMm: 0.5,
+    pageMarginLeftMm: 0,
+    gapXMm: 0,
+    gapYMm: 0,
+    showLogo: false,
+    showShopName: true,
+    showProductName: true,
+    showVariant: true,
+    showSku: true,
+    showPrice: true,
+    // Optional Code 128 barcode of the SKU, for shops whose scanners read only 1D codes
+    showBarcode: false,
+    extraText: '',
+    qrErrorCorrection: 'M',
+    // rect | rounded | round: drawn as a cut guide and keeps content inside round stickers
+    shape: 'rect',
+    // Code printed on article labels: qr | ean13 | code128 | code39 | datamatrix
+    codeType: 'qr',
+    // variant: each colour/size has its own code; article: one code per article
+    codeScope: 'variant',
+};
+
+// Symbologies a free label can use (bwip-js ids)
+const SYMBOLOGIES = {
+    ean13: { bcid: 'ean13', twoD: false },
+    ean8: { bcid: 'ean8', twoD: false },
+    upca: { bcid: 'upca', twoD: false },
+    itf14: { bcid: 'itf14', twoD: false },
+    code128: { bcid: 'code128', twoD: false },
+    code39: { bcid: 'code39', twoD: false },
+    qrcode: { bcid: 'qrcode', twoD: true },
+    datamatrix: { bcid: 'datamatrix', twoD: true },
+};
+
+/** Vector image of a code in any supported symbology (throws on invalid data). */
+function codeSvg(symbology, text, { includeText = true, eclevel = 'M', height = 12 } = {}) {
+    const spec = SYMBOLOGIES[symbology] || SYMBOLOGIES.code128;
+    let value = String(text || '').trim();
+    if (!value) throw new Error('Code is empty');
+    if (spec.bcid === 'code39') value = value.toUpperCase();
+    const options = { bcid: spec.bcid, text: value, paddingwidth: 0, paddingheight: 0 };
+    if (spec.twoD) {
+        if (spec.bcid === 'qrcode') options.eclevel = eclevel;
+    } else {
+        options.height = height;
+        if (includeText) {
+            options.includetext = true;
+            options.textxalign = 'center';
+            options.textsize = 9;
+        }
+        if (spec.bcid === 'itf14') options.showborder = false;
+    }
+    return bwipjs.toSVG(options);
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function toNumber(value, fallback) {
+    const n = parseFloat(value);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Merge saved settings with the template they reference and the defaults. */
+function resolveLayout(settings = {}) {
+    const template = LABEL_TEMPLATES[settings.template] || {};
+    const merged = { ...DEFAULT_LABEL_SETTINGS, ...template, ...settings };
+    // A predefined template fixes the geometry unless the user picked "custom"
+    if (settings.template && settings.template !== 'custom' && LABEL_TEMPLATES[settings.template]) {
+        Object.assign(merged, template);
+    }
+    merged.widthMm = toNumber(merged.widthMm, 40);
+    merged.heightMm = toNumber(merged.heightMm, 30);
+    merged.paddingMm = Math.max(0, parseFloat(merged.paddingMm) || 0);
+    merged.columns = Math.max(1, parseInt(merged.columns, 10) || 1);
+    merged.rows = Math.max(1, parseInt(merged.rows, 10) || 1);
+    merged.pageMarginTopMm = Math.max(0, parseFloat(merged.pageMarginTopMm) || 0);
+    merged.pageMarginLeftMm = Math.max(0, parseFloat(merged.pageMarginLeftMm) || 0);
+    merged.gapXMm = Math.max(0, parseFloat(merged.gapXMm) || 0);
+    merged.gapYMm = Math.max(0, parseFloat(merged.gapYMm) || 0);
+    merged.mode = merged.mode === 'sheet' ? 'sheet' : 'roll';
+    if (settings.template && settings.template !== 'custom' && LABEL_TEMPLATES[settings.template]) {
+        // Round stickers come from their template; other templates keep rect/rounded
+        merged.shape = template.shape || (settings.shape === 'rounded' ? 'rounded' : 'rect');
+    }
+    if (!['rect', 'rounded', 'round'].includes(merged.shape)) merged.shape = 'rect';
+    return merged;
+}
+
+/** Physical page size (mm) the printer must be told about. */
+function getPageSize(layout) {
+    if (layout.mode === 'sheet') {
+        return PAPER_SIZES_MM[layout.paper] || PAPER_SIZES_MM.A4;
+    }
+    return { width: layout.widthMm, height: layout.heightMm };
+}
+
+function qrSvg(text, eclevel = 'M') {
+    if (!text) throw new Error('QR content is empty');
+    // Quiet zone is added by the label layout, so no padding here
+    return bwipjs.toSVG({ bcid: 'qrcode', text: String(text), eclevel, paddingwidth: 0, paddingheight: 0 });
+}
+
+// bwip-js draws one module of a 1D code as 2 SVG units (4 for a 2D code)
+// and a bar 1 mm high as 72/25.4*2 units
+const UNITS_PER_MODULE = 2;
+const UNITS_PER_MODULE_2D = 4;
+const UNITS_PER_MM = (72 / 25.4) * 2;
+
+function viewBox(svg) {
+    const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);
+    return m ? { width: parseFloat(m[1]), height: parseFloat(m[2]) } : { width: 1, height: 1 };
+}
+
+/**
+ * A 1D barcode drawn to fill a box of boxW × boxH mm: the bar height is set
+ * from the box, so the bars always use the full width (wider modules, easier
+ * to scan) instead of being shrunk by the height.
+ * @returns {{ svg: string, modules: number }}
+ */
+function fitBars(make, boxW, boxH) {
+    const probe = make(10);
+    const a = viewBox(probe);
+    const extra = a.height - 10 * UNITS_PER_MM;
+    const wantedH = (a.width * boxH) / Math.max(boxW, 0.1);
+    const bar = Math.max(2, (wantedH - extra) / UNITS_PER_MM);
+    const svg = make(Number(bar.toFixed(2)));
+    return { svg, modules: viewBox(svg).width / UNITS_PER_MODULE };
+}
+
+/**
+ * The narrowest element a scanner must read, in mm. A printer dot is
+ * 25.4 / dpi mm; a bar thinner than 1.5 dots (a QR square thinner than
+ * 2 dots) is printed unevenly and is often not read. Without a set dpi a
+ * roll label printer is taken as 203 dpi, a sheet printer as 300 dpi.
+ */
+function minModuleMm(twoD, dpi, mode) {
+    const value = parseInt(dpi, 10) > 0 ? parseInt(dpi, 10) : (mode === 'sheet' ? 300 : 203);
+    const dot = 25.4 / value;
+    return twoD ? Math.max(2 * dot, 0.2) : Math.max(1.5 * dot, 0.15);
+}
+
+function note(report, kind, symbology, moduleMm) {
+    if (report) report.push({ kind, symbology, moduleMm: Number(moduleMm.toFixed(3)) });
+}
+
+function renderLabel(label, layout, shop, report) {
+    const pad = layout.paddingMm;
+    const innerH = layout.heightMm - pad * 2;
+    const innerW = layout.widthMm - pad * 2;
+    // Optional Code 128 of the SKU: a strip across the whole label under the
+    // QR and the text, so its bars are as wide as the label allows
+    const barsValue = layout.showBarcode ? String(label.sku || label.qrValue || '') : '';
+    const barsH = barsValue && /^[\x20-\x7e]+$/.test(barsValue) ? Math.max(3, innerH * 0.22) : 0;
+    const rowH = barsH ? innerH - barsH - 0.6 : innerH;
+    // Square QR on the left; keep a quiet zone of ~1.2 mm around it and leave
+    // at least 40% of the width for text.
+    const quiet = 1.2;
+    const qrSize = Math.max(8, Math.min(rowH, innerW * 0.5) - quiet * 2);
+    // Font size in mm, scaled to the label so text fits next to the QR
+    const base = Math.max(1.5, Math.min(layout.heightMm / 10, layout.widthMm / 15, 3.2));
+
+    const lines = [];
+    if (layout.showShopName && shop.name) {
+        lines.push(`<div class="shop">${layout.showLogo && shop.logo ? LOGO_TAG : ''}<span>${escapeHtml(shop.name)}</span></div>`);
+    } else if (layout.showLogo && shop.logo) {
+        lines.push(`<div class="shop">${LOGO_TAG}</div>`);
+    }
+    if (layout.showProductName) lines.push(`<div class="name">${escapeHtml(label.productName)}</div>`);
+    if (layout.showVariant && label.variantLabel) lines.push(`<div class="variant">${escapeHtml(label.variantLabel)}</div>`);
+    // Width left for text next to the QR; long single-line values (SKU,
+    // price) are shrunk to fit instead of being cut off.
+    const textWidthMm = innerW - (qrSize + quiet * 2);
+    const fit = (text, preferredMm, charWidthEm) =>
+        Math.max(1.2, Math.min(preferredMm, textWidthMm / (Math.max(String(text).length, 1) * charWidthEm))).toFixed(2);
+    if (layout.showSku && label.sku) {
+        lines.push(`<div class="sku" style="font-size:${fit(label.sku, base * 0.8, 0.62)}mm">${escapeHtml(label.sku)}</div>`);
+    }
+    if (layout.showPrice && label.price !== null && label.price !== undefined) {
+        const price = formatMoney(label.price, shop.lang, label.currency);
+        lines.push(`<div class="price" style="font-size:${fit(price, base * 1.25, 0.6)}mm">${escapeHtml(price)}</div>`);
+    }
+    if (layout.extraText) lines.push(`<div class="extra">${escapeHtml(layout.extraText)}</div>`);
+
+    const qr = qrSvg(label.qrValue, layout.qrErrorCorrection);
+    note(report, 'code', 'qrcode', qrSize / (viewBox(qr).width / UNITS_PER_MODULE_2D));
+    let bars = '';
+    if (barsH) {
+        const fitted = fitBars((height) => bwipjs.toSVG({ bcid: 'code128', text: barsValue, height, includetext: false, paddingwidth: 0, paddingheight: 0 }), innerW, barsH);
+        note(report, 'bars', 'code128', innerW / fitted.modules);
+        bars = `<div class="bars" style="height:${barsH.toFixed(2)}mm">${fitted.svg}</div>`;
+    }
+
+    return `
+        <div class="label${bars ? ' with-bars' : ''}" style="width:${layout.widthMm}mm;height:${layout.heightMm}mm;padding:${pad}mm;font-size:${base.toFixed(2)}mm">
+            <div class="row" style="height:${rowH.toFixed(2)}mm">
+                <div class="qr" style="width:${qrSize.toFixed(2)}mm;height:${qrSize.toFixed(2)}mm;margin:${quiet}mm">${qr}</div>
+                <div class="text">${lines.join('')}</div>
+            </div>
+            ${bars}
+        </div>`;
+}
+
+/**
+ * A label made around one code (free labels with no article, or articles
+ * printed with a barcode instead of a QR): shop name and title on top, the
+ * code in the middle, the price below.
+ */
+function renderCodeLabel(label, layout, shop, report) {
+    const round = layout.shape === 'round';
+    // Inside a round sticker only the inscribed square is safe
+    const inset = round ? Math.min(layout.widthMm, layout.heightMm) * 0.146 : 0;
+    const pad = layout.paddingMm + inset;
+    const innerW = layout.widthMm - pad * 2;
+    const innerH = layout.heightMm - pad * 2;
+    // In a circle only the inner square is used: text is sized on it, so the code keeps room
+    const base = round
+        ? Math.max(1.2, Math.min(innerH / 9, innerW / 12, 3))
+        : Math.max(1.4, Math.min(layout.heightMm / 11, layout.widthMm / 14, 3));
+    const spec = SYMBOLOGIES[label.symbology] || SYMBOLOGIES.code128;
+
+    const top = [];
+    const logo = layout.showLogo && shop.logo ? LOGO_TAG : '';
+    if ((layout.showShopName && shop.name) || logo) {
+        top.push(`<div class="shop c">${logo}${layout.showShopName && shop.name ? `<span>${escapeHtml(shop.name)}</span>` : ''}</div>`);
+    }
+    if (layout.showProductName && label.productName) top.push(`<div class="name c">${escapeHtml(label.productName)}</div>`);
+    if (layout.showVariant && label.variantLabel) top.push(`<div class="variant c">${escapeHtml(label.variantLabel)}</div>`);
+    const bottom = [];
+    if (layout.showPrice && label.price !== null && label.price !== undefined && label.price !== '') {
+        bottom.push(`<div class="price c">${escapeHtml(formatMoney(label.price, shop.lang, label.currency))}</div>`);
+    }
+    if (layout.extraText) bottom.push(`<div class="extra c">${escapeHtml(layout.extraText)}</div>`);
+    // A 2D code needs its value printed under it; 1D codes carry the digits
+    if (spec.twoD && layout.showSku !== false) bottom.push(`<div class="sku c">${escapeHtml(label.qrValue)}</div>`);
+
+    const textLines = top.length + bottom.length;
+    const codeH = Math.max(5, innerH - textLines * base * 1.35);
+    let codeBox;
+    let code;
+    if (spec.twoD) {
+        const side = Math.min(codeH, innerW);
+        codeBox = `width:${side.toFixed(2)}mm;height:${side.toFixed(2)}mm`;
+        code = codeSvg(label.symbology, label.qrValue, { eclevel: layout.qrErrorCorrection });
+        note(report, 'code', spec.bcid, side / (viewBox(code).width / UNITS_PER_MODULE_2D));
+    } else {
+        codeBox = `width:${innerW.toFixed(2)}mm;height:${codeH.toFixed(2)}mm`;
+        const fitted = fitBars((height) => codeSvg(label.symbology, label.qrValue, { includeText: layout.showSku !== false, height }), innerW, codeH);
+        code = fitted.svg;
+        note(report, 'code', spec.bcid, innerW / fitted.modules);
+    }
+
+    return `
+        <div class="label code-label ${layout.shape || 'rect'}" style="width:${layout.widthMm}mm;height:${layout.heightMm}mm;padding:${pad.toFixed(2)}mm;font-size:${base.toFixed(2)}mm">
+            ${top.join('')}
+            <div class="code" style="${codeBox}">${code}</div>
+            ${bottom.join('')}
+        </div>`;
+}
+
+// The logo is written once in the style sheet, not in every label: with a
+// photo as logo, hundreds of copies made documents of tens of megabytes.
+const LOGO_TAG = '<img class="logo" alt="">';
+const cssUrl = (uri) => `url("${String(uri).replace(/["\\\n\r]/g, '')}")`;
+
+function renderAny(label, layout, shop, report) {
+    if (label.symbology && label.symbology !== 'qr-side') return renderCodeLabel(label, layout, shop, report);
+    // A QR beside the text does not fit in a circle: centred, like the other codes
+    if (layout.shape === 'round') return renderCodeLabel({ ...label, symbology: 'qrcode' }, layout, shop, report);
+    return renderLabel(label, layout, shop, report);
+}
+
+/**
+ * Whether the codes of these labels can be scanned once printed, for the
+ * label size and the printer resolution. One entry per label.
+ * @returns {Array<{ index, sku, kind: 'code'|'bars', symbology, moduleMm, minMm, ok }>}
+ */
+function inspectLabels(labels, settings = {}, shop = {}, { dpi = 0 } = {}) {
+    const layout = resolveLayout(settings);
+    const out = [];
+    (labels || []).forEach((label, index) => {
+        const report = [];
+        try {
+            renderAny(label, layout, shop, report);
+        } catch (error) {
+            out.push({ index, sku: label.sku, kind: 'code', symbology: label.symbology || 'qrcode', error: error.message, ok: false });
+            return;
+        }
+        for (const entry of report) {
+            const twoD = entry.symbology === 'qrcode' || entry.symbology === 'datamatrix';
+            const minMm = minModuleMm(twoD, dpi, layout.mode);
+            out.push({ index, sku: label.sku, ...entry, minMm: Number(minMm.toFixed(3)), ok: entry.moduleMm >= minMm - 1e-6 });
+        }
+    });
+    return out;
+}
+
+/**
+ * Build the printable HTML for a list of labels.
+ * @param {Array} labels [{ productName, variantLabel, sku, qrValue, price, currency, quantity }]
+ * @param {object} settings label settings (see DEFAULT_LABEL_SETTINGS)
+ * @param {object} shop { name, logo (data URI), lang (shop language for prices) }
+ */
+function buildLabelsHtml(labels, settings = {}, shop = {}) {
+    const layout = resolveLayout(settings);
+    const page = getPageSize(layout);
+
+    const expanded = [];
+    for (const label of labels) {
+        const qty = Math.min(Math.max(parseInt(label.quantity, 10) || 1, 1), 1000);
+        for (let i = 0; i < qty; i++) expanded.push(label);
+    }
+    if (expanded.length === 0) throw new Error('No labels to print');
+
+    // Copies of one label share the same drawing
+    const drawn = new Map();
+    const render = (l) => {
+        if (!drawn.has(l)) drawn.set(l, renderAny(l, layout, shop));
+        return drawn.get(l);
+    };
+    let body;
+    if (layout.mode === 'roll') {
+        body = expanded.map(l => `<div class="page roll">${render(l)}</div>`).join('');
+    } else {
+        const perPage = layout.columns * layout.rows;
+        const pages = [];
+        for (let i = 0; i < expanded.length; i += perPage) {
+            const cells = expanded.slice(i, i + perPage).map(render).join('');
+            pages.push(`
+                <div class="page sheet" style="padding:${layout.pageMarginTopMm}mm 0 0 ${layout.pageMarginLeftMm}mm;
+                    grid-template-columns:repeat(${layout.columns}, ${layout.widthMm}mm);
+                    grid-auto-rows:${layout.heightMm}mm;column-gap:${layout.gapXMm}mm;row-gap:${layout.gapYMm}mm">${cells}</div>`);
+        }
+        body = pages.join('');
+    }
+
+    return `<!DOCTYPE html>
+<html lang="${shop.lang || 'ar'}" dir="${shop.lang === 'ar' || !shop.lang ? 'rtl' : 'ltr'}"><head><meta charset="UTF-8">
+<style>
+    @page { size: ${page.width}mm ${page.height}mm; margin: 0; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+    body { font-family: Arial, Tahoma, "Segoe UI", sans-serif; }
+    .page { width: ${page.width}mm; height: ${page.height}mm; overflow: hidden; page-break-after: always; break-after: page; }
+    .page:last-child { page-break-after: auto; break-after: auto; }
+    .page.sheet { display: grid; align-content: start; }
+    .label { display: flex; align-items: center; overflow: hidden; }
+    .label.with-bars { flex-direction: column; align-items: stretch; justify-content: center; gap: 0.6mm; }
+    .row { display: flex; align-items: center; min-height: 0; }
+    .label > .row { width: 100%; }
+    .qr { flex: none; }
+    .qr svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+    .text { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.25em; line-height: 1.1; }
+    .shop { display: flex; align-items: center; gap: 0.3em; font-size: 0.7em; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
+    .shop span { overflow: hidden; text-overflow: ellipsis; }
+    ${layout.showLogo && shop.logo ? `.shop img.logo { content: ${cssUrl(shop.logo)}; }` : ''}
+    .shop img { height: 1.6em; max-width: 6em; object-fit: contain; }
+    .name { font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+    .variant { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sku, .price { direction: ltr; unicode-bidi: isolate; }
+    .bars { flex: none; }
+    .bars svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+    .sku { font-family: "Courier New", monospace; font-size: 0.8em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .price { font-weight: 800; font-size: 1.25em; white-space: nowrap; overflow: hidden; }
+    .extra { font-size: 0.7em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .code-label { flex-direction: column; justify-content: center; gap: 0.15em; text-align: center; }
+    .code-label .c { width: 100%; text-align: center; }
+    .code-label .code { flex: none; display: flex; align-items: center; justify-content: center; }
+    .code-label .code svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+    .code-label .shop { justify-content: center; }
+    .code-label .shop img { height: 1.8em; }
+    .code-label .name { -webkit-line-clamp: 1; font-size: 0.85em; }
+    .code-label .variant { font-size: 0.8em; }
+    .code-label .sku { font-size: 0.75em; }
+    .code-label .price { font-size: 1.15em; }
+    .preview .label.rounded { outline: 0.2mm dashed #bbb; outline-offset: -0.2mm; border-radius: 2.5mm; }
+    .preview .label.round { outline: 0.2mm dashed #bbb; outline-offset: -0.2mm; border-radius: 50%; }
+</style></head>
+<body${shop.preview ? ' class="preview"' : ''}>${body}</body></html>`;
+}
+
+/**
+ * Load HTML into a hidden window and run fn(webContents). The window is
+ * always destroyed afterwards.
+ */
+async function withHiddenWindow(BrowserWindow, html, fn) {
+    const win = hiddenWindow(BrowserWindow, { javascript: false });
+    try {
+        await loadHtml(win, html);
+        return await fn(win.webContents);
+    } finally {
+        if (!win.isDestroyed()) win.destroy();
+    }
+}
+
+/**
+ * Send labels to a printer.
+ * @param {object} options { printerName, silent, copies, dpi }
+ */
+async function printLabels(BrowserWindow, html, settings, options = {}) {
+    const layout = resolveLayout(settings);
+    const page = getPageSize(layout);
+    return withHiddenWindow(BrowserWindow, html, (webContents) => {
+        const printOptions = {
+            silent: !!options.silent,
+            printBackground: true,
+            deviceName: options.printerName || '',
+            margins: { marginType: 'none' },
+            // Electron expects microns here
+            pageSize: { width: Math.round(page.width * 1000), height: Math.round(page.height * 1000) },
+            copies: Math.max(1, parseInt(options.copies, 10) || 1),
+            landscape: false,
+        };
+        const dpi = parseInt(options.dpi, 10);
+        if (dpi > 0) printOptions.dpi = { horizontal: dpi, vertical: dpi };
+
+        return printContents(webContents, printOptions);
+    });
+}
+
+/** Render the labels to a PDF buffer with exact physical page size. */
+async function labelsToPdf(BrowserWindow, html, settings) {
+    const layout = resolveLayout(settings);
+    const page = getPageSize(layout);
+    return withHiddenWindow(BrowserWindow, html, (webContents) => webContents.printToPDF({
+        printBackground: true,
+        preferCSSPageSize: true,
+        // printToPDF expects inches
+        pageSize: { width: page.width / 25.4, height: page.height / 25.4 },
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    }));
+}
+
+module.exports = {
+    LABEL_TEMPLATES,
+    DEFAULT_LABEL_SETTINGS,
+    PAPER_SIZES_MM,
+    resolveLayout,
+    getPageSize,
+    buildLabelsHtml,
+    printLabels,
+    labelsToPdf,
+    inspectLabels,
+    minModuleMm,
+    qrSvg,
+    codeSvg,
+    SYMBOLOGIES,
+    escapeHtml,
+};

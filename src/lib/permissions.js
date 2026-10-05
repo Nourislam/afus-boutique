@@ -36,6 +36,8 @@ export const PERMISSIONS = {
     CUSTOMERS_CREATE: 'customers.create',
     CUSTOMERS_EDIT: 'customers.edit',
     CUSTOMERS_DELETE: 'customers.delete',
+    // Allowing a customer to buy on kridi (and the limit) is the manager's decision
+    CUSTOMERS_CREDIT: 'customers.credit',
 
     // Gift Cards
     GIFT_CARDS_VIEW: 'gift_cards.view',
@@ -59,8 +61,6 @@ export const PERMISSIONS = {
 
     // Settings
     SETTINGS_VIEW: 'settings.view',
-    // Profile
-    PROFILE_VIEW: 'profile.view',
 };
 
 // Role-Permission mapping
@@ -84,6 +84,7 @@ const ROLE_PERMISSIONS = {
         PERMISSIONS.CUSTOMERS_CREATE,
         PERMISSIONS.CUSTOMERS_EDIT,
         PERMISSIONS.CUSTOMERS_DELETE,
+        PERMISSIONS.CUSTOMERS_CREDIT,
         PERMISSIONS.GIFT_CARDS_VIEW,
         PERMISSIONS.GIFT_CARDS_CREATE,
         PERMISSIONS.GIFT_CARDS_RELOAD,
@@ -92,7 +93,6 @@ const ROLE_PERMISSIONS = {
         PERMISSIONS.PROMOTIONS_VIEW,
         PERMISSIONS.PROMOTIONS_MANAGE,
         PERMISSIONS.REPORTS_VIEW,
-        'profile.view', // Added manually or use PERMISSIONS object after re-import if splitting file, here string literal is safer for immediate patching
     ],
 
     [ROLES.CASHIER]: [
@@ -104,7 +104,6 @@ const ROLE_PERMISSIONS = {
         PERMISSIONS.CUSTOMERS_CREATE,
         PERMISSIONS.CUSTOMERS_EDIT,
         PERMISSIONS.GIFT_CARDS_VIEW,
-        'profile.view',
     ],
 };
 

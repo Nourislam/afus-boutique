@@ -1,90 +1,60 @@
 import { useState, useEffect } from 'react';
+import { loadCatalogCustomization } from './lib/clothing';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
 import LoginScreen from './components/employees/LoginScreen';
 import SetupWizard from './components/SetupWizard';
-import ActivationScreen from './components/auth/ActivationScreen';
 import POSPage from './pages/POSPage';
 import ProductsPage from './pages/ProductsPage';
 import InventoryPage from './pages/InventoryPage';
-import CustomersPage from './pages/CustomersPage';
 import EmployeesPage from './pages/EmployeesPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
-import AIChatPage from './pages/AIChatPage';
 import DashboardPage from './pages/DashboardPage';
-import GiftCardsPage from './pages/GiftCardsPage';
-import BundlesPage from './pages/BundlesPage';
-import PromotionsPage from './pages/PromotionsPage';
-import BarcodeLabelPage from './pages/BarcodeLabelPage';
 import TransactionsPage from './pages/TransactionsPage';
-import ProfilePage from './pages/ProfilePage';
 
-import SuppliersPage from './pages/SuppliersPage';
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
 import CreditSalesPage from './pages/CreditSalesPage';
+import CatalogPage from './pages/CatalogPage';
+import CustomersPage from './pages/CustomersPage';
+import SuppliersPage from './pages/SuppliersPage';
+import OffersPage from './pages/OffersPage';
+import LabelsPage from './pages/LabelsPage';
+import { TitleBar } from './components/layout/TitleBar';
 import { useAuthStore, PERMISSIONS } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
-import { Toaster } from './components/ui/Toast';
-import { EcommerceWebhookListener } from './components/ecommerce/EcommerceWebhookListener';
+import { ModuleGate } from './components/auth/ModuleGate';
+import { Toaster, toast } from './components/ui/Toast';
+import { useT, t as translate } from './i18n';
 
 function App() {
-    const { currentEmployee, isAuthenticated, checkAuth } = useAuthStore();
+    const { isAuthenticated, checkAuth, startSession } = useAuthStore();
     const { loadSettings } = useSettingsStore();
+    const uiMode = useSettingsStore(state => state.settings.uiMode);
     const [isLoading, setIsLoading] = useState(true);
     const [showSetupWizard, setShowSetupWizard] = useState(false);
-    const [isActivated, setIsActivated] = useState(null); // null = loading, false = not activated, true = activated
+    // Subscribing to the language re-renders the whole tree when it changes
+    const { t } = useT();
 
     useEffect(() => {
+        // Everything is local: no account, activation or internet connection
+        // is needed to open the POS.
         const init = async () => {
             try {
-                // 0. Load Global Settings (Store)
                 await loadSettings();
+                await loadCatalogCustomization();
 
-                // 1. Check Activation Status (New)
-                const activationData = await window.electronAPI.settings.get('activation_data');
-                console.log('App init - activation:', activationData);
-
-                if (activationData && activationData.uid) {
-                    setIsActivated(true);
-                } else {
-                    setIsActivated(false);
-                    setIsLoading(false); // Stop globally loading to show activation screen
-                    return; // Stop initialization here
-                }
-
-                // 2. Check if setup has been completed
                 const settings = await window.electronAPI.settings.getAll();
-                console.log('App init - settings:', settings);
-
                 // Handle both string 'true' and boolean true
                 const setupCompleted = settings.setup_completed === 'true' || settings.setup_completed === true;
-                console.log('Setup completed:', setupCompleted);
 
                 if (!setupCompleted) {
                     setShowSetupWizard(true);
-                    setIsLoading(false);
                     return;
                 }
 
-                // If setup is done, check authentication
                 await checkAuth();
-
-                // 3. Listen for Firebase Auth changes and sync token to Main Process
-                const { onAuthStateChanged } = await import('firebase/auth');
-                const { auth } = await import('./lib/firebase');
-
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        console.log('App: Firebase user detected, syncing token...');
-                        const token = await user.getIdToken();
-                        await window.electronAPI.sync.setToken(token);
-                    } else {
-                        console.log('App: No Firebase user.');
-                        await window.electronAPI.sync.setToken(null);
-                    }
-                });
             } catch (error) {
                 console.error('Init error:', error);
             } finally {
@@ -92,36 +62,38 @@ function App() {
             }
         };
         init();
+        // Colours and sizes edited in the Catalogue apply everywhere at once
+        window.addEventListener('pos:settings-changed', loadCatalogCustomization);
+        // A saved printer that was removed or renamed: the job was sent through the
+        // print dialog, and the shop is told where to choose the printer again
+        const offMissing = window.electronAPI.printers?.onMissing?.(({ kind, name }) => {
+            toast.warning(translate(kind === 'label' ? 'printing.missingLabel' : 'printing.missingReceipt', { name }), 8000);
+        });
+        return () => {
+            window.removeEventListener('pos:settings-changed', loadCatalogCustomization);
+            offMissing?.();
+        };
     }, []);
 
-    const handleSetupComplete = () => {
+    const handleSetupComplete = async (adminEmployee) => {
+        await loadSettings();
+        // The person who just set up the shop goes straight to the sales screen
+        if (adminEmployee) startSession(adminEmployee);
+        window.location.hash = '#/pos';
         setShowSetupWizard(false);
-        // After setup, show login screen
-        window.location.reload();
-    };
-
-    const handleActivationSuccess = () => {
-        setIsActivated(true);
-        window.location.reload();
     };
 
     if (isLoading) {
         return (
-            <div className="h-screen w-screen flex items-center justify-center bg-dark-primary">
+            <div className="h-screen w-screen flex flex-col bg-dark-primary">
+                <TitleBar bare />
+                <div className="flex-1 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <div className="w-12 h-12 border-4 border-accent-primary border-t-transparent rounded-full animate-spin" />
-                    <p className="text-zinc-400">Loading POS System...</p>
+                    <p className="text-zinc-400">{t('app.loading')}</p>
+                </div>
                 </div>
             </div>
-        );
-    }
-
-    if (isActivated === false) {
-        return (
-            <>
-                <ActivationScreen onActivationSuccess={handleActivationSuccess} />
-                <Toaster />
-            </>
         );
     }
 
@@ -147,11 +119,14 @@ function App() {
         <HashRouter>
             <MainLayout>
                 <Routes>
-                    <Route path="/" element={
-                        <ProtectedRoute permission={PERMISSIONS.DASHBOARD_VIEW}>
-                            <DashboardPage />
-                        </ProtectedRoute>
-                    } />
+                    <Route path="/" element={uiMode === 'simple'
+                        // The simple menu has no dashboard: the sales screen is home
+                        ? <Navigate to="/pos" replace />
+                        : (
+                            <ProtectedRoute permission={PERMISSIONS.DASHBOARD_VIEW}>
+                                <DashboardPage />
+                            </ProtectedRoute>
+                        )} />
                     <Route path="/pos" element={
                         <ProtectedRoute permission={PERMISSIONS.POS_VIEW}>
                             <POSPage />
@@ -162,36 +137,31 @@ function App() {
                             <ProductsPage />
                         </ProtectedRoute>
                     } />
+                    <Route path="/brands" element={<Navigate to="/catalog?tab=brands" replace />} />
                     <Route path="/inventory" element={
                         <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
                             <InventoryPage />
                         </ProtectedRoute>
                     } />
+                    {/* Customers and suppliers are screens of their own (modules in Settings) */}
                     <Route path="/customers" element={
                         <ProtectedRoute permission={PERMISSIONS.CUSTOMERS_VIEW}>
-                            <CustomersPage />
+                            <ModuleGate module="customers"><CustomersPage /></ModuleGate>
                         </ProtectedRoute>
                     } />
                     <Route path="/suppliers" element={
                         <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
-                            <SuppliersPage />
+                            <ModuleGate module="suppliers"><SuppliersPage /></ModuleGate>
                         </ProtectedRoute>
                     } />
                     <Route path="/purchase-orders" element={
                         <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
-                            <PurchaseOrdersPage />
+                            <ModuleGate module="purchaseOrders"><PurchaseOrdersPage /></ModuleGate>
                         </ProtectedRoute>
                     } />
-                    <Route path="/gift-cards" element={
-                        <ProtectedRoute permission={PERMISSIONS.GIFT_CARDS_VIEW}>
-                            <GiftCardsPage />
-                        </ProtectedRoute>
-                    } />
-                    <Route path="/bundles" element={
-                        <ProtectedRoute permission={PERMISSIONS.BUNDLES_VIEW}>
-                            <BundlesPage />
-                        </ProtectedRoute>
-                    } />
+                    {/* Gift cards are a tab of Offers */}
+                    <Route path="/gift-cards" element={<Navigate to="/offers?tab=giftCards" replace />} />
+                    <Route path="/bundles" element={<Navigate to="/offers?tab=packs" replace />} />
                     <Route path="/transactions" element={
                         <ProtectedRoute permission={PERMISSIONS.POS_VIEW}>
                             <TransactionsPage />
@@ -199,14 +169,10 @@ function App() {
                     } />
                     <Route path="/credit-sales" element={
                         <ProtectedRoute permission={PERMISSIONS.CUSTOMERS_VIEW}>
-                            <CreditSalesPage />
+                            <ModuleGate module="credit"><CreditSalesPage /></ModuleGate>
                         </ProtectedRoute>
                     } />
-                    <Route path="/promotions" element={
-                        <ProtectedRoute permission={PERMISSIONS.PROMOTIONS_VIEW}>
-                            <PromotionsPage />
-                        </ProtectedRoute>
-                    } />
+                    <Route path="/promotions" element={<Navigate to="/offers?tab=promotions" replace />} />
                     <Route path="/employees" element={
                         <ProtectedRoute permission={PERMISSIONS.EMPLOYEES_VIEW}>
                             <EmployeesPage />
@@ -217,27 +183,29 @@ function App() {
                             <ReportsPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/ai-chat" element={<AIChatPage />} />
                     <Route path="/settings" element={
                         <ProtectedRoute permission={PERMISSIONS.SETTINGS_VIEW}>
                             <SettingsPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/barcode-labels" element={
+                    <Route path="/barcode-labels" element={<Navigate to="/labels" replace />} />
+                    <Route path="/barcode-generator" element={<Navigate to="/labels?tab=barcodes" replace />} />
+                    <Route path="/catalog" element={
                         <ProtectedRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
-                            <BarcodeLabelPage />
+                            <CatalogPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/profile" element={
-                        <ProtectedRoute permission={'profile.view'}>
-                            <ProfilePage />
+                    {/* Each tab checks its own permission and module */}
+                    <Route path="/offers" element={<OffersPage />} />
+                    <Route path="/labels" element={
+                        <ProtectedRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
+                            <LabelsPage />
                         </ProtectedRoute>
                     } />
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </MainLayout>
             <Toaster />
-            <EcommerceWebhookListener />
         </HashRouter>
     );
 }

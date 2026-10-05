@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+const v = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 export default {
     content: [
         "./index.html",
@@ -7,12 +9,16 @@ export default {
     theme: {
         extend: {
             colors: {
+                // One set of surfaces for the whole app (darkest to lightest)
+                // Surfaces and greys come from CSS variables (index.css) so the
+                // light and dark themes switch without changing any screen
                 dark: {
-                    primary: '#0f0f0f',
-                    secondary: '#1a1a1a',
-                    tertiary: '#252525',
-                    border: '#27272a',
+                    primary: v('surface-0'),   // app background
+                    secondary: v('surface-1'), // sidebar, cards, panels
+                    tertiary: v('surface-2'),  // inputs, hover, raised items
+                    border: v('surface-border'),
                 },
+                zinc: Object.fromEntries([50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map(n => [n, v(`zinc-${n}`)])),
                 accent: {
                     primary: '#6366f1',
                     secondary: '#8b5cf6',
@@ -22,7 +28,9 @@ export default {
                 }
             },
             fontFamily: {
-                sans: ['Inter', 'system-ui', 'sans-serif'],
+                // Bundled with the app (works offline): Inter for Latin, Cairo for Arabic
+                sans: ['"Inter Variable"', '"Cairo Variable"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
+                arabic: ['"Cairo Variable"', '"Inter Variable"', 'system-ui', 'sans-serif'],
             },
             animation: {
                 'fade-in': 'fadeIn 0.2s ease-out',

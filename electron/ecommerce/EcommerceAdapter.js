@@ -27,7 +27,7 @@ class EcommerceAdapter {
      * @param {string|null} cursor - Pagination cursor for next page
      * @returns {Promise<{products: Array, nextCursor: string|null, hasMore: boolean}>}
      */
-    async fetchProducts(cursor = null) {
+    async fetchProducts(_cursor = null) {
         throw new Error('fetchProducts() must be implemented by subclass');
     }
 
@@ -36,7 +36,7 @@ class EcommerceAdapter {
      * @param {Array<string>} productIds - Remote product IDs
      * @returns {Promise<Array<{productId: string, variantId?: string, quantity: number}>>}
      */
-    async fetchInventory(productIds) {
+    async fetchInventory(_productIds) {
         throw new Error('fetchInventory() must be implemented by subclass');
     }
 
@@ -45,7 +45,7 @@ class EcommerceAdapter {
      * @param {Array<{productId: string, variantId?: string, quantity: number, inventoryItemId?: string}>} updates
      * @returns {Promise<{success: boolean, updated: number, errors: Array}>}
      */
-    async updateInventory(updates) {
+    async updateInventory(_updates) {
         throw new Error('updateInventory() must be implemented by subclass');
     }
 
@@ -54,7 +54,7 @@ class EcommerceAdapter {
      * @param {string} sku - Product SKU to search for
      * @returns {Promise<{found: boolean, product?: object}>}
      */
-    async findProductBySku(sku) {
+    async findProductBySku(_sku) {
         throw new Error('findProductBySku() must be implemented by subclass');
     }
 
@@ -83,7 +83,7 @@ class EcommerceAdapter {
      * Make an authenticated HTTP request to the platform API
      * @protected
      */
-    async makeRequest(method, endpoint, body = null, options = {}) {
+    async makeRequest(_method, _endpoint, _body = null, _options = {}) {
         throw new Error('makeRequest() must be implemented by subclass');
     }
 
@@ -91,7 +91,7 @@ class EcommerceAdapter {
      * Handle rate limiting - wait if necessary
      * @protected
      */
-    async handleRateLimit(response) {
+    async handleRateLimit(_response) {
         // Override in subclass with platform-specific rate limit handling
     }
 

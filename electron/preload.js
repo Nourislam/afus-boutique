@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose protected methods to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
+    // Operating system: 'darwin' (macOS), 'win32', 'linux'
+    platform: process.platform,
+
     // Window controls
     minimize: () => ipcRenderer.invoke('window:minimize'),
     maximize: () => ipcRenderer.invoke('window:maximize'),
@@ -14,6 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         getCurrent: (employeeId) => ipcRenderer.invoke('db:shifts:getCurrent', employeeId),
         getStats: (shiftId) => ipcRenderer.invoke('db:shifts:getStats', shiftId),
         getHistory: (range) => ipcRenderer.invoke('db:shifts:getHistory', range),
+        getOpen: () => ipcRenderer.invoke('db:shifts:getOpen'),
+        getLastClosed: () => ipcRenderer.invoke('db:shifts:getLastClosed'),
+        getActivity: (range) => ipcRenderer.invoke('db:shifts:getActivity', range),
     },
 
 
@@ -25,7 +31,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
         delete: (id) => ipcRenderer.invoke('db:categories:delete', id),
     },
 
+    // Brands
+    brands: {
+        getAll: () => ipcRenderer.invoke('db:brands:getAll'),
+        create: (brand) => ipcRenderer.invoke('db:brands:create', brand),
+        update: (brand) => ipcRenderer.invoke('db:brands:update', brand),
+        delete: (id) => ipcRenderer.invoke('db:brands:delete', id),
+    },
+
     // Products
+    // Home screen (read-only)
+    dashboard: {
+        home: (args) => ipcRenderer.invoke('dashboard:home', args),
+        selling: (args) => ipcRenderer.invoke('dashboard:selling', args),
+        series: (args) => ipcRenderer.invoke('dashboard:series', args),
+        stock: (args) => ipcRenderer.invoke('dashboard:stock', args),
+        cash: (args) => ipcRenderer.invoke('dashboard:cash', args),
+    },
     products: {
         getAll: () => ipcRenderer.invoke('db:products:getAll'),
         getById: (id) => ipcRenderer.invoke('db:products:getById', id),
@@ -38,8 +60,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
         updateStock: (data) => ipcRenderer.invoke('db:products:updateStock', data),
     },
 
+    // Clothing catalog: variants, SKU/QR identifiers, scanner lookup
+    catalog: {
+        getVariants: (productId, includeInactive = false) => ipcRenderer.invoke('catalog:getVariants', { productId, includeInactive }),
+        saveProduct: (data) => ipcRenderer.invoke('catalog:saveProduct', data),
+        generateSkus: (product, variants, reserved = []) => ipcRenderer.invoke('catalog:generateSkus', { product, variants, reserved }),
+        generateBarcodes: (count = 1, reserved = []) => ipcRenderer.invoke('catalog:generateBarcodes', { count, reserved }),
+        generateFreeCodes: (type, count = 1, reserved = []) => ipcRenderer.invoke('catalog:generateFreeCodes', { type, count, reserved }),
+        findUsedCodes: (codes) => ipcRenderer.invoke('catalog:findUsedCodes', codes),
+        checkIdentifier: (code, { excludeVariantId = null, excludeProductId = null } = {}) =>
+            ipcRenderer.invoke('catalog:checkIdentifier', { code, excludeVariantId, excludeProductId }),
+        lookupCode: (code) => ipcRenderer.invoke('catalog:lookupCode', code),
+        missingCodes: () => ipcRenderer.invoke('catalog:missingCodes'),
+        searchVariants: (query, limit = 50) => ipcRenderer.invoke('catalog:searchVariants', { query, limit }),
+        regenerateQr: (variantId) => ipcRenderer.invoke('catalog:regenerateQr', variantId),
+    },
+
     // Customers
     customers: {
+        overview: () => ipcRenderer.invoke('db:customers:overview'),
+        history: (customerId) => ipcRenderer.invoke('db:customers:history', customerId),
         getAll: () => ipcRenderer.invoke('db:customers:getAll'),
         getById: (id) => ipcRenderer.invoke('db:customers:getById', id),
         search: (query) => ipcRenderer.invoke('db:customers:search', query),
@@ -63,7 +103,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         create: (sale) => ipcRenderer.invoke('db:sales:create', sale),
         getAll: (params) => ipcRenderer.invoke('db:sales:getAll', params),
         getById: (id) => ipcRenderer.invoke('db:sales:getById', id),
-        getToday: () => ipcRenderer.invoke('db:sales:getToday'),
+        getToday: (params) => ipcRenderer.invoke('db:sales:getToday', params),
         getStats: (params) => ipcRenderer.invoke('db:sales:getStats', params),
     },
 
@@ -105,8 +145,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Backup
     backup: {
+        list: () => ipcRenderer.invoke('backup:list'),
         create: () => ipcRenderer.invoke('backup:create'),
-        restore: () => ipcRenderer.invoke('backup:restore'),
+        inspect: (name) => ipcRenderer.invoke('backup:inspect', name),
+        restore: (name) => ipcRenderer.invoke('backup:restore', name),
+        delete: (name) => ipcRenderer.invoke('backup:delete', name),
+        export: (name) => ipcRenderer.invoke('backup:export', name),
+        import: () => ipcRenderer.invoke('backup:import'),
+        openFolder: () => ipcRenderer.invoke('backup:openFolder'),
         reset: () => ipcRenderer.invoke('backup:reset'),
     },
 
@@ -122,6 +168,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     reports: {
         salesByDate: (params) => ipcRenderer.invoke('db:reports:salesByDate', params),
         topProducts: (params) => ipcRenderer.invoke('db:reports:topProducts', params),
+        clothingDashboard: (params) => ipcRenderer.invoke('db:reports:clothingDashboard', params),
         salesByCategory: (params) => ipcRenderer.invoke('db:reports:salesByCategory', params),
         paymentMethods: (params) => ipcRenderer.invoke('db:reports:paymentMethods', params),
         getLowStock: () => ipcRenderer.invoke('db:reports:getLowStock'),
@@ -138,6 +185,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Images
     images: {
         save: (data) => ipcRenderer.invoke('images:save', data),
+        saveLogo: (data) => ipcRenderer.invoke('images:saveLogo', data),
         saveFromPath: (path) => ipcRenderer.invoke('images:saveFromPath', path),
         delete: (fileName) => ipcRenderer.invoke('images:delete', fileName),
         get: (fileName) => ipcRenderer.invoke('images:get', fileName),
@@ -154,6 +202,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Suppliers
     suppliers: {
+        overview: () => ipcRenderer.invoke('db:suppliers:overview'),
         getAll: () => ipcRenderer.invoke('db:suppliers:getAll'),
         getById: (id) => ipcRenderer.invoke('db:suppliers:getById', id),
         getHistory: (id) => ipcRenderer.invoke('db:suppliers:getHistory', id),
@@ -225,14 +274,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
         create: (receipt) => ipcRenderer.invoke('db:receipts:create', receipt),
         updateStatus: (data) => ipcRenderer.invoke('db:receipts:updateStatus', data),
         getBySale: (saleId) => ipcRenderer.invoke('db:receipts:getBySale', saleId),
-        print: (sale) => ipcRenderer.invoke('receipts:print', sale),
-        getHtml: (sale) => ipcRenderer.invoke('receipts:getHtml', sale),
+        print: (sale, overrides) => ipcRenderer.invoke('receipts:print', sale, overrides),
+        getHtml: (sale, overrides) => ipcRenderer.invoke('receipts:getHtml', sale, overrides),
         savePdf: (sale) => ipcRenderer.invoke('receipts:savePdf', sale),
     },
 
 
 
 
+
+    // Application/version information and local data location
+    app: {
+        getInfo: () => ipcRenderer.invoke('app:getInfo'),
+        setTheme: (theme, preference) => ipcRenderer.invoke('app:setTheme', { theme, preference }),
+    },
+
+    // Printers installed in the operating system
+    printers: {
+        list: () => ipcRenderer.invoke('printers:list'),
+        getSettings: () => ipcRenderer.invoke('printers:getSettings'),
+        // The saved printer was not found: the job went through the print dialog
+        onMissing: (callback) => {
+            const subscription = (_event, value) => callback(value);
+            ipcRenderer.on('printers:missing', subscription);
+            return () => ipcRenderer.removeListener('printers:missing', subscription);
+        },
+    },
+
+    // QR labels (generated locally, printed through Electron)
+    labels: {
+        getTemplates: () => ipcRenderer.invoke('labels:getTemplates'),
+        getSettings: () => ipcRenderer.invoke('labels:getSettings'),
+        preview: (items, layout, printer) => ipcRenderer.invoke('labels:preview', { items, layout, printer }),
+        codeOptions: (layout, printer) => ipcRenderer.invoke('labels:codeOptions', { layout, printer }),
+        print: (items, layout, printer) => ipcRenderer.invoke('labels:print', { items, layout, printer }),
+        savePdf: (items, layout) => ipcRenderer.invoke('labels:savePdf', { items, layout }),
+        qrSvg: (text) => ipcRenderer.invoke('labels:qrSvg', text),
+        printHtml: (html) => ipcRenderer.invoke('print:html', { html }),
+    },
 
     // Barcode Service
     barcode: {
@@ -287,7 +366,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         updateCreditSettings: (data) => ipcRenderer.invoke('db:customers:updateCreditSettings', data),
     },
 
-    // Cloud Sync
+    // Optional sync boundary (no transport bundled: nothing leaves the computer)
     sync: {
         trigger: () => ipcRenderer.invoke('sync:trigger'),
         forcePush: () => ipcRenderer.invoke('sync:force-push'),
@@ -299,13 +378,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.on('sync:status-changed', subscription);
             return () => ipcRenderer.removeListener('sync:status-changed', subscription);
         },
-        // Outbound: Main -> Renderer -> Firebase (single record - legacy)
+        // Outbound: Main -> Renderer -> sync transport (single record - legacy)
         onOutbound: (callback) => {
             const subscription = (_event, ...args) => callback(...args);
             ipcRenderer.on('sync:outbound', subscription);
             return () => ipcRenderer.removeListener('sync:outbound', subscription);
         },
-        // Outbound Batch: Main -> Renderer -> Firebase (optimized)
+        // Outbound Batch: Main -> Renderer -> sync transport
         onOutboundBatch: (callback) => {
             const subscription = (_event, data) => callback(data);
             ipcRenderer.on('sync:outbound-batch', subscription);
@@ -319,30 +398,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ack: (table, localId, remoteId) => ipcRenderer.invoke('sync:ack', { table, localId, remoteId }),
         // Batch Acknowledge: Renderer -> Main (optimized)
         batchAck: (data) => ipcRenderer.invoke('sync:batch-ack', data),
-    },
-
-    // AI / Gemini Features
-    ai: {
-        getInsights: (salesData) => ipcRenderer.invoke('ai:get-insights', salesData),
-        updateConfig: (config) => ipcRenderer.invoke('ai:update-config', config),
-        
-        // Streaming Chat
-        chatStream: (history, message, model, images) => ipcRenderer.send('ai:chat-stream', { history, message, model, images }),
-        onChatChunk: (callback) => {
-            const subscription = (_event, chunk) => callback(chunk);
-            ipcRenderer.on('ai:chat-chunk', subscription);
-            return () => ipcRenderer.removeListener('ai:chat-chunk', subscription);
-        },
-        onChatComplete: (callback) => {
-            const subscription = () => callback();
-            ipcRenderer.on('ai:chat-complete', subscription);
-            return () => ipcRenderer.removeListener('ai:chat-complete', subscription);
-        },
-        onChatError: (callback) => {
-            const subscription = (_event, error) => callback(error);
-            ipcRenderer.on('ai:chat-error', subscription);
-            return () => ipcRenderer.removeListener('ai:chat-error', subscription);
-        }
     },
 
     // Shell (for opening external links)
@@ -384,15 +439,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
             return () => ipcRenderer.removeListener('ecommerce:syncStatus', subscription);
         },
         
-        // Webhook events (from Firestore listener)
+        // Webhook events (pushed in by a sync transport, if one is configured)
         webhookEvent: (event) => ipcRenderer.invoke('ecommerce:webhookEvent', event),
-        
-        // Shopify OAuth complete listener
-        onShopifyOAuthComplete: (callback) => {
-            const subscription = (_event, data) => callback(data);
-            ipcRenderer.on('ecommerce:shopify-oauth-complete', subscription);
-            return () => ipcRenderer.removeListener('ecommerce:shopify-oauth-complete', subscription);
-        },
+
     },
 
 });

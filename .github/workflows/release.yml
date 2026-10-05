@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
@@ -33,11 +33,10 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Build and Publish
-        run: npm run electron:build -- --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      # The application has no auto-update: build only, the files are kept as
+      # artifacts of the run (nothing is published, no token needed)
+      - name: Build
+        run: npm run electron:build -- --publish never
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4

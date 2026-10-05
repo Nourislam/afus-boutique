@@ -2,15 +2,32 @@ const initSqlJs = require('sql.js');
 const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
-const { v4: uuid } = require('uuid');
+const { applyMigrations } = require('./migrations');
+const { databasePath } = require('../brand');
 
 let db = null;
 let SQL = null;
 const changeListeners = [];
+// Depth of the currently open transaction (0 = none). While a transaction is
+// open, writes are not flushed to disk and failures throw instead of being
+// swallowed, so the whole unit of work can be rolled back.
+let transactionDepth = 0;
 
 function getDbPath() {
-    const userDataPath = app.getPath('userData');
-    return path.join(userDataPath, 'pos-database.sqlite');
+    return databasePath(app.getPath('userData'));
+}
+
+/**
+ * Parameters as sql.js accepts them. sql.js refuses `undefined` ("tried to
+ * bind a value of an unknown type"); an optional field the interface did not
+ * send is stored as NULL instead of making the whole statement fail.
+ */
+function bindable(params) {
+    return Array.isArray(params) ? params.map(value => (value === undefined ? null : value)) : params;
+}
+
+function timestampSuffix() {
+    return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
 async function initDatabase() {
@@ -21,10 +38,14 @@ async function initDatabase() {
     SQL = await initSqlJs();
 
     // Try to load existing database
+    let isExistingDatabase = false;
     try {
         if (fs.existsSync(dbPath)) {
             const fileBuffer = fs.readFileSync(dbPath);
             db = new SQL.Database(fileBuffer);
+            // Force a read so a corrupt file fails here rather than later
+            db.exec('SELECT count(*) FROM sqlite_master');
+            isExistingDatabase = true;
             console.log('Loaded existing database');
         } else {
             db = new SQL.Database();
@@ -32,16 +53,46 @@ async function initDatabase() {
         }
     } catch (error) {
         console.error('Error loading database:', error);
+        // Never overwrite an unreadable database file: keep it aside so the
+        // data can still be recovered.
+        if (fs.existsSync(dbPath)) {
+            const corruptPath = `${dbPath}.unreadable-${timestampSuffix()}`;
+            try {
+                fs.copyFileSync(dbPath, corruptPath);
+                console.error('Unreadable database preserved at:', corruptPath);
+            } catch (copyError) {
+                console.error('Failed to preserve unreadable database:', copyError);
+                throw error;
+            }
+        }
         db = new SQL.Database();
     }
 
-    // Create tables
-    const schemaPath = path.join(__dirname, 'schema.sql');
+    // Create tables. The schema ships inside app.asar next to this file; older
+    // build configurations copied it to resources/database instead.
+    const schemaCandidates = [
+        path.join(__dirname, 'schema.sql'),
+        process.resourcesPath ? path.join(process.resourcesPath, 'database', 'schema.sql') : null,
+    ].filter(Boolean);
+    const schemaPath = schemaCandidates.find(p => fs.existsSync(p));
+    if (!schemaPath) throw new Error(`Database schema not found (looked in: ${schemaCandidates.join(', ')})`);
     const schema = fs.readFileSync(schemaPath, 'utf8');
     db.exec(schema);
 
     // Run migrations for existing databases
     runMigrations();
+
+    // Versioned migrations (product variants etc.). A backup copy of the file
+    // is written before an existing database is upgraded.
+    applyMigrations(db, {
+        log: (msg) => console.log(msg),
+        beforeApply: (pending) => {
+            if (!isExistingDatabase || !fs.existsSync(dbPath)) return;
+            const backupPath = `${dbPath}.backup-before-${pending[0].version}-${timestampSuffix()}`;
+            fs.copyFileSync(dbPath, backupPath);
+            console.log('Database backup written before migration:', backupPath);
+        },
+    });
 
     // Seed default data if needed
     seedDefaultData();
@@ -89,7 +140,7 @@ function runMigrations() {
         try {
             db.run('ALTER TABLE customers ADD COLUMN credit_limit REAL DEFAULT 0');
             console.log('Added credit_limit column to customers');
-        } catch (e) {
+        } catch {
             console.log('credit_limit column may already exist');
         }
     }
@@ -98,7 +149,7 @@ function runMigrations() {
         try {
             db.run('ALTER TABLE customers ADD COLUMN credit_balance REAL DEFAULT 0');
             console.log('Added credit_balance column to customers');
-        } catch (e) {
+        } catch {
             console.log('credit_balance column may already exist');
         }
     }
@@ -385,13 +436,6 @@ function runMigrations() {
         // ==========================================
         // MIGRATION: Cloud Sync Infrastructure
         // ==========================================
-        const SYNC_TABLES = [
-            'products', 'customers', 'sales', 'inventory_logs',
-            'categories', 'suppliers', 'purchase_orders',
-            'receivings', 'supplier_invoices', 'users' // 'users' are actually employees table in our schema? No, 'employees'.
-        ];
-        // Note: 'employees' table might need sync too. Adding 'employees' manual check.
-
         const tablesToSync = [
             'products', 'customers', 'sales', 'inventory_logs',
             'categories', 'suppliers', 'purchase_orders',
@@ -510,7 +554,7 @@ function runMigrations() {
     }
 }
 
-function setupSyncTriggers(db, tables) {
+function setupSyncTriggers(_db, _tables) {
     console.log('Skipping SQLite Sync Triggers (Handled manually to avoid loops)...');
     return; // DISABLED: Triggers cause infinite loops with SyncManager
     
@@ -551,7 +595,7 @@ function getTableColumns(tableName) {
             return result[0].values.map(row => row[nameIndex]);
         }
         return [];
-    } catch (e) {
+    } catch {
         return [];
     }
 }
@@ -560,7 +604,21 @@ function saveDatabase() {
     if (db) {
         const data = db.export();
         const buffer = Buffer.from(data);
-        fs.writeFileSync(getDbPath(), buffer);
+        // Write to a temporary file first and then rename it over the real
+        // file, so a crash or power loss mid-write cannot leave a truncated
+        // database behind.
+        const dbPath = getDbPath();
+        const tmpPath = `${dbPath}.tmp`;
+        fs.writeFileSync(tmpPath, buffer);
+        try {
+            fs.renameSync(tmpPath, dbPath);
+        } catch (error) {
+            // Windows can refuse the rename while another process (e.g. an
+            // antivirus scanner) holds the file; fall back to a direct write.
+            console.warn('Atomic database rename failed, writing directly:', error.message);
+            fs.writeFileSync(dbPath, buffer);
+            try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+        }
     }
 }
 
@@ -574,27 +632,8 @@ function seedDefaultData() {
         console.log('No employees found. Waiting for Setup Wizard initialization.');
     }
 
-    // Check if we have any categories
-    const catResult = db.exec('SELECT COUNT(*) as count FROM categories');
-    const categoryCount = catResult.length > 0 ? catResult[0].values[0][0] : 0;
-
-    if (categoryCount === 0) {
-        const defaultCategories = [
-            { name: 'Food', color: '#ef4444', icon: 'utensils' },
-            { name: 'Beverages', color: '#3b82f6', icon: 'coffee' },
-            { name: 'Snacks', color: '#f59e0b', icon: 'cookie' },
-            { name: 'Electronics', color: '#8b5cf6', icon: 'smartphone' },
-            { name: 'Clothing', color: '#ec4899', icon: 'shirt' },
-            { name: 'Other', color: '#6b7280', icon: 'package' },
-        ];
-
-        for (const cat of defaultCategories) {
-            db.run('INSERT INTO categories (id, name, color, icon) VALUES (?, ?, ?, ?)',
-                [uuid(), cat.name, cat.color, cat.icon]);
-        }
-
-        console.log('Default categories created');
-    }
+    // Categories are created by the first-launch setup, in the shop's language
+    // (see electron/shared/clothing.json), and can be edited at any time.
 
     // Initialize default settings
     const settingsResult = db.exec('SELECT COUNT(*) as count FROM settings');
@@ -603,17 +642,17 @@ function seedDefaultData() {
     if (settingsCount === 0) {
         const defaultSettings = {
             setup_completed: 'false',
-            businessName: 'POSbyCirvex',
+            businessName: '',
             businessAddress: '',
             businessPhone: '',
             businessEmail: '',
-            taxRate: 10,
+            taxRate: 0,
             taxType: 'inclusive',
-            taxName: 'Tax',
-            currency: 'USD',
-            currencySymbol: '$',
-            receiptHeader: 'Thank you for your purchase!',
-            receiptFooter: 'Please come again!',
+            taxName: 'TVA',
+            currency: 'DZD',
+            currencySymbol: 'DA',
+            receiptHeader: '',
+            receiptFooter: '',
         };
 
         for (const [key, value] of Object.entries(defaultSettings)) {
@@ -635,7 +674,7 @@ function runQuery(sql, params = []) {
     try {
         const stmt = db.prepare(sql);
         if (params.length > 0) {
-            stmt.bind(params);
+            stmt.bind(bindable(params));
         }
         const results = [];
         while (stmt.step()) {
@@ -652,15 +691,62 @@ function runQuery(sql, params = []) {
 
 function runInsert(sql, params = []) {
     try {
-        db.run(sql, params);
-        saveDatabase();
-
-        // Notify listeners
-        notifyChangeListeners();
+        db.run(sql, bindable(params));
+        if (transactionDepth === 0) {
+            saveDatabase();
+            // Notify listeners
+            notifyChangeListeners();
+        }
         return true;
     } catch (error) {
         console.error('Insert error:', error);
-        return false;
+        // Always reported: the interface shows the error instead of a "saved"
+        // message for a change that was not written (and inside a transaction
+        // the whole unit of work is rolled back)
+        throw error;
+    }
+}
+
+/**
+ * Execute a write statement and throw on failure (runInsert does the same and
+ * also logs the error). Used by the newer services.
+ */
+function runStatement(sql, params = []) {
+    db.run(sql, bindable(params));
+    if (transactionDepth === 0) {
+        saveDatabase();
+        notifyChangeListeners();
+    }
+    return true;
+}
+
+/**
+ * Run `fn` atomically. All writes inside are committed together and written to
+ * disk once; if anything throws, every change is rolled back.
+ * `fn` must be synchronous (sql.js is synchronous).
+ */
+function runTransaction(fn) {
+    if (transactionDepth > 0) {
+        // Nested call: join the outer transaction
+        return fn();
+    }
+    db.run('BEGIN');
+    transactionDepth++;
+    let committed = false;
+    try {
+        const result = fn();
+        db.run('COMMIT');
+        committed = true;
+        return result;
+    } catch (error) {
+        try { db.run('ROLLBACK'); } catch { /* no active transaction */ }
+        throw error;
+    } finally {
+        transactionDepth--;
+        if (committed) {
+            saveDatabase();
+            notifyChangeListeners();
+        }
     }
 }
 
@@ -679,4 +765,7 @@ function getOne(sql, params = []) {
     return results.length > 0 ? results[0] : null;
 }
 
-module.exports = { initDatabase, getDatabase, saveDatabase, runQuery, runInsert, getOne, getTableColumns, addDatabaseChangeListener };
+module.exports = {
+    initDatabase, getDatabase, saveDatabase, runQuery, runInsert, runStatement, runTransaction,
+    getOne, getTableColumns, addDatabaseChangeListener, getDbPath, bindable,
+};

@@ -1,5 +1,7 @@
+import { t } from '../../i18n';
+import { formatMoney } from '../../i18n/format';
 import React, { useState, useEffect } from 'react';
-import { DollarSign, CreditCard, FileText } from 'lucide-react';
+import { Banknote, CreditCard, FileText } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -27,7 +29,7 @@ export default function RecordSupplierPaymentModal({ isOpen, onClose, onComplete
 
     const handleSubmit = async () => {
         if (!amount || parseFloat(amount) <= 0) {
-            toast.error('Please enter a valid amount');
+            toast.error(t('credit.validAmount'));
             return;
         }
 
@@ -41,11 +43,11 @@ export default function RecordSupplierPaymentModal({ isOpen, onClose, onComplete
                 reference,
                 notes
             });
-            toast.success('Payment recorded successfully');
+            toast.success(t('credit.recorded'));
             onComplete();
         } catch (error) {
             console.error('Payment error:', error);
-            toast.error('Failed to record payment');
+            toast.error(t('credit.recordFailed'));
         } finally {
             setIsSubmitting(false);
         }
@@ -58,66 +60,67 @@ export default function RecordSupplierPaymentModal({ isOpen, onClose, onComplete
     const remaining = total - paid;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Record Payment for PO #${purchaseOrder.po_number || 'Draft'}`}>
+        <Modal isOpen={isOpen} onClose={onClose} title={t('supplierPay.titleFor', { po: purchaseOrder.po_number || t('supplierPay.draft') })}>
             <ModalBody>
                 <div className="space-y-4">
                     <div className="bg-dark-tertiary p-4 rounded-lg flex justify-between items-center mb-4">
                         <div>
-                            <p className="text-zinc-400 text-sm">Amount Due</p>
-                            <p className="text-xl font-bold text-white">${remaining.toFixed(2)}</p>
+                            <p className="text-zinc-400 text-sm">{t('pos.amountDue')}</p>
+                            <p className="text-xl font-bold text-white">{formatMoney(remaining)}</p>
                         </div>
-                        <div className="text-right">
-                            <p className="text-zinc-400 text-sm">Total PO Value</p>
-                            <p className="font-medium text-white">${total.toFixed(2)}</p>
+                        <div className="text-end">
+                            <p className="text-zinc-400 text-sm">{t('supplierPay.poValue')}</p>
+                            <p className="font-medium text-white">{formatMoney(total)}</p>
                         </div>
                     </div>
 
                     <Input
-                        label="Payment Amount"
+                        label={t('supplierPay.amount')}
                         type="number"
                         value={amount}
                         onChange={(e) => setAmount(e.target.value)}
-                        icon={DollarSign}
+                        icon={Banknote}
                         step="0.01"
                     />
 
                     <Select
-                        label="Payment Method"
+                        label={t('pos.paymentMethod')}
                         value={paymentMethod}
                         onChange={setPaymentMethod}
                         options={[
-                            { value: 'bank_transfer', label: 'Bank Transfer' },
-                            { value: 'cash', label: 'Cash' },
-                            { value: 'check', label: 'Check' },
-                            { value: 'card', label: 'Credit Card' },
-                            { value: 'other', label: 'Other' }
+                            { value: 'cash', label: t('pay.cash') },
+                            { value: 'bank_transfer', label: t('supplierPay.bankTransfer') },
+                            { value: 'check', label: t('supplierPay.check') },
+                            { value: 'transfer', label: t('pay.transferShort') },
+                            { value: 'card', label: t('pay.cardCib') },
+                            { value: 'other', label: t('stock.reason.other') }
                         ]}
                         icon={CreditCard}
                     />
 
                     <Input
-                        label="Reference / Transaction ID"
+                        label={t('supplierPay.reference')}
                         value={reference}
                         onChange={(e) => setReference(e.target.value)}
-                        placeholder="e.g. TR-123456"
+                        placeholder={t('supplierPay.referencePlaceholder')}
                         icon={FileText}
                     />
 
                     <div className="space-y-1">
-                        <label className="text-sm text-zinc-400">Notes</label>
+                        <label className="text-sm text-zinc-400">{t('customers.notes')}</label>
                         <textarea
                             className="w-full bg-dark-tertiary border border-dark-border rounded-lg p-3 text-white focus:outline-none focus:border-accent-primary min-h-[80px]"
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
-                            placeholder="Optional notes..."
+                            placeholder={t('po.notesPlaceholder')}
                         />
                     </div>
                 </div>
             </ModalBody>
             <ModalFooter>
-                <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+                <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>{t('common.cancel')}</Button>
                 <Button onClick={handleSubmit} loading={isSubmitting}>
-                    Record Payment
+                    {t('credit.recordPayment')}
                 </Button>
             </ModalFooter>
         </Modal>

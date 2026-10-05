@@ -1,3 +1,4 @@
+import { useT } from '../../i18n';
 /**
  * ProtectedRoute Component
  * 
@@ -7,7 +8,7 @@
 
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
-import { NAV_PERMISSIONS } from '../../lib/permissions';
+import { NAV_PERMISSIONS, PERMISSIONS } from '../../lib/permissions';
 import { ShieldAlert } from 'lucide-react';
 
 /**
@@ -34,38 +35,46 @@ export function ProtectedRoute({
     const requiredPermission = permission || NAV_PERMISSIONS[location.pathname];
 
     if (requiredPermission && !hasPermission(requiredPermission)) {
-        if (showAccessDenied) {
-            return <AccessDenied role={currentEmployee?.role} />;
-        }
+        // e.g. a cashier logging in where an administrator left off: go to
+        // the user's own home screen instead of showing an error page
+        const home = homePathFor(hasPermission);
+        if (home !== location.pathname) return <Navigate to={home} replace />;
+        if (showAccessDenied) return <AccessDenied role={currentEmployee?.role} />;
         return <Navigate to={redirectTo} replace />;
     }
 
     return children;
 }
 
+/** First screen a user may open: the dashboard, else the sales screen. */
+export function homePathFor(hasPermission) {
+    if (hasPermission(PERMISSIONS.DASHBOARD_VIEW)) return '/';
+    if (hasPermission(PERMISSIONS.POS_VIEW)) return '/pos';
+    return '/';
+}
+
 /**
  * Access Denied Component
  */
 function AccessDenied({ role }) {
+    const { t } = useT();
     return (
         <div className="h-full flex flex-col items-center justify-center p-6">
             <div className="w-20 h-20 rounded-full bg-red-500/20 flex items-center justify-center mb-6">
                 <ShieldAlert className="w-10 h-10 text-red-400" />
             </div>
-            <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
+            <h1 className="text-2xl font-bold mb-2">{t('common.accessDenied')}</h1>
             <p className="text-zinc-400 text-center max-w-md mb-6">
-                You don't have permission to access this page.
+                {t('common.accessDeniedHint')}
                 {role && (
-                    <span className="block mt-2">
-                        Your role: <span className="capitalize font-medium text-zinc-300">{role}</span>
-                    </span>
+                    <span className="block mt-2 font-medium text-zinc-300">{t(`role.${role}`)}</span>
                 )}
             </p>
             <a
-                href="/"
+                href="#/"
                 className="text-indigo-400 hover:text-indigo-300 transition-colors"
             >
-                ← Back to Dashboard
+                {t('common.goBack')}
             </a>
         </div>
     );

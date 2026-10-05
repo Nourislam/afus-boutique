@@ -1,8 +1,17 @@
 const { getDatabase, runQuery, runInsert, getTableColumns, saveDatabase } = require('../database/init');
-const { app, ipcMain } = require('electron');
 
 /**
- * SyncManager - Optimized Firebase Cloud Sync
+ * SyncManager - optional cloud synchronization boundary.
+ *
+ * The local SQLite database is always the source of truth and the POS works
+ * fully offline. This class only tracks pending local changes (is_synced = 0)
+ * and hands them, in batches, to a sync transport; no transport is bundled at
+ * the moment, so sync stays disabled ("local mode"). A future online store must
+ * talk to a secure cloud API fed through this layer - never to the local
+ * database file directly.
+ *
+ * To add a transport: implement it, add its id to SUPPORTED_PROVIDERS and
+ * select it in the sync_settings setting.
  * 
  * Industry best practices implemented:
  * - Debounced sync (2s delay to batch changes)
@@ -11,12 +20,16 @@ const { app, ipcMain } = require('electron');
  * - Offline queue with retry
  * - Conflict resolution
  */
+// Sync transports that can be enabled. None is bundled: nothing leaves the
+// computer and sync stays off.
+const SUPPORTED_PROVIDERS = [];
+
 class SyncManager {
     constructor() {
         this.mainWindow = null;
         this.isSyncing = false;
         this.syncInterval = null;
-        this.enabled = false; // Disabled by default, enabled when provider is 'firebase'
+        this.enabled = false; // Disabled unless a supported provider is configured
         
         // Debouncing
         this.pendingSync = null;
@@ -33,7 +46,7 @@ class SyncManager {
         
         // Tables to sync
         this.syncTables = [
-            'products', 'customers', 'sales', 'employees', 'inventory_logs',
+            'products', 'product_variants', 'customers', 'sales', 'employees', 'inventory_logs',
             'gift_cards', 'bundles', 'promotions',
             'categories', 'suppliers', 'purchase_orders', 'receivings', 'supplier_invoices',
             'sale_items', 'purchase_order_items', 'receiving_items',
@@ -46,12 +59,12 @@ class SyncManager {
     async init() {
         console.log('[SyncManager] Initializing...');
 
-        // Check if sync is enabled (provider must be 'firebase')
+        // Check if sync is enabled (provider must be a supported transport)
         try {
             const providerResult = getDatabase().exec("SELECT value FROM settings WHERE key = 'sync_settings'");
             if (providerResult.length > 0) {
                 const config = JSON.parse(providerResult[0].values[0][0]);
-                this.enabled = config.provider === 'firebase';
+                this.enabled = SUPPORTED_PROVIDERS.includes(config.provider);
                 
                 if (config.interval && this.enabled) {
                     this.startAutoSync(parseInt(config.interval));
@@ -60,7 +73,7 @@ class SyncManager {
                     this.lastSyncTimestamp = config.lastSyncTimestamp;
                 }
             }
-        } catch (e) {
+        } catch {
             console.log('[SyncManager] No sync config found, defaulting to disabled');
             this.enabled = false;
         }
@@ -100,7 +113,7 @@ class SyncManager {
     async updateConfig(config) {
         // Update enabled state based on provider
         if (config.provider !== undefined) {
-            this.enabled = config.provider === 'firebase';
+            this.enabled = SUPPORTED_PROVIDERS.includes(config.provider);
             console.log(`[SyncManager] Sync ${this.enabled ? 'ENABLED' : 'DISABLED'}`);
             
             if (!this.enabled) {
@@ -146,7 +159,7 @@ class SyncManager {
     }
 
     // ==========================================
-    // OUTBOUND: Batched Push to Firebase
+    // OUTBOUND: Batched push to the sync transport
     // ==========================================
 
     async pushLocalChanges() {
@@ -203,7 +216,7 @@ class SyncManager {
                 return;
             }
 
-            // Send batch to renderer for Firebase upload
+            // Send batch to the sync transport
             this.mainWindow.webContents.send('sync:outbound-batch', { 
                 batch,
                 timestamp: Date.now()
@@ -228,7 +241,7 @@ class SyncManager {
     }
 
     // ==========================================
-    // INBOUND: Firebase -> SQLite
+    // INBOUND: sync transport -> SQLite
     // ==========================================
 
     async handleIncoming({ table, record }) {
@@ -387,7 +400,7 @@ class SyncManager {
                 this.offlineQueue = JSON.parse(result[0].values[0][0]);
                 console.log(`[SyncManager] Loaded ${this.offlineQueue.length} offline items`);
             }
-        } catch (e) {
+        } catch {
             this.offlineQueue = [];
         }
     }
@@ -451,7 +464,7 @@ class SyncManager {
             const config = {
                 ...currentConfig,
                 lastSyncTimestamp: this.lastSyncTimestamp,
-                provider: this.enabled ? (currentConfig.provider || 'firebase') : currentConfig.provider,
+                provider: this.enabled ? (currentConfig.provider || 'none') : currentConfig.provider,
                 interval: currentConfig.interval // Ensure interval is preserved
             };
             

@@ -1,11 +1,14 @@
+import { t } from '../../i18n';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Tabs } from '../ui/Tabs';
 import { useCartStore } from '../../stores/cartStore';
+import { useTaxEnabled } from '../../lib/useTaxEnabled';
 
 export default function CartOptionsModal({ isOpen, onClose }) {
+    const taxOn = useTaxEnabled();
     const cart = useCartStore();
     const [activeTab, setActiveTab] = useState('discount');
 
@@ -14,6 +17,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
     const [discountType, setDiscountType] = useState(cart.discountType); // 'fixed' or 'percent'
     const [serviceCharge, setServiceCharge] = useState(cart.serviceCharge);
     const [isTaxExempt, setIsTaxExempt] = useState(cart.taxExempt);
+    const [coupon, setCoupon] = useState(cart.coupon);
 
     // Reset local state when modal opens
     useEffect(() => {
@@ -22,6 +26,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
             setDiscountType(cart.discountType);
             setServiceCharge(cart.serviceCharge);
             setIsTaxExempt(cart.taxExempt);
+            setCoupon(cart.coupon);
         }
     }, [isOpen, cart]);
 
@@ -29,27 +34,29 @@ export default function CartOptionsModal({ isOpen, onClose }) {
         cart.setDiscount(parseFloat(discountValue) || 0, discountType);
         cart.setServiceCharge(parseFloat(serviceCharge) || 0);
         cart.setTaxExempt(isTaxExempt);
+        cart.setCoupon(coupon);
         onClose();
     };
 
     const tabs = [
-        { id: 'discount', label: 'Discount' },
-        { id: 'fees', label: 'Fees' },
-        { id: 'tax', label: 'Tax' },
+        { id: 'discount', label: t('pos.discount') },
+        { id: 'fees', label: t('cartOptions.fees') },
+        // No TVA tab while TVA is turned off in Settings
+        ...(taxOn ? [{ id: 'tax', label: t('pos.tax') }] : []),
     ];
 
     return (
         <Modal
             isOpen={isOpen}
             onClose={onClose}
-            title="Cart Options"
+            title={t('cartOptions.title')}
             size="sm"
         >
             <ModalBody>
                 <div className="mb-4">
                     <Tabs
                         tabs={tabs}
-                        activeTab={activeTab}
+                        value={activeTab}
                         onChange={setActiveTab}
                     />
                 </div>
@@ -65,7 +72,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                                         : 'text-zinc-400 hover:text-white'
                                         }`}
                                 >
-                                    Fixed Amount ($)
+                                    {t('cartOptions.fixedDa')}
                                 </button>
                                 <button
                                     onClick={() => setDiscountType('percent')}
@@ -74,25 +81,36 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                                         : 'text-zinc-400 hover:text-white'
                                         }`}
                                 >
-                                    Percentage (%)
+                                    {t('cartOptions.percentShort')}
                                 </button>
                             </div>
                             <Input
-                                label={discountType === 'fixed' ? 'Discount Amount' : 'Percentage Off'}
+                                label={discountType === 'fixed' ? t('cartOptions.amount') : t('cartOptions.percent')}
                                 type="number"
                                 min="0"
                                 value={discountValue}
                                 onChange={(e) => setDiscountValue(e.target.value)}
-                                placeholder="0.00"
+                                placeholder="0"
                                 autoFocus
                             />
+                            <div className="pt-3 border-t border-dark-border">
+                                <Input
+                                    label={t('cartOptions.coupon')}
+                                    value={coupon}
+                                    onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+                                    placeholder="AID2025"
+                                    className="ltr font-mono"
+                                    data-scan-passthrough
+                                />
+                                <p className="form-hint mt-1">{t('cartOptions.couponHint')}</p>
+                            </div>
                         </div>
                     )}
 
                     {activeTab === 'fees' && (
                         <div className="space-y-4">
                             <Input
-                                label="Service Charge / Fee ($)"
+                                label={t('cartOptions.fee')}
                                 type="number"
                                 min="0"
                                 value={serviceCharge}
@@ -100,12 +118,12 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                                 placeholder="0.00"
                             />
                             <p className="text-xs text-zinc-500">
-                                This amount will be added to the final total.
+                                {t('cartOptions.feeHint')}
                             </p>
                         </div>
                     )}
 
-                    {activeTab === 'tax' && (
+                    {taxOn && activeTab === 'tax' && (
                         <div className="space-y-4 py-2">
                             <label className="flex items-center gap-3 p-4 bg-dark-tertiary rounded-lg cursor-pointer border border-transparent hover:border-zinc-700">
                                 <input
@@ -115,8 +133,8 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                                     className="w-5 h-5 rounded border-zinc-600 bg-dark-bg text-accent-primary focus:ring-accent-primary"
                                 />
                                 <div>
-                                    <span className="block font-medium">Tax Exempt</span>
-                                    <span className="text-xs text-zinc-500">Remove tax for this transaction</span>
+                                    <span className="block font-medium">{t('cartOptions.exempt')}</span>
+                                    <span className="text-xs text-zinc-500">{t('cartOptions.exemptHint')}</span>
                                 </div>
                             </label>
                         </div>
@@ -126,10 +144,10 @@ export default function CartOptionsModal({ isOpen, onClose }) {
             <ModalFooter>
                 <div className="flex justify-end gap-2 w-full">
                     <Button variant="secondary" onClick={onClose} className="flex-1">
-                        Cancel
+                        {t('common.cancel')}
                     </Button>
                     <Button variant="primary" onClick={handleSave} className="flex-1">
-                        Apply Changes
+                        {t('cartOptions.apply')}
                     </Button>
                 </div>
             </ModalFooter>

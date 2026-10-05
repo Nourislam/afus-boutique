@@ -723,12 +723,12 @@ class EcommerceSyncManager {
     // ==========================================
 
     /**
-     * Start listening for webhook events from Firestore
+     * Accept webhook events from the connected online store (passed in through IPC)
      * These events are pushed by the website API routes when e-commerce
      * platforms send inventory update webhooks
      */
     startWebhookListener() {
-        // This will be initialized by the renderer when Firebase is ready
+        // Initialized later, once the main window exists
         // The listener runs in the renderer and calls back to main via IPC
         ipcMain.handle('ecommerce:webhookEvent', async (_, event) => {
             return this.processWebhookEvent(event);
@@ -738,7 +738,7 @@ class EcommerceSyncManager {
     }
 
     /**
-     * Process an incoming webhook event from Firestore
+     * Process an incoming webhook event from the connected online store
      */
     async processWebhookEvent(event) {
         const { runQuery, runInsert } = require('../database/init');
@@ -747,7 +747,6 @@ class EcommerceSyncManager {
 
         try {
             // Find the connection for this platform
-            let _connection = null;
             let mapping = null;
 
             if (event.platform === 'shopify' && event.inventoryItemId) {

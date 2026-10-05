@@ -1,8 +1,14 @@
+import { t } from '../../i18n';
+import { formatDate as formatLocalDate } from '../../i18n/format';
+import { formatMoney } from '../../i18n/format';
 import React, { useState, useEffect } from 'react';
-import { format } from 'date-fns';
-import { ArrowUpRight, ArrowDownLeft, FileText, DollarSign, RefreshCcw } from 'lucide-react';
+import { FileText, Banknote, RefreshCcw } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
+import { paymentLabel } from '../../lib/payments';
+
+// Order states, in plain words: waiting, received (in full or in part), cancelled
+const ORDER_STATUS = { draft: 'waiting', sent: 'waiting', partial: 'partial', received: 'received', cancelled: 'cancelled' };
 
 export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
     const [history, setHistory] = useState([]);
@@ -30,36 +36,33 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
 
     // Helper to format currency
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-        }).format(amount);
+        return formatMoney(amount);
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`History: ${supplier.name}`}>
+        <Modal isOpen={isOpen} onClose={onClose} title={t('partners.supplierHistoryTitle', { name: supplier.name })}>
             <ModalBody>
                 <div className="space-y-6">
                     {/* Summary Card */}
                     <div className="bg-dark-tertiary p-4 rounded-lg flex justify-between items-center border border-dark-border">
                         <div>
-                            <p className="text-zinc-400 text-sm">Current Balance Due</p>
+                            <p className="text-zinc-400 text-sm">{t('supplierHistory.due')}</p>
                             <p className="text-2xl font-bold text-white">
-                                {formatCurrency(supplier.balance || 0)}
+                                {formatCurrency(supplier.owed ?? supplier.balance ?? 0)}
                             </p>
                         </div>
-                        <div className="text-right">
-                            <p className="text-zinc-400 text-sm">Contact</p>
-                            <p className="text-white font-medium">{supplier.contact_person || 'N/A'}</p>
+                        <div className="text-end">
+                            <p className="text-zinc-400 text-sm">{t('customers.contact')}</p>
+                            <p className="text-white font-medium">{supplier.contact_person || t('po.na')}</p>
                         </div>
                     </div>
 
                     {/* Timeline */}
-                    <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-3">
+                    <div className="max-h-[60vh] overflow-y-auto pe-2 space-y-3">
                         {isLoading ? (
-                            <div className="text-center py-8 text-zinc-500">Loading history...</div>
+                            <div className="text-center py-8 text-zinc-500">{t('supplierHistory.loading')}</div>
                         ) : history.length === 0 ? (
-                            <div className="text-center py-8 text-zinc-500">No history found.</div>
+                            <div className="text-center py-8 text-zinc-500">{t('supplierHistory.none')}</div>
                         ) : (
                             history.map((item, index) => (
                                 <div key={index} className="flex gap-4">
@@ -70,7 +73,7 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
                                                     'border-amber-500/20 bg-amber-500/10 text-amber-500' // return
                                             }`}>
                                             {item.type === 'purchase_order' && <FileText className="w-4 h-4" />}
-                                            {item.type === 'payment' && <DollarSign className="w-4 h-4" />}
+                                            {item.type === 'payment' && <Banknote className="w-4 h-4" />}
                                             {item.type === 'return' && <RefreshCcw className="w-4 h-4" />}
                                         </div>
                                         {index < history.length - 1 && <div className="w-0.5 h-full bg-dark-border mt-2" />}
@@ -78,31 +81,35 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
                                     <div className="flex-1 pb-6">
                                         <div className="bg-dark-tertiary/50 p-3 rounded-lg border border-dark-border">
                                             <div className="flex justify-between items-start mb-1">
-                                                <h4 className="font-semibold capitalize text-sm">
-                                                    {item.type.replace('_', ' ')}
+                                                <h4 className="font-semibold text-sm">
+                                                    {t(`partners.history.${item.type}`)}
+                                                    {item.type === 'purchase_order' && item.status && (
+                                                        <span className="ms-2 text-xs font-normal text-zinc-500">{t(`partners.orderStatus.${ORDER_STATUS[item.status] || 'waiting'}`)}</span>
+                                                    )}
                                                 </h4>
                                                 <span className="text-xs text-zinc-500">
-                                                    {format(new Date(item.date), 'MMM dd, yyyy HH:mm')}
+                                                    {formatLocalDate(item.date, 'datetime')}
                                                 </span>
                                             </div>
 
                                             <div className="flex justify-between items-center">
                                                 <div>
                                                     <p className="text-sm text-zinc-300">
-                                                        {item.reference ? item.reference : `ID: ${item.id.slice(0, 8)}`}
+                                                        {item.type === 'payment' ? paymentLabel(item.reference) : (item.reference || `#${item.id.slice(0, 8)}`)}
                                                     </p>
                                                     {item.payment_status && (
                                                         <span className={`text-[10px] px-1.5 py-0.5 rounded border ${item.payment_status === 'paid' ? 'border-green-500/30 text-green-500' :
                                                                 item.payment_status === 'partial' ? 'border-amber-500/30 text-amber-500' :
                                                                     'border-red-500/30 text-red-500'
                                                             }`}>
-                                                            {item.payment_status.toUpperCase()}
+                                                            {t(`partners.payState.${item.payment_status === 'paid' || item.payment_status === 'partial' ? item.payment_status : 'unpaid'}`)}
                                                         </span>
                                                     )}
                                                 </div>
-                                                <p className={`font-mono font-medium ${item.type === 'purchase_order' ? 'text-red-400' : 'text-green-400'
+                                                {/* Only goods received add to what is owed; a waiting or cancelled order does not */}
+                                                <p className={`font-mono font-medium ${item.type !== 'purchase_order' ? 'text-green-400' : ORDER_STATUS[item.status] === 'received' || ORDER_STATUS[item.status] === 'partial' ? 'text-red-400' : 'text-zinc-500'
                                                     }`}>
-                                                    {item.type === 'purchase_order' ? '+' : '-'} {formatCurrency(item.amount)}
+                                                    {item.type !== 'purchase_order' ? '- ' : ORDER_STATUS[item.status] === 'received' || ORDER_STATUS[item.status] === 'partial' ? '+ ' : ''}{formatCurrency(item.amount)}
                                                 </p>
                                             </div>
                                         </div>
@@ -114,7 +121,7 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
                 </div>
             </ModalBody>
             <ModalFooter>
-                <Button onClick={onClose}>Close</Button>
+                <Button onClick={onClose}>{t('common.close')}</Button>
             </ModalFooter>
         </Modal>
     );

@@ -1,16 +1,19 @@
+import { t } from '../i18n';
+import { translateError } from '../i18n/errors';
+import { formatDate as formatLocalDate } from '../i18n/format';
+import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { Search, FileText, DollarSign, Mail, Bell, Eye, Filter, Calendar, User, CreditCard, Banknote, X, Check } from 'lucide-react';
+import { Search, FileText, Banknote, Mail, Bell, Eye, CreditCard, Check, Smartphone } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import ReceiptPreviewModal from '../components/modals/ReceiptPreviewModal';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
-import { format } from 'date-fns';
+import { paymentLabel } from '../lib/payments';
 
 export default function CreditSalesPage() {
     const [creditSales, setCreditSales] = useState([]);
-    const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
@@ -33,50 +36,23 @@ export default function CreditSalesPage() {
             if (statusFilter !== 'all') {
                 params.status = statusFilter;
             }
-            const [salesData, customersData] = await Promise.all([
-                window.electronAPI.creditSales.getAll(params),
-                window.electronAPI.customers.getAll()
-            ]);
-            setCreditSales(salesData);
-            setCustomers(customersData);
+            setCreditSales(await window.electronAPI.creditSales.getAll(params));
         } catch (error) {
             console.error('Failed to load credit sales:', error);
-            toast.error('Failed to load credit sales');
+            toast.error(t('credit.loadFailed'));
         } finally {
             setLoading(false);
         }
     };
 
-    const [currency, setCurrency] = useState('USD');
-
-    useEffect(() => {
-        const fetchSettings = async () => {
-            try {
-                const settings = await window.electronAPI.settings.getAll();
-                let parsed = { ...settings };
-                if (settings.store_config) {
-                    const config = typeof settings.store_config === 'string'
-                        ? JSON.parse(settings.store_config)
-                        : settings.store_config;
-                    parsed = { ...parsed, ...config };
-                }
-                if (parsed.currency) setCurrency(parsed.currency);
-            } catch (e) { console.error(e); }
-        };
-        fetchSettings();
-    }, []);
-
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: currency,
-        }).format(amount || 0);
+        return formatMoney(amount || 0);
     };
 
     const formatDate = (dateString) => {
         if (!dateString) return '-';
         try {
-            return format(new Date(dateString), 'MMM dd, yyyy');
+            return formatLocalDate(dateString, 'date');
         } catch {
             return dateString;
         }
@@ -94,10 +70,10 @@ export default function CreditSalesPage() {
 
     const getStatusLabel = (status) => {
         const labels = {
-            'pending': 'Pending',
-            'partial': 'Partially Paid',
-            'paid': 'Paid',
-            'overdue': 'Overdue'
+            'pending': t('credit.pending'),
+            'partial': t('credit.partialPaid'),
+            'paid': t('credit.paid'),
+            'overdue': t('credit.overdue')
         };
         return labels[status] || status;
     };
@@ -119,7 +95,7 @@ export default function CreditSalesPage() {
 
     const handleSendInvoice = async (sale) => {
         if (!sale.customer_email) {
-            toast.error('Customer has no email address');
+            toast.error(t('credit.noEmail'));
             return;
         }
         try {
@@ -127,16 +103,16 @@ export default function CreditSalesPage() {
                 creditSaleId: sale.id,
                 email: sale.customer_email
             });
-            toast.success('Invoice sent successfully');
+            toast.success(t('credit.invoiceSent'));
         } catch (error) {
             console.error('Failed to send invoice:', error);
-            toast.error('Failed to send invoice: ' + error.message);
+            toast.error(`${t('credit.invoiceFailed')} ${translateError(error)}`);
         }
     };
 
     const handleSendReminder = async (sale) => {
         if (!sale.customer_email) {
-            toast.error('Customer has no email address');
+            toast.error(t('credit.noEmail'));
             return;
         }
         try {
@@ -144,10 +120,10 @@ export default function CreditSalesPage() {
                 creditSaleId: sale.id,
                 email: sale.customer_email
             });
-            toast.success('Reminder sent successfully');
+            toast.success(t('credit.reminderSent'));
         } catch (error) {
             console.error('Failed to send reminder:', error);
-            toast.error('Failed to send reminder: ' + error.message);
+            toast.error(`${t('credit.reminderFailed')} ${translateError(error)}`);
         }
     };
 
@@ -158,7 +134,7 @@ export default function CreditSalesPage() {
             setShowDetailsModal(true);
         } catch (error) {
             console.error('Failed to load details:', error);
-            toast.error('Failed to load sale details');
+            toast.error(t('credit.detailsFailed'));
         }
     };
 
@@ -172,8 +148,8 @@ export default function CreditSalesPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold">Credit Sales</h1>
-                    <p className="text-zinc-400 text-sm">Manage invoices and record payments</p>
+                    <h1 className="text-2xl font-bold">{t('credit.title')}</h1>
+                    <p className="text-zinc-400 text-sm">{t('credit.subtitle')}</p>
                 </div>
             </div>
 
@@ -182,10 +158,10 @@ export default function CreditSalesPage() {
                 <div className="card p-3 sm:p-4">
                     <div className="flex items-center gap-2 sm:gap-3">
                         <div className="p-2 sm:p-3 rounded-xl bg-amber-500/20">
-                            <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
+                            <Banknote className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-xs sm:text-sm text-zinc-400 truncate">Outstanding</p>
+                            <p className="text-xs sm:text-sm text-zinc-400 truncate">{t('credit.outstanding')}</p>
                             <p className="text-lg sm:text-xl font-bold text-amber-400">{formatCurrency(totalOutstanding)}</p>
                         </div>
                     </div>
@@ -196,7 +172,7 @@ export default function CreditSalesPage() {
                             <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-xs sm:text-sm text-zinc-400 truncate">Total Invoices</p>
+                            <p className="text-xs sm:text-sm text-zinc-400 truncate">{t('credit.totalInvoices')}</p>
                             <p className="text-lg sm:text-xl font-bold">{creditSales.length}</p>
                         </div>
                     </div>
@@ -207,7 +183,7 @@ export default function CreditSalesPage() {
                             <Bell className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-xs sm:text-sm text-zinc-400 truncate">Pending</p>
+                            <p className="text-xs sm:text-sm text-zinc-400 truncate">{t('credit.pending')}</p>
                             <p className="text-lg sm:text-xl font-bold">{totalPending}</p>
                         </div>
                     </div>
@@ -218,7 +194,7 @@ export default function CreditSalesPage() {
                             <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-xs sm:text-sm text-zinc-400 truncate">Partial</p>
+                            <p className="text-xs sm:text-sm text-zinc-400 truncate">{t('credit.partial')}</p>
                             <p className="text-lg sm:text-xl font-bold">{totalPartial}</p>
                         </div>
                     </div>
@@ -228,13 +204,13 @@ export default function CreditSalesPage() {
             {/* Filters */}
             <div className="flex flex-col gap-3">
                 <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                    <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
                     <input
                         type="text"
-                        placeholder="Search by customer, invoice #..."
+                        placeholder={t('credit.search')}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="input pl-10 w-full"
+                        className="input ps-10 w-full"
                     />
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
@@ -248,7 +224,7 @@ export default function CreditSalesPage() {
                                     : 'bg-dark-tertiary text-zinc-400 hover:text-white'
                                 }`}
                         >
-                            {status === 'all' ? 'All' : getStatusLabel(status)}
+                            {status === 'all' ? t('credit.all') : getStatusLabel(status)}
                         </button>
                     ))}
                 </div>
@@ -258,30 +234,30 @@ export default function CreditSalesPage() {
             <div className="card overflow-hidden">
                 {/* Desktop Table */}
                 <div className="hidden lg:block overflow-x-auto">
-                    <table className="w-full">
+                    <table className="w-full [&_th]:whitespace-nowrap">
                         <thead>
                             <tr className="border-b border-dark-border">
-                                <th className="text-left p-4 text-sm font-medium text-zinc-400">Invoice #</th>
-                                <th className="text-left p-4 text-sm font-medium text-zinc-400">Customer</th>
-                                <th className="text-left p-4 text-sm font-medium text-zinc-400">Date</th>
-                                <th className="text-left p-4 text-sm font-medium text-zinc-400">Due Date</th>
-                                <th className="text-right p-4 text-sm font-medium text-zinc-400">Amount</th>
-                                <th className="text-right p-4 text-sm font-medium text-zinc-400">Paid</th>
-                                <th className="text-right p-4 text-sm font-medium text-zinc-400">Balance</th>
-                                <th className="text-center p-4 text-sm font-medium text-zinc-400">Status</th>
-                                <th className="text-right p-4 text-sm font-medium text-zinc-400">Actions</th>
+                                <th className="text-start p-4 text-sm font-medium text-zinc-400">{t('credit.invoiceNo')}</th>
+                                <th className="text-start p-4 text-sm font-medium text-zinc-400">{t('tx.customer')}</th>
+                                <th className="text-start p-4 text-sm font-medium text-zinc-400">{t('tx.date')}</th>
+                                <th className="text-start p-4 text-sm font-medium text-zinc-400">{t('pos.dueDate')}</th>
+                                <th className="text-end p-4 text-sm font-medium text-zinc-400">{t('credit.amount')}</th>
+                                <th className="text-end p-4 text-sm font-medium text-zinc-400">{t('credit.paid')}</th>
+                                <th className="text-end p-4 text-sm font-medium text-zinc-400">{t('credit.balance')}</th>
+                                <th className="text-center p-4 text-sm font-medium text-zinc-400">{t('inventory.status')}</th>
+                                <th className="text-end p-4 text-sm font-medium text-zinc-400">{t('inventory.actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan="9" className="text-center py-12 text-zinc-500">Loading...</td>
+                                    <td colSpan="9" className="text-center py-12 text-zinc-500">{t('common.loading')}</td>
                                 </tr>
                             ) : filteredSales.length === 0 ? (
                                 <tr>
                                     <td colSpan="9" className="text-center py-12 text-zinc-500">
                                         <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                                        <p>No credit sales found</p>
+                                        <p>{t('credit.none')}</p>
                                     </td>
                                 </tr>
                             ) : (
@@ -292,15 +268,15 @@ export default function CreditSalesPage() {
                                         </td>
                                         <td className="p-4">
                                             <div>
-                                                <p className="font-medium">{sale.customer_name || 'Unknown'}</p>
+                                                <p className="font-medium">{sale.customer_name || t('tx.unknown')}</p>
                                                 <p className="text-xs text-zinc-500">{sale.customer_email || sale.customer_phone}</p>
                                             </div>
                                         </td>
                                         <td className="p-4 text-sm text-zinc-400">{formatDate(sale.created_at)}</td>
                                         <td className="p-4 text-sm text-zinc-400">{formatDate(sale.due_date)}</td>
-                                        <td className="p-4 text-right font-medium">{formatCurrency(sale.amount_due)}</td>
-                                        <td className="p-4 text-right text-green-400">{formatCurrency(sale.amount_paid)}</td>
-                                        <td className="p-4 text-right font-bold text-amber-400">
+                                        <td className="p-4 text-end font-medium">{formatCurrency(sale.amount_due)}</td>
+                                        <td className="p-4 text-end text-green-400">{formatCurrency(sale.amount_paid)}</td>
+                                        <td className="p-4 text-end font-bold text-amber-400">
                                             {formatCurrency((sale.amount_due || 0) - (sale.amount_paid || 0))}
                                         </td>
                                         <td className="p-4 text-center">
@@ -313,7 +289,7 @@ export default function CreditSalesPage() {
                                                 <button
                                                     onClick={() => handleViewDetails(sale)}
                                                     className="p-2 hover:bg-dark-tertiary rounded-lg transition-colors"
-                                                    title="View Details"
+                                                    title={t('credit.view')}
                                                 >
                                                     <Eye className="w-4 h-4" />
                                                 </button>
@@ -321,15 +297,15 @@ export default function CreditSalesPage() {
                                                     <button
                                                         onClick={() => handleRecordPayment(sale)}
                                                         className="p-2 hover:bg-green-500/20 rounded-lg transition-colors text-green-400"
-                                                        title="Record Payment"
+                                                        title={t('credit.recordPayment')}
                                                     >
-                                                        <DollarSign className="w-4 h-4" />
+                                                        <Banknote className="w-4 h-4" />
                                                     </button>
                                                 )}
                                                 <button
                                                     onClick={() => handleSendInvoice(sale)}
                                                     className="p-2 hover:bg-blue-500/20 rounded-lg transition-colors text-blue-400"
-                                                    title="Send Invoice"
+                                                    title={t('credit.sendInvoice')}
                                                 >
                                                     <Mail className="w-4 h-4" />
                                                 </button>
@@ -337,7 +313,7 @@ export default function CreditSalesPage() {
                                                     <button
                                                         onClick={() => handleSendReminder(sale)}
                                                         className="p-2 hover:bg-amber-500/20 rounded-lg transition-colors text-amber-400"
-                                                        title="Send Reminder"
+                                                        title={t('credit.sendReminder')}
                                                     >
                                                         <Bell className="w-4 h-4" />
                                                     </button>
@@ -354,11 +330,11 @@ export default function CreditSalesPage() {
                 {/* Mobile Card View */}
                 <div className="lg:hidden divide-y divide-dark-border">
                     {loading ? (
-                        <div className="text-center py-12 text-zinc-500">Loading...</div>
+                        <div className="text-center py-12 text-zinc-500">{t('common.loading')}</div>
                     ) : filteredSales.length === 0 ? (
                         <div className="text-center py-12 text-zinc-500">
                             <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                            <p>No credit sales found</p>
+                            <p>{t('credit.none')}</p>
                         </div>
                     ) : (
                         filteredSales.map(sale => (
@@ -366,7 +342,7 @@ export default function CreditSalesPage() {
                                 <div className="flex items-start justify-between">
                                     <div>
                                         <p className="font-mono text-sm text-zinc-400">{sale.invoice_number}</p>
-                                        <p className="font-medium">{sale.customer_name || 'Unknown'}</p>
+                                        <p className="font-medium">{sale.customer_name || t('tx.unknown')}</p>
                                     </div>
                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(sale.status)}`}>
                                         {getStatusLabel(sale.status)}
@@ -374,27 +350,27 @@ export default function CreditSalesPage() {
                                 </div>
                                 <div className="grid grid-cols-3 gap-2 text-sm">
                                     <div>
-                                        <p className="text-zinc-500 text-xs">Amount</p>
+                                        <p className="text-zinc-500 text-xs">{t('credit.amount')}</p>
                                         <p className="font-medium">{formatCurrency(sale.amount_due)}</p>
                                     </div>
                                     <div>
-                                        <p className="text-zinc-500 text-xs">Paid</p>
+                                        <p className="text-zinc-500 text-xs">{t('credit.paid')}</p>
                                         <p className="text-green-400">{formatCurrency(sale.amount_paid)}</p>
                                     </div>
                                     <div>
-                                        <p className="text-zinc-500 text-xs">Balance</p>
+                                        <p className="text-zinc-500 text-xs">{t('credit.balance')}</p>
                                         <p className="font-bold text-amber-400">{formatCurrency((sale.amount_due || 0) - (sale.amount_paid || 0))}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-between pt-2 border-t border-dark-border">
-                                    <p className="text-xs text-zinc-500">Due: {formatDate(sale.due_date)}</p>
+                                    <p className="text-xs text-zinc-500">{t('credit.dueN', { date: formatDate(sale.due_date) })}</p>
                                     <div className="flex gap-1">
                                         <button onClick={() => handleViewDetails(sale)} className="p-2 hover:bg-dark-tertiary rounded-lg">
                                             <Eye className="w-4 h-4" />
                                         </button>
                                         {sale.status !== 'paid' && (
                                             <button onClick={() => handleRecordPayment(sale)} className="p-2 hover:bg-green-500/20 rounded-lg text-green-400">
-                                                <DollarSign className="w-4 h-4" />
+                                                <Banknote className="w-4 h-4" />
                                             </button>
                                         )}
                                         <button onClick={() => handleSendInvoice(sale)} className="p-2 hover:bg-blue-500/20 rounded-lg text-blue-400">
@@ -433,7 +409,7 @@ export default function CreditSalesPage() {
                             setShowReceiptModal(true);
                         } catch (error) {
                             console.error('Failed to load receipt:', error);
-                            toast.error('Payment recorded but failed to load receipt');
+                            toast.error(t('credit.receiptFailed'));
                         }
                     }
                 }}
@@ -486,10 +462,7 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-        }).format(amount || 0);
+        return formatMoney(amount || 0);
     };
 
     const handleSubmit = async (e) => {
@@ -497,12 +470,12 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
         const paymentAmount = parseFloat(amount);
 
         if (!paymentAmount || paymentAmount <= 0) {
-            toast.error('Please enter a valid amount');
+            toast.error(t('credit.validAmount'));
             return;
         }
 
         if (paymentAmount > balance) {
-            toast.error('Payment amount exceeds balance');
+            toast.error(t('credit.exceeds'));
             return;
         }
 
@@ -525,7 +498,7 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
             //     toast.error('Payment recorded but failed to print receipt');
             // }
 
-            toast.success('Payment recorded successfully');
+            toast.success(t('credit.recorded'));
 
             // Calculate extra data for receipt
             const transactionData = {};
@@ -542,7 +515,7 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
             onSuccess(result.id, transactionData); // Pass ID and extra data
         } catch (error) {
             console.error('Failed to record payment:', error);
-            toast.error('Failed to record payment');
+            toast.error(t('credit.recordFailed'));
         } finally {
             setLoading(false);
         }
@@ -551,29 +524,29 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
     if (!creditSale) return null;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Record Payment" size="md">
+        <Modal isOpen={isOpen} onClose={onClose} title={t('credit.recordPayment')} size="md">
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
                 <ModalBody>
                     <div className="space-y-4">
                         {/* Invoice Info */}
                         <div className="p-4 rounded-xl bg-dark-tertiary">
                             <div className="flex justify-between items-center mb-2">
-                                <span className="text-sm text-zinc-400">Invoice</span>
+                                <span className="text-sm text-zinc-400">{t('credit.invoice')}</span>
                                 <span className="font-mono">{creditSale.invoice_number}</span>
                             </div>
                             <div className="flex justify-between items-center mb-2">
-                                <span className="text-sm text-zinc-400">Customer</span>
+                                <span className="text-sm text-zinc-400">{t('tx.customer')}</span>
                                 <span>{creditSale.customer_name}</span>
                             </div>
                             <div className="flex justify-between items-center pt-2 border-t border-dark-border">
-                                <span className="font-medium">Balance Due</span>
+                                <span className="font-medium">{t('credit.balanceDue')}</span>
                                 <span className="text-xl font-bold text-amber-400">{formatCurrency(balance)}</span>
                             </div>
                         </div>
 
                         {/* Amount */}
                         <div>
-                            <label className="block text-sm text-zinc-400 mb-2">Payment Amount *</label>
+                            <label className="block text-sm text-zinc-400 mb-2">{t('credit.payAmount')}</label>
                             <div className="flex gap-2">
                                 <Input
                                     type="number"
@@ -590,14 +563,14 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
                                     variant="secondary"
                                     onClick={() => setAmount(balance.toFixed(2))}
                                 >
-                                    Pay All
+                                    {t('credit.payAll')}
                                 </Button>
                             </div>
                         </div>
 
                         {/* Payment Method */}
                         <div>
-                            <label className="block text-sm text-zinc-400 mb-2">Payment Method</label>
+                            <label className="block text-sm text-zinc-400 mb-2">{t('pos.paymentMethod')}</label>
                             <div className="flex gap-2">
                                 <button
                                     type="button"
@@ -609,7 +582,7 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
                                         }`}
                                 >
                                     <Banknote className="w-5 h-5" />
-                                    Cash
+                                    {t('pay.cash')}
                                 </button>
                                 <button
                                     type="button"
@@ -621,7 +594,19 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
                                         }`}
                                 >
                                     <CreditCard className="w-5 h-5" />
-                                    Card
+                                    {t('pay.cardCib')}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPaymentMethod('transfer')}
+                                    className={`flex-1 p-3 rounded-lg border-2 flex items-center justify-center gap-2 transition-colors
+                                        ${paymentMethod === 'transfer'
+                                            ? 'border-accent-primary bg-accent-primary/10'
+                                            : 'border-dark-border hover:border-zinc-600'
+                                        }`}
+                                >
+                                    <Smartphone className="w-5 h-5" />
+                                    {t('pay.transferShort')}
                                 </button>
                             </div>
                         </div>
@@ -629,7 +614,7 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
                         {/* Tendered Amount (Cash Only) */}
                         {paymentMethod === 'cash' && (
                             <div className="bg-dark-tertiary p-3 rounded-lg border border-dashed border-zinc-700 mb-4">
-                                <label className="block text-sm text-zinc-400 mb-2">Amount Tendered</label>
+                                <label className="block text-sm text-zinc-400 mb-2">{t('credit.tendered')}</label>
                                 <Input
                                     type="number"
                                     step="0.01"
@@ -640,7 +625,7 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
                                     className="mb-2"
                                 />
                                 <div className="flex justify-between items-center text-sm">
-                                    <span className="text-zinc-400">Change:</span>
+                                    <span className="text-zinc-400">{t('credit.change')}</span>
                                     <span className="font-bold text-green-400">{formatCurrency(getChange())}</span>
                                 </div>
                             </div>
@@ -648,21 +633,21 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
 
                         {/* Reference */}
                         <div>
-                            <label className="block text-sm text-zinc-400 mb-2">Reference (Optional)</label>
+                            <label className="block text-sm text-zinc-400 mb-2">{t('credit.reference')}</label>
                             <Input
                                 value={reference}
                                 onChange={(e) => setReference(e.target.value)}
-                                placeholder="Check #, Transaction ID, etc."
+                                placeholder={t('credit.referencePlaceholder')}
                             />
                         </div>
 
                         {/* Notes */}
                         <div>
-                            <label className="block text-sm text-zinc-400 mb-2">Notes (Optional)</label>
+                            <label className="block text-sm text-zinc-400 mb-2">{t('credit.notes')}</label>
                             <textarea
                                 value={notes}
                                 onChange={(e) => setNotes(e.target.value)}
-                                placeholder="Additional notes..."
+                                placeholder={t('customers.notesPlaceholder2')}
                                 className="input w-full h-20 resize-none"
                             />
                         </div>
@@ -670,11 +655,11 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
                 </ModalBody>
                 <ModalFooter>
                     <Button type="button" variant="secondary" onClick={onClose}>
-                        Cancel
+                        {t('common.cancel')}
                     </Button>
                     <Button type="submit" variant="success" loading={loading}>
                         <Check className="w-4 h-4" />
-                        Record Payment
+                        {t('credit.recordPayment')}
                     </Button>
                 </ModalFooter>
             </form>
@@ -684,16 +669,13 @@ function RecordPaymentModal({ isOpen, onClose, creditSale, onSuccess, employeeId
 
 function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: 'USD',
-        }).format(amount || 0);
+        return formatMoney(amount || 0);
     };
 
     const formatDate = (dateString) => {
         if (!dateString) return '-';
         try {
-            return format(new Date(dateString), 'MMM dd, yyyy h:mm a');
+            return formatLocalDate(dateString, 'datetime');
         } catch {
             return dateString;
         }
@@ -710,7 +692,7 @@ function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
                     {/* Customer & Invoice Info */}
                     <div className="grid grid-cols-2 gap-6">
                         <div className="space-y-3">
-                            <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide">Customer</h3>
+                            <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide">{t('tx.customer')}</h3>
                             <div>
                                 <p className="font-medium text-lg">{creditSale.customer_name}</p>
                                 <p className="text-sm text-zinc-400">{creditSale.customer_email}</p>
@@ -721,18 +703,18 @@ function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
                             </div>
                         </div>
                         <div className="space-y-3">
-                            <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide">Invoice Details</h3>
+                            <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide">{t('credit.invoiceDetails')}</h3>
                             <div className="space-y-1">
                                 <div className="flex justify-between">
-                                    <span className="text-zinc-400">Receipt #</span>
+                                    <span className="text-zinc-400">{t('tx.receiptNo')}</span>
                                     <span className="font-mono">{creditSale.receipt_number}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-zinc-400">Created</span>
+                                    <span className="text-zinc-400">{t('credit.created')}</span>
                                     <span>{formatDate(creditSale.created_at)}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-zinc-400">Due Date</span>
+                                    <span className="text-zinc-400">{t('pos.dueDate')}</span>
                                     <span>{formatDate(creditSale.due_date)}</span>
                                 </div>
                             </div>
@@ -742,15 +724,15 @@ function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
                     {/* Items */}
                     {creditSale.items && creditSale.items.length > 0 && (
                         <div>
-                            <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide mb-3">Items</h3>
+                            <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide mb-3">{t('credit.items')}</h3>
                             <div className="border border-dark-border rounded-lg overflow-hidden">
                                 <table className="w-full text-sm">
                                     <thead className="bg-dark-tertiary">
                                         <tr>
-                                            <th className="text-left p-3">Item</th>
-                                            <th className="text-center p-3">Qty</th>
-                                            <th className="text-right p-3">Price</th>
-                                            <th className="text-right p-3">Total</th>
+                                            <th className="text-start p-3">{t('credit.item')}</th>
+                                            <th className="text-center p-3">{t('credit.qty')}</th>
+                                            <th className="text-end p-3">{t('qr.price')}</th>
+                                            <th className="text-end p-3">{t('pos.total')}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -758,8 +740,8 @@ function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
                                             <tr key={idx} className="border-t border-dark-border">
                                                 <td className="p-3">{item.product_name}</td>
                                                 <td className="p-3 text-center">{item.quantity}</td>
-                                                <td className="p-3 text-right">{formatCurrency(item.unit_price)}</td>
-                                                <td className="p-3 text-right font-medium">{formatCurrency(item.total)}</td>
+                                                <td className="p-3 text-end">{formatCurrency(item.unit_price)}</td>
+                                                <td className="p-3 text-end font-medium">{formatCurrency(item.total)}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -771,31 +753,32 @@ function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
                     {/* Totals */}
                     <div className="bg-dark-tertiary rounded-xl p-4 space-y-2">
                         <div className="flex justify-between">
-                            <span className="text-zinc-400">Subtotal</span>
+                            <span className="text-zinc-400">{t('pos.subtotal')}</span>
                             <span>{formatCurrency(creditSale.subtotal)}</span>
                         </div>
+                        {/* The TVA saved with this sale, whatever the setting is today */}
                         {creditSale.tax_amount > 0 && (
                             <div className="flex justify-between">
-                                <span className="text-zinc-400">Tax</span>
+                                <span className="text-zinc-400">{t('pos.tax')}</span>
                                 <span>{formatCurrency(creditSale.tax_amount)}</span>
                             </div>
                         )}
                         {creditSale.discount_amount > 0 && (
                             <div className="flex justify-between">
-                                <span className="text-zinc-400">Discount</span>
+                                <span className="text-zinc-400">{t('pos.discount')}</span>
                                 <span className="text-green-400">-{formatCurrency(creditSale.discount_amount)}</span>
                             </div>
                         )}
                         <div className="flex justify-between pt-2 border-t border-dark-border">
-                            <span className="font-medium">Total Due</span>
+                            <span className="font-medium">{t('credit.totalDue')}</span>
                             <span className="font-bold">{formatCurrency(creditSale.amount_due)}</span>
                         </div>
                         <div className="flex justify-between">
-                            <span className="text-green-400">Paid</span>
+                            <span className="text-green-400">{t('credit.paid')}</span>
                             <span className="text-green-400">{formatCurrency(creditSale.amount_paid)}</span>
                         </div>
                         <div className="flex justify-between pt-2 border-t border-dark-border">
-                            <span className="font-bold">Balance Due</span>
+                            <span className="font-bold">{t('credit.balanceDue')}</span>
                             <span className="text-xl font-bold text-amber-400">{formatCurrency(balance)}</span>
                         </div>
                     </div>
@@ -803,15 +786,15 @@ function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
                     {/* Payment History */}
                     {creditSale.payments && creditSale.payments.length > 0 && (
                         <div>
-                            <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide mb-3">Payment History</h3>
+                            <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide mb-3">{t('credit.history')}</h3>
                             <div className="space-y-2">
                                 {creditSale.payments.map((payment, idx) => (
                                     <div key={idx} className="flex items-center justify-between p-3 bg-dark-tertiary rounded-lg">
                                         <div>
                                             <p className="font-medium">{formatCurrency(payment.amount)}</p>
                                             <p className="text-xs text-zinc-400">
-                                                {payment.payment_method} • {formatDate(payment.created_at)}
-                                                {payment.received_by_name && ` • by ${payment.received_by_name}`}
+                                                {paymentLabel(payment.payment_method)} • {formatDate(payment.created_at)}
+                                                {payment.received_by_name && ` • ${payment.received_by_name}`}
                                             </p>
                                         </div>
                                         <Check className="w-5 h-5 text-green-400" />
@@ -824,7 +807,7 @@ function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
             </ModalBody>
             <ModalFooter>
                 <Button variant="secondary" onClick={onClose}>
-                    Close
+                    {t('common.close')}
                 </Button>
             </ModalFooter>
         </Modal>

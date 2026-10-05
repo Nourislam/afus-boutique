@@ -1,111 +1,64 @@
 /**
  * Barcode Service
  * 
- * Comprehensive barcode generation with support for multiple industries
- * and international standards (GS1 compliant).
+ * Barcode generation (EAN, Code 128, QR…) for clothing labels.
  */
 
 const bwipjs = require('bwip-js');
 const path = require('path');
 const fs = require('fs');
 
-// Industry-specific label templates
+// Label templates for clothing and fashion-accessory shops (names are
+// translated in the interface by key)
 const INDUSTRY_PRESETS = {
-    retail: {
-        name: 'Retail',
-        barcodeType: 'code128',
-        labelWidth: 50,
-        labelHeight: 25,
-        showPrice: true,
-        showName: true,
-        description: 'Standard retail product labels',
-    },
-    grocery: {
-        name: 'Grocery',
-        barcodeType: 'code128',
-        labelWidth: 38,
-        labelHeight: 25,
-        showPrice: true,
-        showName: true,
-        showWeight: true,
-        showExpiry: true,
-        description: 'Grocery labels with weight and expiry date',
-    },
-    pharmaceutical: {
-        name: 'Pharmaceutical',
-        barcodeType: 'datamatrix',
-        labelWidth: 40,
-        labelHeight: 20,
-        showLot: true,
-        showExpiry: true,
-        showNDC: true,
-        description: 'GS1 DataMatrix for pharmaceutical tracking'
-    },
-    warehouse: {
-        name: 'Warehouse',
-        barcodeType: 'code128',
-        labelWidth: 100,
-        labelHeight: 50,
-        showSKU: true,
-        showLocation: true,
-        description: 'Large warehouse labels with Code128',
-    },
-    assets: {
-        name: 'Assets',
-        barcodeType: 'qrcode',
-        labelWidth: 30,
-        labelHeight: 30,
-        showAssetId: true,
-        showURL: true,
-        description: 'QR code asset tracking labels',
-    },
-    hotel: {
-        name: 'Hotel',
-        barcodeType: 'qrcode',
-        labelWidth: 40,
-        labelHeight: 40,
-        showName: true,
-        showPrice: true,
-        description: 'Hotel amenities and minibar items',
-    },
-    jewelry: {
-        name: 'Jewelry',
-        barcodeType: 'code128',
-        labelWidth: 25,
-        labelHeight: 15,
-        showPrice: true,
-        showName: true,
-        showSKU: true,
-        description: 'Small jewelry price tags',
-    },
-    electronics: {
-        name: 'Electronics',
-        barcodeType: 'code128',
-        labelWidth: 60,
-        labelHeight: 30,
-        showPrice: true,
-        showName: true,
-        showSKU: true,
-        description: 'Electronics with serial/model info',
-    },
-    restaurant: {
-        name: 'Restaurant',
-        barcodeType: 'qrcode',
-        labelWidth: 35,
-        labelHeight: 35,
-        showName: true,
-        showPrice: true,
-        description: 'Menu items and kitchen labels',
-    },
     fashion: {
-        name: 'Fashion',
+        name: 'Hang tag',
         barcodeType: 'code128',
         labelWidth: 45,
         labelHeight: 80,
         showPrice: true,
         showName: true,
         showSize: true,
-        description: 'Clothing hang tags with size info',
+        description: 'Clothing hang tags with size',
+    },
+    retail: {
+        name: 'Price sticker',
+        barcodeType: 'code128',
+        labelWidth: 50,
+        labelHeight: 25,
+        showPrice: true,
+        showName: true,
+        description: 'Standard price sticker',
+    },
+    accessories: {
+        name: 'Accessories',
+        barcodeType: 'code128',
+        labelWidth: 25,
+        labelHeight: 15,
+        showPrice: true,
+        showName: true,
+        showSKU: true,
+        description: 'Small tags for jewellery, belts, sunglasses',
+    },
+    shoebox: {
+        name: 'Shoe box',
+        barcodeType: 'code128',
+        labelWidth: 60,
+        labelHeight: 30,
+        showPrice: true,
+        showName: true,
+        showSKU: true,
+        showSize: true,
+        description: 'Shoe and bag box labels',
+    },
+    qr: {
+        name: 'QR tag',
+        barcodeType: 'qrcode',
+        labelWidth: 30,
+        labelHeight: 30,
+        showName: true,
+        showPrice: true,
+        description: 'Square QR labels',
     },
 };
 
@@ -113,12 +66,11 @@ const INDUSTRY_PRESETS = {
 const BARCODE_TYPES = {
     // 1D Barcodes
     'upca': { name: 'UPC-A', digits: 12, type: '1D', region: 'US/Canada' },
-    'upce': { name: 'UPC-E', digits: 8, type: '1D', region: 'US/Canada' },
     'ean13': { name: 'EAN-13', digits: 13, type: '1D', region: 'International' },
     'ean8': { name: 'EAN-8', digits: 8, type: '1D', region: 'International' },
     'code128': { name: 'Code 128', digits: 'Variable', type: '1D', region: 'Universal' },
     'code39': { name: 'Code 39', digits: 'Variable', type: '1D', region: 'Industrial' },
-    'interleaved2of5': { name: 'ITF-14', digits: 14, type: '1D', region: 'Logistics' },
+    'itf14': { name: 'ITF-14', digits: 14, type: '1D', region: 'Logistics' },
     // 2D Barcodes
     'qrcode': { name: 'QR Code', digits: 'Variable', type: '2D', region: 'Universal' },
     'datamatrix': { name: 'DataMatrix', digits: 'Variable', type: '2D', region: 'Industrial/Pharma' },
@@ -157,16 +109,19 @@ class BarcodeService {
      * Generate a barcode image as base64 PNG
      */
     async generateBarcode(options) {
+        let { type = 'ean13', data } = options;
         const {
-            type = 'ean13',
-            data,
-            width = 200,
-            height = 100,
             includeText = true,
             scale = 3,
             backgroundColor = '#ffffff',
             barcodeColor = '#000000',
         } = options;
+
+        // Older saved settings used these names
+        if (type === 'interleaved2of5') type = 'itf14';
+        if (type === 'upce') type = 'upca';
+        // Code 39 only has capital letters
+        if (type === 'code39') data = String(data || '').toUpperCase();
 
         try {
             // Validate data for specific barcode types
@@ -184,7 +139,7 @@ class BarcodeService {
 
             // Only add height for 1D barcodes
             if (!is2D) {
-                bwipOptions.height = 10;
+                bwipOptions.height = options.barHeight || 10;
                 bwipOptions.textxalign = 'center';
             }
 
@@ -222,16 +177,13 @@ class BarcodeService {
             throw new Error(`Unsupported barcode type: ${type}`);
         }
 
+        if (!data || !String(data).trim()) throw new Error('empty');
         if (typeof specs.digits === 'number') {
             // Handle check digit calculation for UPC/EAN
-            const requiredLength = type === 'upca' ? 11 :
-                type === 'upce' ? 7 :
-                    type === 'ean13' ? 12 :
-                        type === 'ean8' ? 7 :
-                            specs.digits;
+            const requiredLength = specs.digits - 1;
 
             if (data.length !== requiredLength && data.length !== specs.digits) {
-                throw new Error(`${specs.name} requires ${specs.digits} digits (or ${requiredLength} without check digit)`);
+                throw new Error(`${specs.name}: ${specs.digits} / ${requiredLength}`);
             }
 
             if (!/^\d+$/.test(data)) {
@@ -392,22 +344,11 @@ class BarcodeService {
     /**
      * Calculate check digit for EAN/UPC
      */
-    calculateCheckDigit(data, type) {
-        const digits = data.split('').map(Number);
-        let sum = 0;
-
-        if (type === 'ean13' || type === 'upca') {
-            for (let i = 0; i < digits.length; i++) {
-                sum += digits[i] * (i % 2 === 0 ? 1 : 3);
-            }
-        } else if (type === 'ean8') {
-            for (let i = 0; i < digits.length; i++) {
-                sum += digits[i] * (i % 2 === 0 ? 3 : 1);
-            }
-        }
-
-        const checkDigit = (10 - (sum % 10)) % 10;
-        return checkDigit.toString();
+    calculateCheckDigit(data) {
+        // GS1 (EAN-8/13, UPC-A, ITF-14): weights 3,1,3… from the right
+        const digits = String(data).split('').map(Number).reverse();
+        const sum = digits.reduce((acc, d, i) => acc + d * (i % 2 === 0 ? 3 : 1), 0);
+        return String((10 - (sum % 10)) % 10);
     }
 
     /**
@@ -415,7 +356,6 @@ class BarcodeService {
      */
     generateRandomBarcode(type = 'ean13') {
         let data = '';
-        const specs = BARCODE_TYPES[type];
 
         if (type === 'ean13') {
             // Generate 12 random digits, then add check digit
@@ -433,6 +373,11 @@ class BarcodeService {
                 data += Math.floor(Math.random() * 10);
             }
             data += this.calculateCheckDigit(data, 'ean8');
+        } else if (type === 'itf14' || type === 'interleaved2of5') {
+            for (let i = 0; i < 13; i++) {
+                data += Math.floor(Math.random() * 10);
+            }
+            data += this.calculateCheckDigit(data);
         } else {
             // For variable length, generate a reasonable length
             const length = 10;

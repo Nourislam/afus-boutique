@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { BrowserWindow } = require('electron');
+const { loadHtml } = require('./printDocument');
+const { BRAND } = require('../brand');
 const emailService = require('./emailService');
 
 class InvoiceService {
@@ -244,9 +246,9 @@ class InvoiceService {
                     <span>Subtotal</span>
                     <span>${this.formatCurrency(subtotal)}</span>
                 </div>
-                ${taxAmount ? `
+                ${taxAmount > 0 ? `
                 <div class="totals-row">
-                    <span>Tax</span>
+                    <span>TVA</span>
                     <span>${this.formatCurrency(taxAmount)}</span>
                 </div>
                 ` : ''}
@@ -326,9 +328,12 @@ class InvoiceService {
                 }
             });
 
-            win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+            loadHtml(win, html).catch((error) => {
+                if (!win.isDestroyed()) win.close();
+                reject(error);
+            });
 
-            win.webContents.on('did-finish-load', () => {
+            win.webContents.once('did-finish-load', () => {
                 win.webContents.printToPDF({
                     printBackground: true,
                     pageSize: 'A4',
@@ -442,7 +447,7 @@ class InvoiceService {
 
         return await emailService.sendEmail({
             to,
-            subject: `Invoice ${creditSale.invoice_number} from ${businessInfo.businessName || 'POS'}`,
+            subject: `Invoice ${creditSale.invoice_number} from ${businessInfo.businessName || BRAND.productName}`,
             html,
             attachments: pdfPath ? [{
                 filename: `Invoice_${creditSale.invoice_number}.pdf`,

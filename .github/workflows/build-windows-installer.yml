@@ -1,0 +1,53 @@
+name: Build Windows Installer
+
+# Builds the standalone Windows installer (NSIS .exe) and keeps it as a
+# downloadable artifact of the run. Nothing is published: no GitHub Release,
+# no GH_TOKEN needed.
+#
+# - workflow_dispatch: start it from the Actions tab ("Run workflow").
+#   GitHub only shows that button for workflows present on the default branch.
+# - push on the feature branch (only when this file changes): runs it from the
+#   feature branch without merging to main. Re-run it from the run page.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/keen-wright-cushvb
+    paths:
+      - .github/workflows/build-windows-installer.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-installer-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # --publish never: build only, never upload to GitHub Releases
+      - name: Build Windows installer
+        run: npm run electron:build:win -- --publish never
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Afus-Boutique-Setup-1.1.2-win-x64
+          path: release/Afus Boutique Setup 1.1.2.exe
+          if-no-files-found: error
+          retention-days: 90

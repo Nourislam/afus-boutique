@@ -1,6 +1,8 @@
 const { v4: uuid } = require('uuid');
 const { runInsert, getOne, runQuery } = require('../database/init');
 
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
 class ShiftService {
     constructor() {}
 
@@ -8,7 +10,7 @@ class ShiftService {
         // Check if there is already an active shift for this employee
         const activeShift = this.getCurrentShift(employeeId);
         if (activeShift) {
-            throw new Error('Employee already has an active shift.');
+            throw new Error('SHIFT_ALREADY_OPEN|{}');
         }
 
         const shift = {
@@ -29,8 +31,8 @@ class ShiftService {
 
     endShift(shiftId, closingCash, notes = '') {
         const shift = this.getShiftById(shiftId);
-        if (!shift) throw new Error('Shift not found');
-        if (shift.end_time) throw new Error('Shift already closed');
+        if (!shift) throw new Error('SHIFT_NOT_FOUND|{}');
+        if (shift.end_time) throw new Error('SHIFT_ALREADY_CLOSED|{}');
 
         const endTime = new Date().toISOString();
 
@@ -56,7 +58,7 @@ class ShiftService {
 
     getShiftStats(shiftId) {
         const shift = this.getShiftById(shiftId);
-        if (!shift) throw new Error('Shift not found');
+        if (!shift) throw new Error('SHIFT_NOT_FOUND|{}');
 
         // Calculate sales totals during this shift
         // We use the shift start time and either the shift end time or current time
@@ -72,23 +74,6 @@ class ShiftService {
             WHERE employee_id = ? AND datetime(created_at) BETWEEN datetime(?) AND datetime(?)
         `, [shift.employee_id, shift.start_time, endTime]);
 
-        console.log('DEBUG: Shift Stats Query Range:', {
-            emp: shift.employee_id,
-            start: shift.start_time,
-            end: endTime
-        }, 'Result:', salesStats);
-
-        // Debug: Get ALL payments for this timeframe and employee
-        try {
-            const debugPayments = runQuery(`
-                SELECT p.method, p.amount, s.created_at, p.id 
-                FROM payments p
-                JOIN sales s ON p.sale_id = s.id
-                WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
-            `, [shift.employee_id, shift.start_time, endTime]);
-            console.log('DEBUG: All Payments in range:', JSON.stringify(debugPayments));
-        } catch(e) { console.log('DEBUG: Error querying payments', e); }
-
         // Calculate cash specifically (if you want to reconcile cash drawer)
         const cashSales = getOne(`
             SELECT COALESCE(SUM(amount), 0) as total_cash
@@ -98,7 +83,7 @@ class ShiftService {
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const refunds = getOne(`
-             SELECT COALESCE(SUM(total_refund), 0) as total_refunds
+            SELECT COALESCE(SUM(total_refund), 0) as total_refunds
              FROM returns
              WHERE employee_id = ? AND datetime(created_at) BETWEEN datetime(?) AND datetime(?)
         `, [shift.employee_id, shift.start_time, endTime]);
@@ -118,6 +103,13 @@ class ShiftService {
             WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'credit'
         `, [shift.employee_id, shift.start_time, endTime]);
 
+        const transferSales = getOne(`
+            SELECT COALESCE(SUM(amount), 0) as total_transfer
+            FROM payments p
+            JOIN sales s ON p.sale_id = s.id
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'transfer'
+        `, [shift.employee_id, shift.start_time, endTime]);
+
         const giftCardSales = getOne(`
             SELECT COALESCE(SUM(amount), 0) as total_gift_card
             FROM payments p
@@ -125,33 +117,151 @@ class ShiftService {
             WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'gift_card'
         `, [shift.employee_id, shift.start_time, endTime]);
 
-        // Calculate expected cash in drawer
-        const openingCash = shift.opening_cash || 0;
-        const totalCashSales = cashSales.total_cash || 0;
-        const totalCardSales = cardSales.total_card || 0;
-        const totalCreditSales = creditSales.total_credit || 0;
-        const totalGiftCardSales = giftCardSales.total_gift_card || 0;
-        // Assuming refunds are given in cash for this simple calculation, likely need to filter by return payment method if that exists
-        const totalRefunds = refunds.total_refunds || 0; 
+        // Refunds handed back in cash (a return on a kridi sale lowers the debt instead)
+        const cashRefunds = getOne(`
+            SELECT COALESCE(SUM(r.total_refund), 0) AS total
+            FROM returns r
+            WHERE r.employee_id = ? AND datetime(r.created_at) BETWEEN datetime(?) AND datetime(?)
+              AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.sale_id = r.sale_id AND LOWER(p.method) = 'credit')
+        `, [shift.employee_id, shift.start_time, endTime]);
 
-        // TODO: Refine refund logic if refunds can be to card/store credit
-        
-        const expectedCash = openingCash + totalCashSales; // - totalRefunds; (Verify refund logic later)
+        // Kridi repaid in cash to this employee goes into the same drawer
+        const creditCollected = getOne(`
+            SELECT COALESCE(SUM(amount), 0) AS total
+            FROM credit_payments
+            WHERE received_by = ? AND LOWER(payment_method) = 'cash'
+              AND datetime(created_at) BETWEEN datetime(?) AND datetime(?)
+        `, [shift.employee_id, shift.start_time, endTime]);
+
+        const items = getOne(`
+            SELECT COALESCE(SUM(si.quantity), 0) AS total
+            FROM sale_items si JOIN sales s ON s.id = si.sale_id
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+        `, [shift.employee_id, shift.start_time, endTime]);
+
+        const openingCash = Number(shift.opening_cash) || 0;
+        const totalCashSales = cashSales.total_cash || 0;
+        const totalRefunds = refunds.total_refunds || 0;
+        const totalCashRefunds = cashRefunds.total || 0;
+        const totalCreditCollected = creditCollected.total || 0;
+        const expectedCash = round2(openingCash + totalCashSales + totalCreditCollected - totalCashRefunds);
+        const durationMinutes = Math.max(0, Math.round((new Date(endTime) - new Date(shift.start_time)) / 60000));
 
         return {
             ...salesStats,
+            employee_id: shift.employee_id,
+            items_sold: items.total || 0,
             total_cash_sales: totalCashSales,
-            total_card_sales: totalCardSales,
-            total_credit_sales: totalCreditSales,
-            total_gift_card_sales: totalGiftCardSales,
+            total_card_sales: cardSales.total_card || 0,
+            total_transfer_sales: transferSales.total_transfer || 0,
+            total_credit_sales: creditSales.total_credit || 0,
+            total_gift_card_sales: giftCardSales.total_gift_card || 0,
             total_refunds: totalRefunds,
+            total_cash_refunds: totalCashRefunds,
+            credit_collected_cash: totalCreditCollected,
             opening_cash: openingCash,
             expected_cash: expectedCash,
+            closing_cash: shift.closing_cash,
+            cash_difference: shift.closing_cash === null || shift.closing_cash === undefined ? null : round2(Number(shift.closing_cash) - expectedCash),
+            duration_minutes: durationMinutes,
             start_time: shift.start_time,
             end_time: shift.end_time
         };
     }
-    // ... previous methods
+
+    /** Drawers still open, with who opened them. */
+    getOpenShifts() {
+        return runQuery(`
+            SELECT s.*, e.name AS employee_name
+            FROM shifts s LEFT JOIN employees e ON e.id = s.employee_id
+            WHERE s.end_time IS NULL
+            ORDER BY s.start_time
+        `);
+    }
+
+    /** Last closed drawer: its counted cash is the next opening amount. */
+    getLastClosedShift() {
+        return getOne(`
+            SELECT s.*, e.name AS employee_name
+            FROM shifts s LEFT JOIN employees e ON e.id = s.employee_id
+            WHERE s.end_time IS NOT NULL
+            ORDER BY datetime(s.end_time) DESC
+            LIMIT 1
+        `);
+    }
+
+    /**
+     * What each employee did in a period: time worked (drawer open time),
+     * sales, pieces sold, refunds and cash differences at closing.
+     */
+    getEmployeeActivity(startDate, endDate) {
+        const employees = runQuery('SELECT id, name, role, is_active FROM employees ORDER BY name');
+        const shifts = runQuery(`
+            SELECT * FROM shifts
+            WHERE datetime(start_time) <= datetime(?) AND (end_time IS NULL OR datetime(end_time) >= datetime(?))
+        `, [endDate, startDate]);
+        const sales = runQuery(`
+            SELECT employee_id, COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
+            FROM sales
+            WHERE datetime(created_at) BETWEEN datetime(?) AND datetime(?)
+            GROUP BY employee_id
+        `, [startDate, endDate]);
+        const items = runQuery(`
+            SELECT s.employee_id, COALESCE(SUM(si.quantity), 0) AS qty
+            FROM sale_items si JOIN sales s ON s.id = si.sale_id
+            WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+            GROUP BY s.employee_id
+        `, [startDate, endDate]);
+        const refunds = runQuery(`
+            SELECT employee_id, COUNT(*) AS count, COALESCE(SUM(total_refund), 0) AS total
+            FROM returns
+            WHERE datetime(created_at) BETWEEN datetime(?) AND datetime(?)
+            GROUP BY employee_id
+        `, [startDate, endDate]);
+
+        const from = new Date(startDate).getTime();
+        const to = Math.min(new Date(endDate).getTime(), Date.now());
+        return employees.map(emp => {
+            const own = shifts.filter(s => s.employee_id === emp.id);
+            let minutes = 0;
+            let difference = 0;
+            let closed = 0;
+            for (const shift of own) {
+                const start = Math.max(new Date(shift.start_time).getTime(), from);
+                const end = Math.min(shift.end_time ? new Date(shift.end_time).getTime() : Date.now(), to);
+                if (end > start) minutes += (end - start) / 60000;
+                if (shift.end_time && shift.closing_cash !== null && shift.closing_cash !== undefined) {
+                    try {
+                        const stats = this.getShiftStats(shift.id);
+                        difference += stats.cash_difference || 0;
+                        closed += 1;
+                    } catch { /* skip a broken shift */ }
+                }
+            }
+            const sale = sales.find(r => r.employee_id === emp.id) || {};
+            const item = items.find(r => r.employee_id === emp.id) || {};
+            const refund = refunds.find(r => r.employee_id === emp.id) || {};
+            const openShift = own.find(s => !s.end_time) || null;
+            return {
+                ...emp,
+                shifts: own.length,
+                closed_shifts: closed,
+                minutes_worked: Math.round(minutes),
+                sales_count: sale.count || 0,
+                sales_total: round2(sale.total || 0),
+                items_sold: item.qty || 0,
+                refunds_count: refund.count || 0,
+                refunds_total: round2(refund.total || 0),
+                cash_difference: round2(difference),
+                open_shift_start: openShift ? openShift.start_time : null,
+                last_activity: own.reduce((last, s) => {
+                    const time = s.end_time || s.start_time;
+                    return !last || new Date(time) > new Date(last) ? time : last;
+                }, null),
+            };
+        });
+    }
+
 
     getShiftHistory(startDate, endDate) {
         // Adjust dates to cover full days if needed
@@ -161,9 +271,10 @@ class ShiftService {
                 e.name as employee_name
             FROM shifts s
             JOIN employees e ON s.employee_id = e.id
-            WHERE s.start_time BETWEEN ? AND ?
+            WHERE datetime(s.start_time) BETWEEN datetime(?) AND datetime(?)
+               OR (s.end_time IS NULL AND datetime(s.start_time) <= datetime(?))
             ORDER BY s.start_time DESC
-        `, [startDate, endDate]);
+        `, [startDate, endDate, endDate]);
 
         // Augment with calculated stats
         return shifts.map(shift => {

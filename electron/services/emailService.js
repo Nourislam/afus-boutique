@@ -1,6 +1,6 @@
 const nodemailer = require('nodemailer');
-const path = require('path');
 const fs = require('fs');
+const { BRAND } = require('../brand');
 
 /**
  * Properly strip HTML tags from a string.
@@ -69,7 +69,7 @@ async function sendEmail({ to, subject, html, text, attachments = [] }) {
 
 // Send receipt email with PDF attachment
 async function sendReceiptEmail({ to, sale, businessInfo, pdfPath }) {
-    const subject = `Receipt #${sale.receipt_number} from ${businessInfo.businessName || 'POSbyCirvex'}`;
+    const subject = `Receipt #${sale.receipt_number} from ${businessInfo.businessName || 'our store'}`;
 
     const html = `
     <!DOCTYPE html>
@@ -88,7 +88,7 @@ async function sendReceiptEmail({ to, sale, businessInfo, pdfPath }) {
     <body>
       <div class="container">
         <div class="header">
-          <div class="logo">${businessInfo.businessName || 'POSbyCirvex'}</div>
+          <div class="logo">${businessInfo.businessName || 'our store'}</div>
           <p>${businessInfo.businessAddress || ''}</p>
         </div>
         
@@ -168,10 +168,10 @@ async function sendTestEmail(settings, toEmail) {
         await testTransporter.sendMail({
             from: settings.smtp_user,
             to: toEmail,
-            subject: 'POSbyCirvex - Test Email',
+            subject: `${BRAND.productName} - Test e-mail`,
             html: `
         <h2>Email Configuration Test</h2>
-        <p>This is a test email from POSbyCirvex.</p>
+        <p>This is a test email from your point of sale system.</p>
         <p>If you received this email, your SMTP settings are configured correctly!</p>
         <p><small>Sent at: ${new Date().toLocaleString()}</small></p>
       `,
@@ -185,7 +185,7 @@ async function sendTestEmail(settings, toEmail) {
 
 // Send quotation email with PDF attachment
 async function sendQuotationEmail({ to, quote, businessInfo, pdfPath }) {
-    const subject = `Quotation #${quote.quote_number} from ${businessInfo.businessName || 'POSbyCirvex'}`;
+    const subject = `Quotation #${quote.quote_number} from ${businessInfo.businessName || 'our store'}`;
     const itemsHtml = quote.items.map(item => `
         <tr style="border-bottom: 1px solid #f3f4f6;">
             <td style="padding: 12px 16px; color: #1f2937;">${item.product_name}</td>
@@ -245,7 +245,7 @@ async function sendQuotationEmail({ to, quote, businessInfo, pdfPath }) {
           <div class="grid-header">
             <div class="info-box">
               <h3>From</h3>
-              <p>${businessInfo.businessName || 'POSbyCirvex'}</p>
+              <p>${businessInfo.businessName || 'our store'}</p>
               <p class="address">${businessInfo.businessAddress || ''}</p>
               <p class="address">${businessInfo.businessEmail || ''}</p>
             </div>
@@ -315,7 +315,7 @@ async function sendQuotationEmail({ to, quote, businessInfo, pdfPath }) {
 
 // Send purchase order email with PDF attachment
 async function sendPurchaseOrderEmail({ to, po, businessInfo, pdfPath }) {
-    const subject = `Purchase Order #${po.po_number || po.id.slice(0, 8)} from ${businessInfo.businessName || 'POSbyCirvex'}`;
+    const subject = `Purchase Order #${po.po_number || po.id.slice(0, 8)} from ${businessInfo.businessName || 'our store'}`;
     const itemsHtml = po.items.map(item => `
         <tr style="border-bottom: 1px solid #f3f4f6;">
             <td style="padding: 12px 16px; color: #1f2937;">${item.product_name}</td>
@@ -379,7 +379,7 @@ async function sendPurchaseOrderEmail({ to, po, businessInfo, pdfPath }) {
             </div>
             <div class="info-box">
               <h3>From</h3>
-              <p>${businessInfo.businessName || 'POSbyCirvex'}</p>
+              <p>${businessInfo.businessName || 'our store'}</p>
               <p class="address">${businessInfo.businessAddress || ''}</p>
               <p class="address">${businessInfo.businessEmail || ''}</p>
             </div>
@@ -404,10 +404,10 @@ async function sendPurchaseOrderEmail({ to, po, businessInfo, pdfPath }) {
               <span>Subtotal</span>
               <span class="amount">$${(po.subtotal || 0).toFixed(2)}</span>
             </div>
-            <div class="total-row">
+            ${po.tax_amount > 0 ? `<div class="total-row">
               <span>Tax</span>
               <span class="amount">$${(po.tax_amount || 0).toFixed(2)}</span>
-            </div>
+            </div>` : ''}
             <div class="total-row final">
               <span>Total</span>
               <span>$${(po.total || 0).toFixed(2)}</span>

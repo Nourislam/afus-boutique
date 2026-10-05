@@ -1,137 +1,262 @@
 import { NavLink } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import {
-    LayoutDashboard,
-    ShoppingCart,
-    Package,
-    Boxes,
-    Users,
-    UserCog,
-    BarChart3,
-    Settings,
-    LogOut,
-    Gift,
-    PackageOpen,
-    Percent,
-    Barcode,
-    History,
-    CreditCard,
-    FileText,
-    Truck,
-    DollarSign,
-    Sparkles
+    LayoutDashboard, ShoppingCart, Package, Boxes, UserCog, BarChart3, Settings, LogOut, Percent, QrCode,
+    History, CreditCard, FileText, LibraryBig, Users, Truck, PanelLeftClose, PanelLeftOpen, LayoutGrid, Rows3,
 } from 'lucide-react';
 import { useAuthStore, PERMISSIONS } from '../../stores/authStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useState, useEffect } from 'react';
+import { useT } from '../../i18n';
+import { translateError } from '../../i18n/errors';
 import ShiftSummaryDialog from '../shifts/ShiftSummaryDialog';
+import { ShopLogo } from '../shop/ShopLogo';
+import { toast } from '../ui/Toast';
+import { SIMPLE_PATHS, saveUiMode } from '../../lib/uiMode';
+import { offerTabs } from '../../lib/modules';
 
-const navItems = [
-    { path: '/', icon: LayoutDashboard, label: 'Dashboard', permission: PERMISSIONS.DASHBOARD_VIEW },
-    { path: '/pos', icon: ShoppingCart, label: 'POS', permission: PERMISSIONS.POS_VIEW },
-    { path: '/transactions', icon: History, label: 'Transactions', permission: PERMISSIONS.POS_VIEW },
-
-    { path: '/products', icon: Package, label: 'Products', permission: PERMISSIONS.PRODUCTS_VIEW },
-    { path: '/inventory', icon: Boxes, label: 'Inventory', permission: PERMISSIONS.INVENTORY_VIEW },
-    { path: '/suppliers', icon: Truck, label: 'Suppliers', permission: PERMISSIONS.INVENTORY_VIEW },
-    { path: '/purchase-orders', icon: FileText, label: 'Purchase Orders', permission: PERMISSIONS.INVENTORY_VIEW },
-    { path: '/customers', icon: Users, label: 'Customers', permission: PERMISSIONS.CUSTOMERS_VIEW },
-    { path: '/credit-sales', icon: CreditCard, label: 'Credit Sales', permission: PERMISSIONS.CUSTOMERS_VIEW },
-    { path: '/gift-cards', icon: Gift, label: 'Gift Cards', permission: PERMISSIONS.GIFT_CARDS_VIEW },
-    { path: '/bundles', icon: PackageOpen, label: 'Bundles', permission: PERMISSIONS.BUNDLES_VIEW },
-    { path: '/promotions', icon: Percent, label: 'Promotions', permission: PERMISSIONS.PROMOTIONS_VIEW },
-    { path: '/barcode-labels', icon: Barcode, label: 'Barcode Labels', permission: PERMISSIONS.PRODUCTS_VIEW },
-    { path: '/employees', icon: UserCog, label: 'Employees', permission: PERMISSIONS.EMPLOYEES_VIEW },
-    { path: '/reports', icon: BarChart3, label: 'Reports', permission: PERMISSIONS.REPORTS_VIEW },
-    { path: '/ai-chat', icon: Sparkles, label: 'AI Assistant', permission: PERMISSIONS.DASHBOARD_VIEW },
-    { path: '/settings', icon: Settings, label: 'Settings', permission: PERMISSIONS.SETTINGS_VIEW },
-    { path: '/profile', icon: UserCog, label: 'Profile', permission: 'profile.view' }, // Use string literal to avoid import cycle or missing export
+// Grouped menu. Brands, categories, suppliers and customers live together in
+// "Catalogue"; promotions and packs together in "Offers".
+const NAV_GROUPS = [
+    {
+        id: 'sell',
+        items: [
+            { path: '/', icon: LayoutDashboard, label: 'nav.dashboard', permission: PERMISSIONS.DASHBOARD_VIEW },
+            { path: '/pos', icon: ShoppingCart, label: 'nav.sales', permission: PERMISSIONS.POS_VIEW },
+            { path: '/transactions', icon: History, label: 'nav.transactions', permission: PERMISSIONS.POS_VIEW },
+            { path: '/credit-sales', icon: CreditCard, label: 'nav.credit', permission: PERMISSIONS.CUSTOMERS_VIEW, feature: 'credit' },
+        ],
+    },
+    {
+        id: 'stock',
+        items: [
+            { path: '/products', icon: Package, label: 'nav.products', permission: PERMISSIONS.PRODUCTS_VIEW },
+            { path: '/inventory', icon: Boxes, label: 'nav.inventory', permission: PERMISSIONS.INVENTORY_VIEW },
+            { path: '/labels', icon: QrCode, label: 'nav.labels', permission: PERMISSIONS.PRODUCTS_VIEW },
+            { path: '/catalog', icon: LibraryBig, label: 'nav.catalog', permission: PERMISSIONS.PRODUCTS_VIEW },
+            { path: '/customers', icon: Users, label: 'nav.customers', permission: PERMISSIONS.CUSTOMERS_VIEW, feature: 'customers' },
+            { path: '/suppliers', icon: Truck, label: 'nav.suppliers', permission: PERMISSIONS.INVENTORY_VIEW, feature: 'suppliers' },
+            { path: '/purchase-orders', icon: FileText, label: 'nav.purchases', permission: PERMISSIONS.INVENTORY_VIEW, feature: 'purchaseOrders' },
+        ],
+    },
+    {
+        id: 'grow',
+        items: [
+            // Promotions, packs and gift cards: shown while one of them is on and allowed
+            { path: '/offers', icon: Percent, label: 'nav.offers', show: (features, can) => offerTabs(features, can).length > 0 },
+        ],
+    },
+    {
+        id: 'manage',
+        items: [
+            { path: '/employees', icon: UserCog, label: 'nav.employees', permission: PERMISSIONS.EMPLOYEES_VIEW },
+            { path: '/reports', icon: BarChart3, label: 'nav.reports', permission: PERMISSIONS.REPORTS_VIEW },
+        ],
+    },
 ];
+
+// Settings stays at the bottom in both modes: the mode is changed there
+const SETTINGS_ITEM = { path: '/settings', icon: Settings, label: 'nav.settings', permission: PERMISSIONS.SETTINGS_VIEW };
+
+// Open or closed menu, remembered on this computer only
+const COLLAPSED_KEY = 'ui_sidebar_collapsed';
+function readCollapsed() {
+    try { return localStorage.getItem(COLLAPSED_KEY) === '1'; } catch { return false; }
+}
+function writeCollapsed(value) {
+    try { localStorage.setItem(COLLAPSED_KEY, value ? '1' : '0'); } catch { /* kept for this session */ }
+}
+
+/** Name shown beside an icon while the menu is closed (also on keyboard focus). */
+function useTooltip(enabled) {
+    const [tip, setTip] = useState(null);
+    useEffect(() => { if (!enabled) setTip(null); }, [enabled]);
+    const show = (text) => (e) => {
+        if (!enabled) return;
+        const r = e.currentTarget.getBoundingClientRect();
+        const rtl = document.documentElement.dir === 'rtl';
+        setTip({ text, top: r.top + r.height / 2, x: rtl ? r.left - 8 : r.right + 8, rtl });
+    };
+    const hide = () => setTip(null);
+    const props = (text) => (enabled ? { onMouseEnter: show(text), onMouseLeave: hide, onFocus: show(text), onBlur: hide, 'aria-label': text } : {});
+    const node = tip && createPortal(
+        <div role="tooltip" className="fixed z-[120] pointer-events-none px-2.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap bg-zinc-900 text-white border border-zinc-700 shadow-lg"
+            style={{ top: tip.top, left: tip.x, transform: `translate(${tip.rtl ? '-100%' : '0'}, -50%)` }}>
+            {tip.text}
+        </div>,
+        document.body,
+    );
+    return { props, node };
+}
 
 export function Sidebar() {
     const { currentEmployee, logout, hasPermission } = useAuthStore();
     const [currentShiftId, setCurrentShiftId] = useState(null);
     const [showShiftSummary, setShowShiftSummary] = useState(false);
+    const [collapsed, setCollapsed] = useState(readCollapsed);
+    const [switching, setSwitching] = useState(false);
+    const { t } = useT();
+    const features = useSettingsStore(state => state.settings.features);
+    const shopName = useSettingsStore(state => state.settings.businessName);
+    const shopLogo = useSettingsStore(state => state.settings.shopLogo);
+    const uiMode = useSettingsStore(state => state.settings.uiMode);
+    const simple = uiMode === 'simple';
+    const tooltip = useTooltip(collapsed);
 
     useEffect(() => {
-        if (currentEmployee) {
-            checkActiveShift();
-        }
+        if (!currentEmployee) return undefined;
+        let cancelled = false;
+        const check = () => window.electronAPI.shifts.getCurrent(currentEmployee.id)
+            .then(shift => { if (!cancelled) setCurrentShiftId(shift?.id || null); })
+            .catch(() => { });
+        check();
+        // A shift can be opened from the sales screen after login
+        window.addEventListener('pos:shift-changed', check);
+        return () => { cancelled = true; window.removeEventListener('pos:shift-changed', check); };
     }, [currentEmployee]);
 
-    const checkActiveShift = async () => {
+    const visible = (item) => (!item.permission || hasPermission(item.permission))
+        && (!item.feature || features?.[item.feature])
+        && (!item.show || item.show(features || {}, hasPermission))
+        && (!simple || SIMPLE_PATHS.includes(item.path));
+
+    const toggleCollapsed = () => setCollapsed(value => {
+        writeCollapsed(!value);
+        return !value;
+    });
+
+    const switchMode = async (mode) => {
+        if (mode === uiMode || switching) return;
+        setSwitching(true);
         try {
-            const shift = await window.electronAPI.shifts.getCurrent(currentEmployee.id);
-            if (shift) {
-                setCurrentShiftId(shift.id);
-            }
+            await saveUiMode(mode);
+            toast.success(t(mode === 'simple' ? 'nav.mode.nowSimple' : 'nav.mode.nowFull'));
         } catch (error) {
-            console.error('Failed to check active shift:', error);
+            toast.error(translateError(error));
+        } finally {
+            setSwitching(false);
         }
     };
 
-    // Filter nav items based on user permissions
-    const visibleNavItems = navItems.filter(item => hasPermission(item.permission));
+    // Leaving with an open cash drawer always goes through the closing screen
+    const handleLogout = () => {
+        if (currentShiftId) setShowShiftSummary(true);
+        else logout();
+    };
+
+    const roleName = t(`role.${currentEmployee?.role || 'cashier'}`);
+    const shopLabel = shopName || t('shop.unnamed');
+    const who = `${shopLabel} — ${currentEmployee?.name || t('role.user')} (${roleName})`;
+    const itemClass = (isActive) => `sidebar-item ${collapsed ? 'justify-center !px-0' : ''} ${isActive ? 'active' : ''}`;
+    const navItem = (item) => (
+        <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.path === '/'}
+            className={({ isActive }) => itemClass(isActive)}
+            {...tooltip.props(t(item.label))}
+        >
+            <item.icon className="w-[18px] h-[18px] flex-none" />
+            <span className={collapsed ? 'sr-only' : 'truncate'}>{t(item.label)}</span>
+        </NavLink>
+    );
+    const logoutLabel = currentShiftId ? t('nav.closeAndLogout') : t('nav.logout');
+    const canChangeMode = hasPermission(PERMISSIONS.SETTINGS_VIEW);
 
     return (
-        <aside className="w-64 bg-dark-secondary border-r border-dark-border flex flex-col">
-            {/* User Info */}
-            <div className="p-4 border-b border-dark-border">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full gradient-primary flex items-center justify-center">
-                        <span className="text-white font-semibold">
-                            {currentEmployee?.name?.charAt(0) || 'U'}
+        <aside className={`${collapsed ? 'w-16' : 'w-56'} flex-none bg-dark-secondary border-e border-dark-border flex flex-col transition-[width] duration-200`}>
+            {/* The shop and who is working. A click opens or closes the menu. */}
+            <button
+                type="button"
+                onClick={toggleCollapsed}
+                aria-expanded={!collapsed}
+                title={collapsed ? undefined : t('nav.collapse')}
+                className="group relative px-3 py-3 border-b border-dark-border text-start hover:bg-dark-tertiary/50 transition-colors"
+                {...tooltip.props(`${who} · ${t('nav.expand')}`)}
+            >
+                {collapsed ? (
+                    <span className="flex flex-col items-center gap-1.5">
+                        <ShopLogo fileName={shopLogo} name={shopName} size={36} maxWidth={44} rounded="rounded-md" />
+                        {currentShiftId && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-label={t('shift.open')} />}
+                    </span>
+                ) : (
+                    <span className="block px-1 min-w-0">
+                        <span className="flex items-start justify-between gap-2">
+                            <ShopLogo fileName={shopLogo} name={shopName} size={40} maxWidth={150} rounded="rounded-md" />
+                            <PanelLeftClose className="w-4 h-4 mt-1 text-zinc-500 group-hover:text-zinc-300 flip-rtl flex-none" aria-hidden />
                         </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{currentEmployee?.name || 'User'}</p>
-                        <p className="text-xs text-zinc-500 capitalize">{currentEmployee?.role || 'Cashier'}</p>
-                    </div>
-                </div>
-            </div>
+                        <span className="block mt-2 text-sm font-semibold truncate">{shopLabel}</span>
+                        <span className="flex items-center gap-1.5 text-xs text-zinc-300 min-w-0">
+                            <span className="truncate">{currentEmployee?.name || t('role.user')}</span>
+                            {/* Open cash drawer: a dot, so the role keeps its line */}
+                            {currentShiftId && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-none" title={t('shift.open')} aria-label={t('shift.open')} />}
+                        </span>
+                        <span className="block text-xs text-zinc-500 truncate">({roleName})</span>
+                    </span>
+                )}
+            </button>
 
-            {/* Navigation */}
-            <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-                {visibleNavItems.map(item => (
-                    <NavLink
-                        key={item.path}
-                        to={item.path}
-                        className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
-                    >
-                        <item.icon className="w-5 h-5" />
-                        <span>{item.label}</span>
-                    </NavLink>
-                ))}
+            <nav className="flex-1 px-2 py-2 overflow-y-auto no-scrollbar">
+                {NAV_GROUPS.map((group, gi) => {
+                    const items = group.items.filter(visible);
+                    if (items.length === 0) return null;
+                    return (
+                        <div key={group.id} className={gi > 0 ? 'mt-2 pt-2 border-t border-dark-border/60' : ''}>
+                            {items.map(navItem)}
+                        </div>
+                    );
+                })}
             </nav>
 
-            {/* Logout */}
-            <div className="p-3 border-t border-dark-border space-y-1">
-                {currentShiftId && (
-                    <>
-                    <button
-                        onClick={() => setShowShiftSummary(true)}
-                        className="sidebar-item w-full text-accent-primary hover:bg-accent-primary/10"
-                    >
-                        <DollarSign className="w-5 h-5" />
-                        <span>Close Shift</span>
+            <div className="p-2 border-t border-dark-border space-y-1">
+                {/* Simple / full menu, for the people who may change Settings */}
+                {canChangeMode && (collapsed ? (
+                    <button type="button" onClick={() => switchMode(simple ? 'full' : 'simple')} disabled={switching}
+                        className="sidebar-item w-full justify-center !px-0"
+                        {...tooltip.props(t(simple ? 'nav.mode.switchToFull' : 'nav.mode.switchToSimple'))}>
+                        {simple ? <LayoutGrid className="w-[18px] h-[18px]" /> : <Rows3 className="w-[18px] h-[18px]" />}
                     </button>
-                    {showShiftSummary && (
-                        <ShiftSummaryDialog
-                            shiftId={currentShiftId}
-                            onClose={() => setShowShiftSummary(false)}
-                            onLogout={logout}
-                        />
-                    )}
-                    </>
-                )}
-                
-                <button
-                    onClick={logout}
-                    className="sidebar-item w-full text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                >
-                    <LogOut className="w-5 h-5" />
-                    <span>Logout</span>
+                ) : (
+                    <div className="segmented w-full" role="group" aria-label={t('nav.mode.label')}>
+                        {['simple', 'full'].map(mode => (
+                            <button key={mode} type="button" onClick={() => switchMode(mode)} disabled={switching}
+                                aria-pressed={uiMode === mode}
+                                className={`flex-1 !px-1 !h-7 text-xs ${uiMode === mode ? 'active' : ''}`}
+                                title={t(`nav.mode.${mode}Hint`)}>
+                                {t(`nav.mode.${mode}`)}
+                            </button>
+                        ))}
+                    </div>
+                ))}
+                {hasPermission(SETTINGS_ITEM.permission) && navItem(SETTINGS_ITEM)}
+                {/* One button: with an open cash drawer it goes through counting and closing */}
+                <button onClick={handleLogout} className={`sidebar-item w-full text-red-300 hover:text-red-200 hover:bg-red-500/10 ${collapsed ? 'justify-center !px-0' : ''}`}
+                    {...tooltip.props(logoutLabel)}>
+                    <LogOut className="w-[18px] h-[18px] flip-rtl flex-none" />
+                    <span className={collapsed ? 'sr-only' : 'truncate'}>{logoutLabel}</span>
                 </button>
+                {collapsed && (
+                    <button type="button" onClick={toggleCollapsed} className="sidebar-item w-full justify-center !px-0 text-zinc-500" {...tooltip.props(t('nav.expand'))}>
+                        <PanelLeftOpen className="w-[18px] h-[18px] flip-rtl" />
+                    </button>
+                )}
             </div>
+
+            {tooltip.node}
+
+            {showShiftSummary && currentShiftId && (
+                <ShiftSummaryDialog
+                    shiftId={currentShiftId}
+                    mode="logout"
+                    onClose={() => setShowShiftSummary(false)}
+                    onLogout={({ keptOpen = false } = {}) => {
+                        // Closing the drawer always logs out (keptOpen: short break)
+                        setShowShiftSummary(false);
+                        if (!keptOpen) setCurrentShiftId(null);
+                        logout();
+                    }}
+                />
+            )}
         </aside>
     );
 }
-

@@ -1,527 +1,564 @@
-import { useState, useEffect } from 'react';
-import { Percent, Plus, Search, Edit2, Trash2, Calendar, Tag, DollarSign, Users } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Percent, Plus, Search, Edit2, Trash2, Calendar, Tag, Banknote, LayoutGrid, List, Shirt, Store, Gift, TrendingUp, Pause, Play, Package, Sun, X } from 'lucide-react';
+import { v4 as uuid } from 'uuid';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { Modal, ModalBody } from '../components/ui/Modal';
+import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/ui/Toast';
-import { v4 as uuid } from 'uuid';
-import { useSettingsStore } from '../stores/settingsStore';
+import { isPromotionLive, parseIds, promotionPreset, PROMOTION_PRESETS } from '../lib/promotions';
+import { formatDate as formatLocalDate, formatMoney } from '../i18n/format';
+import { t } from '../i18n';
 
-const PROMO_TYPES = [
-    { value: 'percentage', label: 'Percentage Off', description: 'e.g., 20% off' },
-    { value: 'fixed', label: 'Fixed Amount Off', description: 'e.g., $10 off' },
-    { value: 'bogo', label: 'Buy One Get One', description: 'Buy X, get Y free/discounted' },
-    { value: 'threshold', label: 'Threshold Discount', description: 'Spend $X, get Y% off' },
-];
+const TYPE_STYLE = {
+    percentage: { icon: Percent, tone: 'from-indigo-500/25 to-indigo-500/5 text-indigo-300' },
+    fixed: { icon: Banknote, tone: 'from-emerald-500/25 to-emerald-500/5 text-emerald-300' },
+    bogo: { icon: Gift, tone: 'from-fuchsia-500/25 to-fuchsia-500/5 text-fuchsia-300' },
+    threshold: { icon: TrendingUp, tone: 'from-amber-500/25 to-amber-500/5 text-amber-300' },
+};
+
+const EMPTY_FORM = {
+    name: '', description: '', type: 'percentage', value: '', min_purchase: '', max_discount: '', max_uses: '',
+    start_date: '', end_date: '', coupon_code: '', auto_apply: true, is_active: true, applies_to: 'all', applies_to_ids: [],
+};
+
+const PRESET_ICONS = { season: Sun, category: Shirt, product: Package };
+
+const VIEW_KEY = 'promotions.view';
+const readView = () => { try { return localStorage.getItem(VIEW_KEY) || 'grid'; } catch { return 'grid'; } };
+
+/** Where a promotion is in its life: live, scheduled, ended, paused or used up. */
+function promoStatus(promo, now = Date.now()) {
+    if (!promo.is_active) return 'paused';
+    if (isPromotionLive(promo, now)) return 'live';
+    if (promo.max_uses && (promo.current_uses || 0) >= promo.max_uses) return 'usedUp';
+    if (promo.start_date && new Date(`${String(promo.start_date).slice(0, 10)}T00:00:00`).getTime() > now) return 'scheduled';
+    return 'ended';
+}
+
+const STATUS_STYLE = {
+    live: 'bg-emerald-500/15 text-emerald-300',
+    scheduled: 'bg-sky-500/15 text-sky-300',
+    paused: 'bg-zinc-500/20 text-zinc-400',
+    ended: 'bg-zinc-500/20 text-zinc-500',
+    usedUp: 'bg-amber-500/15 text-amber-300',
+};
 
 export default function PromotionsPage() {
     const [promotions, setPromotions] = useState([]);
+    const [categories, setCategories] = useState([]);
+    const [products, setProducts] = useState([]);
+    const [productQuery, setProductQuery] = useState('');
     const [loading, setLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [showFormModal, setShowFormModal] = useState(false);
-    const [editingPromo, setEditingPromo] = useState(null);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [deletingId, setDeletingId] = useState(null);
-    const { settings, loadSettings } = useSettingsStore();
+    const [query, setQuery] = useState('');
+    const [filter, setFilter] = useState('all');
+    const [view, setView] = useState(readView);
+    const [form, setForm] = useState(null); // null = closed
+    const [editing, setEditing] = useState(null);
+    const [deleting, setDeleting] = useState(null);
 
-    const [formData, setFormData] = useState({
-        name: '',
-        description: '',
-        type: 'percentage',
-        value: '',
-        min_purchase: '',
-        max_discount: '',
-        max_uses: '',
-        start_date: '',
-        end_date: '',
-        coupon_code: '',
-        auto_apply: true,
-        is_active: true,
-    });
-
-    useEffect(() => {
-        loadPromotions();
-        loadSettings();
-    }, []);
-
-    const loadPromotions = async () => {
+    const load = async () => {
         try {
-            const data = await window.electronAPI.promotions.getAll();
-            setPromotions(data);
-        } catch (error) {
-            console.error('Failed to load promotions:', error);
-            toast.error('Failed to load promotions');
+            const [promos, cats, articles] = await Promise.all([
+                window.electronAPI.promotions.getAll(),
+                window.electronAPI.categories.getAll().catch(() => []),
+                window.electronAPI.products.getAll().catch(() => []),
+            ]);
+            setPromotions(promos);
+            setCategories(cats);
+            setProducts(articles);
+        } catch {
+            toast.error(t('promo.loadFailed'));
         } finally {
             setLoading(false);
         }
     };
 
-    const resetForm = () => {
-        setFormData({
-            name: '',
-            description: '',
-            type: 'percentage',
-            value: '',
-            min_purchase: '',
-            max_discount: '',
-            max_uses: '',
-            start_date: '',
-            end_date: '',
-            coupon_code: '',
-            auto_apply: true,
-            is_active: true,
-        });
-        setEditingPromo(null);
+    useEffect(() => { load(); }, []);
+
+    // Opened from the home screen ("make a discount" on an article that does not sell):
+    // the form opens on "by article" with that article chosen
+    const [searchParams, setSearchParams] = useSearchParams();
+    useEffect(() => {
+        const productId = searchParams.get('discountProduct');
+        if (!productId) return;
+        setEditing(null);
+        setProductQuery('');
+        setForm({ ...EMPTY_FORM, ...promotionPreset('product'), applies_to_ids: [productId], name: t('promo.preset.productName'), preset: 'product' });
+        const next = new URLSearchParams(searchParams);
+        next.delete('discountProduct');
+        setSearchParams(next, { replace: true });
+    }, [searchParams, setSearchParams]);
+
+    const changeView = (next) => {
+        setView(next);
+        try { localStorage.setItem(VIEW_KEY, next); } catch { /* per-viewer convenience only */ }
     };
 
-    const handleOpenCreate = () => {
-        resetForm();
-        setShowFormModal(true);
+    const categoryName = (id) => categories.find(c => c.id === id)?.name;
+    const productName = (id) => products.find(p => p.id === id)?.name;
+    const scopeText = (promo) => {
+        const scope = promo.applies_to || 'all';
+        const ids = parseIds(promo.applies_to_ids);
+        if (scope === 'category' && ids.length) return ids.map(categoryName).filter(Boolean).join(' · ') || t('promo.someCategories', { n: ids.length });
+        if (scope === 'product' && ids.length) {
+            const names = ids.map(productName).filter(Boolean);
+            return names.length === ids.length && names.length <= 3 ? names.join(' · ') : t('promo.someArticles', { n: ids.length });
+        }
+        return t('promo.wholeShop');
     };
 
-    const handleOpenEdit = (promo) => {
-        setEditingPromo(promo);
-        setFormData({
+    const valueText = (promo) => {
+        const value = Number(promo.value) || 0;
+        switch (promo.type) {
+            case 'percentage': return `-${value}%`;
+            case 'fixed': return `-${formatMoney(value)}`;
+            case 'threshold': return `-${value}%`;
+            case 'bogo': return value > 0 && value < 100 ? t('promo.bogoPercent', { n: value }) : t('promo.bogoFree');
+            default: return String(value);
+        }
+    };
+
+    const openCreate = () => { setEditing(null); setProductQuery(''); setForm({ ...EMPTY_FORM }); };
+    // A quick start fills the form and suggests a name
+    const applyPreset = (kind) => setForm(prev => ({
+        ...prev,
+        ...promotionPreset(kind),
+        // Replace the name only while it is empty or still the one a quick start suggested
+        name: !prev.name.trim() || (prev.preset && prev.name === t(`promo.preset.${prev.preset}Name`)) ? t(`promo.preset.${kind}Name`) : prev.name,
+        preset: kind,
+    }));
+    const openEdit = (promo) => {
+        setEditing(promo);
+        setProductQuery('');
+        setForm({
+            ...EMPTY_FORM,
             name: promo.name,
             description: promo.description || '',
             type: promo.type,
             value: promo.value?.toString() || '',
-            min_purchase: promo.min_purchase?.toString() || '',
-            max_discount: promo.max_discount?.toString() || '',
-            max_uses: promo.max_uses?.toString() || '',
-            start_date: promo.start_date ? promo.start_date.split('T')[0] : '',
-            end_date: promo.end_date ? promo.end_date.split('T')[0] : '',
+            min_purchase: promo.min_purchase ? String(promo.min_purchase) : '',
+            max_discount: promo.max_discount ? String(promo.max_discount) : '',
+            max_uses: promo.max_uses ? String(promo.max_uses) : '',
+            start_date: promo.start_date ? String(promo.start_date).split('T')[0] : '',
+            end_date: promo.end_date ? String(promo.end_date).split('T')[0] : '',
             coupon_code: promo.coupon_code || '',
-            auto_apply: promo.auto_apply,
-            is_active: promo.is_active,
+            auto_apply: !!promo.auto_apply,
+            is_active: !!promo.is_active,
+            applies_to: promo.applies_to || 'all',
+            applies_to_ids: parseIds(promo.applies_to_ids),
         });
-        setShowFormModal(true);
     };
+    const close = () => { setForm(null); setEditing(null); };
+    const set = (patch) => setForm(prev => ({ ...prev, ...patch }));
 
-    const handleSave = async () => {
-        if (!formData.name.trim()) {
-            toast.error('Please enter a promotion name');
-            return;
-        }
-        if (!formData.value || parseFloat(formData.value) <= 0) {
-            toast.error('Please enter a valid discount value');
-            return;
-        }
+    const save = async () => {
+        if (!form.name.trim()) return toast.error(t('promo.nameRequired'));
+        const value = parseFloat(form.value);
+        // BOGO without a value means "second piece free"
+        if (form.type !== 'bogo' && !(value > 0)) return toast.error(t('promo.validValue'));
+        if ((form.type === 'percentage' || form.type === 'threshold') && value > 100) return toast.error(t('promo.validValue'));
+        if (form.type === 'threshold' && !(parseFloat(form.min_purchase) > 0)) return toast.error(t('promo.thresholdNeedsMin'));
+        if (form.applies_to === 'category' && form.applies_to_ids.length === 0) return toast.error(t('promo.pickCategory'));
+        if (form.applies_to === 'product' && form.applies_to_ids.length === 0) return toast.error(t('promo.pickArticle'));
+        if (form.start_date && form.end_date && form.end_date < form.start_date) return toast.error(t('promo.datesOrder'));
 
+        const promo = {
+            id: editing?.id || uuid(),
+            name: form.name.trim(),
+            description: form.description || null,
+            type: form.type,
+            value: value > 0 ? value : 0,
+            min_purchase: form.min_purchase ? parseFloat(form.min_purchase) : 0,
+            max_discount: form.max_discount ? parseFloat(form.max_discount) : null,
+            max_uses: form.max_uses ? parseInt(form.max_uses, 10) : null,
+            start_date: form.start_date || null,
+            end_date: form.end_date || null,
+            coupon_code: form.coupon_code.trim() || null,
+            auto_apply: form.auto_apply,
+            is_active: form.is_active,
+            applies_to: form.applies_to,
+            applies_to_ids: form.applies_to === 'all' ? null : form.applies_to_ids,
+            current_uses: editing?.current_uses || 0,
+        };
         try {
-            const promo = {
-                id: editingPromo?.id || uuid(),
-                name: formData.name,
-                description: formData.description || null,
-                type: formData.type,
-                value: parseFloat(formData.value),
-                min_purchase: formData.min_purchase ? parseFloat(formData.min_purchase) : 0,
-                max_discount: formData.max_discount ? parseFloat(formData.max_discount) : null,
-                max_uses: formData.max_uses ? parseInt(formData.max_uses) : null,
-                start_date: formData.start_date || null,
-                end_date: formData.end_date || null,
-                coupon_code: formData.coupon_code || null,
-                auto_apply: formData.auto_apply,
-                is_active: formData.is_active,
-                current_uses: editingPromo?.current_uses || 0,
-            };
-
-            if (editingPromo) {
-                await window.electronAPI.promotions.update(promo);
-                toast.success('Promotion updated successfully');
-            } else {
-                await window.electronAPI.promotions.create(promo);
-                toast.success('Promotion created successfully');
-            }
-
-            setShowFormModal(false);
-            resetForm();
-            loadPromotions();
-        } catch (error) {
-            toast.error('Failed to save promotion');
-            console.error(error);
+            if (editing) await window.electronAPI.promotions.update(promo);
+            else await window.electronAPI.promotions.create(promo);
+            toast.success(editing ? t('promo.updated') : t('promo.created'));
+            close();
+            load();
+        } catch {
+            toast.error(t('promo.saveFailed'));
         }
+        return undefined;
     };
 
-    const handleDelete = async (id) => {
-        setDeletingId(id);
-        setShowDeleteConfirm(true);
+    const toggleActive = async (promo) => {
+        try {
+            await window.electronAPI.promotions.update({ ...promo, is_active: !promo.is_active, applies_to_ids: parseIds(promo.applies_to_ids) });
+            toast.success(promo.is_active ? t('promo.deactivated') : t('promo.activated'));
+            load();
+        } catch {
+            toast.error(t('promo.updateFailed'));
+        }
     };
 
     const confirmDelete = async () => {
         try {
-            await window.electronAPI.promotions.delete(deletingId);
-            toast.success('Promotion deleted');
-            loadPromotions();
-        } catch (error) {
-            toast.error('Failed to delete promotion');
-            console.error(error);
+            await window.electronAPI.promotions.delete(deleting);
+            toast.success(t('promo.deleted'));
+            load();
+        } catch {
+            toast.error(t('promo.deleteFailed'));
         }
-        setDeletingId(null);
+        setDeleting(null);
     };
 
-    const handleToggleActive = async (promo) => {
-        try {
-            await window.electronAPI.promotions.update({
-                ...promo,
-                is_active: !promo.is_active,
-            });
-            toast.success(promo.is_active ? 'Promotion deactivated' : 'Promotion activated');
-            loadPromotions();
-        } catch (error) {
-            toast.error('Failed to update promotion');
-            console.error(error);
-        }
-    };
+    const withStatus = useMemo(() => promotions.map(p => ({ ...p, status: promoStatus(p) })), [promotions]);
+    const counts = useMemo(() => withStatus.reduce((acc, p) => ({ ...acc, [p.status]: (acc[p.status] || 0) + 1 }), {}), [withStatus]);
+    const visible = withStatus.filter(p => (filter === 'all' || p.status === filter || (filter === 'ended' && p.status === 'usedUp')) && (!query
+        || p.name.toLowerCase().includes(query.toLowerCase())
+        || p.coupon_code?.toLowerCase().includes(query.toLowerCase())));
+    const totalUses = promotions.reduce((sum, p) => sum + (p.current_uses || 0), 0);
+    const dates = (p) => (p.start_date || p.end_date)
+        ? `${p.start_date ? formatLocalDate(p.start_date, 'date') : '…'} → ${p.end_date ? formatLocalDate(p.end_date, 'date') : '…'}`
+        : t('promo.noEnd');
 
-    const isPromoActive = (promo) => {
-        if (!promo.is_active) return false;
-        const now = new Date();
-        if (promo.start_date && new Date(promo.start_date) > now) return false;
-        if (promo.end_date && new Date(promo.end_date) < now) return false;
-        if (promo.max_uses && promo.current_uses >= promo.max_uses) return false;
-        return true;
-    };
-
-    const filteredPromos = promotions.filter(promo =>
-        promo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (promo.coupon_code && promo.coupon_code.toLowerCase().includes(searchQuery.toLowerCase()))
+    const renderActions = (promo) => (
+        <div className="flex items-center gap-0.5">
+            <button type="button" title={promo.is_active ? t('promo.deactivate') : t('promo.activate')} onClick={() => toggleActive(promo)}
+                className="p-2 rounded-lg hover:bg-dark-tertiary text-zinc-400 hover:text-white">
+                {promo.is_active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            </button>
+            <button type="button" title={t('common.edit')} onClick={() => openEdit(promo)} className="p-2 rounded-lg hover:bg-dark-tertiary text-zinc-400 hover:text-white">
+                <Edit2 className="w-4 h-4" />
+            </button>
+            <button type="button" title={t('common.delete')} onClick={() => setDeleting(promo.id)} className="p-2 rounded-lg hover:bg-red-500/15 text-red-300">
+                <Trash2 className="w-4 h-4" />
+            </button>
+        </div>
     );
 
-    const formatCurrency = (amount) => {
-        return amount ? new Intl.NumberFormat('en-US', { style: 'currency', currency: settings.currency || 'USD' }).format(amount) : '-';
-    };
-    const formatDate = (date) => date ? new Date(date).toLocaleDateString() : '-';
-
-    const getPromoValueDisplay = (promo) => {
-        switch (promo.type) {
-            case 'percentage':
-                return `${promo.value}% off`;
-            case 'fixed':
-                return `${settings.currencySymbol || '$'}${promo.value} off`;
-            case 'bogo':
-                return `Buy One Get One`;
-            case 'threshold':
-                return `${promo.value}% off (min ${settings.currencySymbol || '$'}${promo.min_purchase || 0})`;
-            default:
-                return promo.value;
-        }
-    };
-
-    const getTypeColor = (type) => {
-        switch (type) {
-            case 'percentage': return 'bg-indigo-500/20 text-indigo-400';
-            case 'fixed': return 'bg-green-500/20 text-green-400';
-            case 'bogo': return 'bg-purple-500/20 text-purple-400';
-            case 'threshold': return 'bg-amber-500/20 text-amber-400';
-            default: return 'bg-zinc-500/20 text-zinc-400';
-        }
-    };
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-full">
-                <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-        );
-    }
-
     return (
-        <div className="h-full flex flex-col p-6 gap-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold flex items-center gap-3">
-                        <Percent className="w-7 h-7 text-amber-500" />
-                        Promotions & Discounts
-                    </h1>
-                    <p className="text-zinc-400 mt-1">Create and manage promotional offers</p>
+        <div className="page">
+            <PageHeader
+                icon={Percent}
+                title={t('promo.title')}
+                subtitle={t('promo.subtitle')}
+                actions={(
+                    <>
+                        <div className="segmented">
+                            <button type="button" className={view === 'grid' ? 'active' : ''} onClick={() => changeView('grid')} aria-label={t('pos.viewGrid')} title={t('pos.viewGrid')}>
+                                <LayoutGrid className="w-4 h-4" />
+                            </button>
+                            <button type="button" className={view === 'list' ? 'active' : ''} onClick={() => changeView('list')} aria-label={t('pos.viewList')} title={t('pos.viewList')}>
+                                <List className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <Button onClick={openCreate}><Plus className="w-4 h-4" /> {t('promo.create')}</Button>
+                    </>
+                )}
+            >
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative w-72 max-w-full">
+                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                        <input className="input ps-9" placeholder={t('promo.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
+                    </div>
+                    <div className="segmented no-scrollbar overflow-x-auto max-w-full">
+                        {['all', 'live', 'scheduled', 'paused', 'ended'].map(id => (
+                            <button key={id} type="button" className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>
+                                {t(`promo.status.${id}`)}
+                                <span className="ms-1.5 text-xs text-zinc-500 tabular">{id === 'all' ? promotions.length : (counts[id] || 0) + (id === 'ended' ? (counts.usedUp || 0) : 0)}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <span className="text-sm text-zinc-500 hidden xl:inline">{t('promo.usesTotal', { n: totalUses })}</span>
                 </div>
-                <Button onClick={handleOpenCreate}>
-                    <Plus className="w-4 h-4" />
-                    Create Promotion
-                </Button>
-            </div>
+            </PageHeader>
 
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-4">
-                <div className="card flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                        <Tag className="w-6 h-6 text-amber-400" />
+            <div className="page-body">
+                {loading ? (
+                    <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>
+                ) : visible.length === 0 ? (
+                    <div className="text-center py-16 text-zinc-500">
+                        <Percent className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                        <p className="mb-4">{t('promo.none')}</p>
+                        <Button onClick={openCreate}><Plus className="w-4 h-4" /> {t('promo.create')}</Button>
                     </div>
-                    <div>
-                        <p className="text-2xl font-bold">{promotions.length}</p>
-                        <p className="text-zinc-400 text-sm">Total Promotions</p>
-                    </div>
-                </div>
-                <div className="card flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center">
-                        <Percent className="w-6 h-6 text-green-400" />
-                    </div>
-                    <div>
-                        <p className="text-2xl font-bold">{promotions.filter(p => isPromoActive(p)).length}</p>
-                        <p className="text-zinc-400 text-sm">Active Now</p>
-                    </div>
-                </div>
-                <div className="card flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center">
-                        <Users className="w-6 h-6 text-indigo-400" />
-                    </div>
-                    <div>
-                        <p className="text-2xl font-bold">{promotions.reduce((sum, p) => sum + (p.current_uses || 0), 0)}</p>
-                        <p className="text-zinc-400 text-sm">Total Uses</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Search */}
-            <div className="max-w-md">
-                <Input
-                    icon={Search}
-                    placeholder="Search by name or coupon code..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                />
-            </div>
-
-            {/* Promotions Grid */}
-            <div className="flex-1 overflow-auto">
-                {filteredPromos.length === 0 ? (
-                    <div className="text-center py-12 text-zinc-400">
-                        <Percent className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                        <p>No promotions found</p>
+                ) : view === 'grid' ? (
+                    <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+                        {visible.map(promo => {
+                            const style = TYPE_STYLE[promo.type] || TYPE_STYLE.percentage;
+                            const Icon = style.icon;
+                            const scope = promo.applies_to || 'all';
+                            return (
+                                <div key={promo.id} className={`card p-0 overflow-hidden flex flex-col ${promo.status === 'live' ? '' : 'opacity-75'}`}>
+                                    <div className={`bg-gradient-to-b ${style.tone} px-4 pt-4 pb-3 flex items-start justify-between gap-2`}>
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-1.5 text-xs font-medium opacity-90"><Icon className="w-3.5 h-3.5" /> {t(`promo.type.${promo.type}`)}</div>
+                                            <div className="text-3xl font-bold mt-1 tabular truncate"><bdi dir={promo.type === 'bogo' ? undefined : 'ltr'}>{valueText(promo)}</bdi></div>
+                                        </div>
+                                        <span className={`badge ${STATUS_STYLE[promo.status]}`}>{t(`promo.status.${promo.status}`)}</span>
+                                    </div>
+                                    <div className="px-4 py-3 flex-1 space-y-2">
+                                        <h3 className="font-semibold truncate">{promo.name}</h3>
+                                        <div className="flex items-center gap-2 text-sm text-zinc-400">
+                                            {scope === 'all' ? <Store className="w-4 h-4 flex-none" /> : <Shirt className="w-4 h-4 flex-none" />}
+                                            <span className="truncate">{scopeText(promo)}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-zinc-400">
+                                            <Calendar className="w-4 h-4 flex-none" /> <span className="truncate">{dates(promo)}</span>
+                                        </div>
+                                        {promo.min_purchase > 0 && (
+                                            <div className="flex items-center gap-2 text-sm text-zinc-400">
+                                                <Banknote className="w-4 h-4 flex-none" /> {t('promo.fromAmount', { amount: formatMoney(promo.min_purchase) })}
+                                            </div>
+                                        )}
+                                        {promo.coupon_code && (
+                                            <div className="flex items-center gap-2 text-sm">
+                                                <Tag className="w-4 h-4 text-zinc-400 flex-none" />
+                                                <span className="font-mono bg-dark-tertiary border border-dashed border-zinc-600 px-2 py-0.5 rounded ltr">{promo.coupon_code}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="px-4 py-2 border-t border-dark-border flex items-center justify-between gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-zinc-500">{t('promo.usedN', { n: promo.current_uses || 0 })}{promo.max_uses ? ` / ${promo.max_uses}` : ''}</p>
+                                            {promo.max_uses > 0 && (
+                                                <div className="h-1 mt-1 rounded-full bg-dark-tertiary overflow-hidden">
+                                                    <div className="h-full bg-indigo-500" style={{ width: `${Math.min(100, ((promo.current_uses || 0) / promo.max_uses) * 100)}%` }} />
+                                                </div>
+                                            )}
+                                        </div>
+                                        {renderActions(promo)}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {filteredPromos.map(promo => (
-                            <div key={promo.id} className={`card p-5 ${!isPromoActive(promo) ? 'opacity-60' : ''}`}>
-                                <div className="flex items-start justify-between mb-4">
-                                    <div>
-                                        <h3 className="font-semibold mb-2">{promo.name}</h3>
-                                        <div className="flex gap-2">
-                                            <span className={`text-xs px-2 py-1 rounded-full ${getTypeColor(promo.type)}`}>
-                                                {promo.type}
-                                            </span>
-                                            <span className={`text-xs px-2 py-1 rounded-full ${isPromoActive(promo) ? 'bg-green-500/20 text-green-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
-                                                {isPromoActive(promo) ? 'Active' : 'Inactive'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-1">
-                                        <button
-                                            onClick={() => handleOpenEdit(promo)}
-                                            className="p-2 hover:bg-zinc-700 rounded-lg transition-colors"
-                                        >
-                                            <Edit2 className="w-4 h-4 text-zinc-400" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(promo.id)}
-                                            className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
-                                        >
-                                            <Trash2 className="w-4 h-4 text-red-400" />
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Value Display */}
-                                <div className="text-2xl font-bold text-amber-400 mb-3">
-                                    {getPromoValueDisplay(promo)}
-                                </div>
-
-                                {promo.description && (
-                                    <p className="text-sm text-zinc-400 mb-3">{promo.description}</p>
-                                )}
-
-                                {/* Details */}
-                                <div className="space-y-2 text-sm text-zinc-400">
-                                    {promo.coupon_code && (
-                                        <div className="flex items-center gap-2">
-                                            <Tag className="w-4 h-4" />
-                                            <span className="font-mono bg-zinc-800 px-2 py-0.5 rounded">{promo.coupon_code}</span>
-                                        </div>
-                                    )}
-                                    {(promo.start_date || promo.end_date) && (
-                                        <div className="flex items-center gap-2">
-                                            <Calendar className="w-4 h-4" />
-                                            <span>{formatDate(promo.start_date)} - {formatDate(promo.end_date)}</span>
-                                        </div>
-                                    )}
-                                    {promo.min_purchase > 0 && (
-                                        <div className="flex items-center gap-2">
-                                            <DollarSign className="w-4 h-4" />
-                                            <span>Min. purchase: {formatCurrency(promo.min_purchase)}</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Usage */}
-                                <div className="mt-4 pt-3 border-t border-zinc-700 flex justify-between text-sm">
-                                    <span className="text-zinc-500">Uses: {promo.current_uses || 0}{promo.max_uses ? ` / ${promo.max_uses}` : ''}</span>
-                                    <button
-                                        onClick={() => handleToggleActive(promo)}
-                                        className={`text-xs px-2 py-1 rounded ${promo.is_active ? 'text-red-400 hover:bg-red-500/20' : 'text-green-400 hover:bg-green-500/20'}`}
-                                    >
-                                        {promo.is_active ? 'Deactivate' : 'Activate'}
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
+                    <div className="card p-0 overflow-x-auto">
+                        <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>{t('promo.name')}</th>
+                                    <th>{t('promo.discount')}</th>
+                                    <th>{t('promo.appliesTo')}</th>
+                                    <th>{t('promo.period')}</th>
+                                    <th>{t('promo.couponShort')}</th>
+                                    <th>{t('promo.usesShort')}</th>
+                                    <th>{t('common.status')}</th>
+                                    <th />
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {visible.map(promo => (
+                                    <tr key={promo.id}>
+                                        <td className="font-medium">{promo.name}<div className="text-xs text-zinc-500">{t(`promo.type.${promo.type}`)}</div></td>
+                                        <td className="font-semibold tabular whitespace-nowrap"><bdi dir={promo.type === 'bogo' ? undefined : 'ltr'}>{valueText(promo)}</bdi></td>
+                                        <td className="text-zinc-400 max-w-[220px] truncate">{scopeText(promo)}</td>
+                                        <td className="text-zinc-400 whitespace-nowrap">{dates(promo)}</td>
+                                        <td className="font-mono ltr">{promo.coupon_code || '—'}</td>
+                                        <td className="tabular">{promo.current_uses || 0}{promo.max_uses ? ` / ${promo.max_uses}` : ''}</td>
+                                        <td><span className={`badge ${STATUS_STYLE[promo.status]}`}>{t(`promo.status.${promo.status}`)}</span></td>
+                                        <td>{renderActions(promo)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </div>
 
-            {/* Form Modal */}
-            {showFormModal && (
-                <Modal
-                    isOpen={true}
-                    title={editingPromo ? 'Edit Promotion' : 'Create Promotion'}
-                    onClose={() => { setShowFormModal(false); resetForm(); }}
-                    size="lg"
-                >
+            {form && (
+                <Modal isOpen onClose={close} title={editing ? t('promo.edit') : t('promo.create')} size="lg" closeOnOverlay={false}>
                     <ModalBody>
-                        <div className="space-y-4 max-h-[70vh] overflow-auto">
-                            <Input
-                                label="Promotion Name"
-                                placeholder="e.g., Summer Sale 20% Off"
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            />
+                        <div className="space-y-4">
+                            {!editing && (
+                                <div className="form-group">
+                                    <label className="form-label">{t('promo.preset.title')}</label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                        {PROMOTION_PRESETS.map(kind => {
+                                            const Icon = PRESET_ICONS[kind];
+                                            return (
+                                                <button key={kind} type="button" onClick={() => applyPreset(kind)} aria-pressed={form.preset === kind}
+                                                    className={`p-3 rounded-lg border text-start transition-colors ${form.preset === kind ? 'border-indigo-500 bg-indigo-500/10' : 'border-dark-border hover:border-zinc-600'}`}>
+                                                    <p className="font-medium text-sm flex items-center gap-1.5"><Icon className="w-4 h-4 text-indigo-300 flex-none" /> {t(`promo.preset.${kind}`)}</p>
+                                                    <p className="text-xs text-zinc-500 leading-snug mt-0.5">{t(`promo.preset.${kind}Hint`)}</p>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                            <Input label={t('promo.name')} placeholder={t('promo.namePlaceholder')} value={form.name} onChange={(e) => set({ name: e.target.value })} autoFocus />
 
-                            <Input
-                                label="Description (optional)"
-                                placeholder="Promotion description..."
-                                value={formData.description}
-                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                            />
-
-                            {/* Promotion Type */}
                             <div className="form-group">
-                                <label className="form-label">Promotion Type</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {PROMO_TYPES.map(type => (
-                                        <button
-                                            key={type.value}
-                                            type="button"
-                                            onClick={() => setFormData({ ...formData, type: type.value })}
-                                            className={`p-3 rounded-lg border text-left transition-all ${formData.type === type.value ? 'border-indigo-500 bg-indigo-500/10' : 'border-zinc-700 hover:border-zinc-600'}`}
-                                        >
-                                            <p className="font-medium text-sm">{type.label}</p>
-                                            <p className="text-xs text-zinc-500">{type.description}</p>
+                                <label className="form-label">{t('promo.type')}</label>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    {Object.entries(TYPE_STYLE).map(([type, style]) => {
+                                        const Icon = style.icon;
+                                        return (
+                                            <button key={type} type="button" onClick={() => set({ type })}
+                                                className={`p-3 rounded-lg border text-start transition-colors ${form.type === type ? 'border-indigo-500 bg-indigo-500/10' : 'border-dark-border hover:border-zinc-600'}`}>
+                                                <Icon className="w-4 h-4 mb-1 text-indigo-300" />
+                                                <p className="font-medium text-sm">{t(`promo.type.${type}`)}</p>
+                                                <p className="text-xs text-zinc-500 leading-snug">{t(`promo.type.${type}Hint`)}</p>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <Input
+                                    label={form.type === 'fixed' ? t('promo.amountDa') : form.type === 'bogo' ? t('promo.bogoValue') : t('promo.percent')}
+                                    type="number" step="0.01" min="0" max={form.type === 'fixed' ? undefined : 100}
+                                    placeholder={form.type === 'fixed' ? '500' : form.type === 'bogo' ? '100' : '20'}
+                                    value={form.value} onChange={(e) => set({ value: e.target.value })}
+                                />
+                                <Input
+                                    label={form.type === 'threshold' ? t('promo.minPurchaseRequired') : t('promo.minPurchase')}
+                                    type="number" step="0.01" min="0" placeholder="0"
+                                    value={form.min_purchase} onChange={(e) => set({ min_purchase: e.target.value })}
+                                />
+                            </div>
+
+                            {/* Applies to */}
+                            <div className="form-group">
+                                <label className="form-label">{t('promo.appliesTo')}</label>
+                                <div className="segmented w-full mb-2 no-scrollbar overflow-x-auto">
+                                    {[
+                                        { id: 'all', icon: Store, label: t('promo.wholeShop') },
+                                        { id: 'category', icon: Shirt, label: t('promo.someCategoriesPick') },
+                                        { id: 'product', icon: Package, label: t('promo.someArticlesPick') },
+                                    ].map(({ id, icon: Icon, label }) => (
+                                        <button key={id} type="button" className={`flex-1 inline-flex items-center justify-center gap-1.5 whitespace-nowrap ${form.applies_to === id ? 'active' : ''}`}
+                                            onClick={() => set({ applies_to: id, applies_to_ids: form.applies_to === id ? form.applies_to_ids : [] })}>
+                                            <Icon className="w-4 h-4" /> {label}
                                         </button>
                                     ))}
                                 </div>
+                                {form.applies_to === 'product' && (
+                                    <ArticlePicker products={products} selected={form.applies_to_ids} query={productQuery} onQuery={setProductQuery}
+                                        onChange={(ids) => set({ applies_to_ids: ids })} />
+                                )}
+                                {form.applies_to === 'category' && (
+                                    categories.length === 0 ? <p className="form-hint">{t('promo.noCategories')}</p> : (
+                                        <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1">
+                                            {categories.map(cat => {
+                                                const on = form.applies_to_ids.includes(cat.id);
+                                                return (
+                                                    <button key={cat.id} type="button"
+                                                        onClick={() => set({ applies_to_ids: on ? form.applies_to_ids.filter(id => id !== cat.id) : [...form.applies_to_ids, cat.id] })}
+                                                        className={`px-3 h-8 rounded-full border text-sm transition-colors ${on ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-dark-border text-zinc-400 hover:text-white hover:border-zinc-600'}`}>
+                                                        {cat.name}{cat.product_count > 0 && <span className="ms-1 text-xs opacity-60">{cat.product_count}</span>}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )
+                                )}
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
-                                <Input
-                                    label={formData.type === 'fixed' ? 'Discount Amount ($)' : 'Discount Percentage (%)'}
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    placeholder={formData.type === 'fixed' ? '10.00' : '20'}
-                                    value={formData.value}
-                                    onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                                />
-                                <Input
-                                    label="Minimum Purchase ($)"
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    placeholder="0.00"
-                                    value={formData.min_purchase}
-                                    onChange={(e) => setFormData({ ...formData, min_purchase: e.target.value })}
-                                />
+                                <Input label={t('promo.start')} type="date" value={form.start_date} onChange={(e) => set({ start_date: e.target.value })} />
+                                <Input label={t('promo.end')} type="date" value={form.end_date} onChange={(e) => set({ end_date: e.target.value })} />
+                            </div>
+                            <p className="form-hint -mt-2">{form.start_date || form.end_date ? t('promo.datesHint') : t('promo.noDatesHint')}</p>
+
+                            <div className="grid grid-cols-3 gap-4">
+                                <Input label={t('promo.coupon')} placeholder={t('promo.couponPlaceholder')} value={form.coupon_code}
+                                    onChange={(e) => set({ coupon_code: e.target.value.toUpperCase() })} className="ltr" />
+                                <Input label={t('promo.maxDiscount')} type="number" step="0.01" min="0" placeholder={t('promo.noLimit')}
+                                    value={form.max_discount} onChange={(e) => set({ max_discount: e.target.value })} />
+                                <Input label={t('promo.maxUses')} type="number" min="0" placeholder={t('promo.unlimited')}
+                                    value={form.max_uses} onChange={(e) => set({ max_uses: e.target.value })} />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <Input
-                                    label="Max Discount ($) - optional"
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    placeholder="No limit"
-                                    value={formData.max_discount}
-                                    onChange={(e) => setFormData({ ...formData, max_discount: e.target.value })}
-                                />
-                                <Input
-                                    label="Max Uses - optional"
-                                    type="number"
-                                    min="0"
-                                    placeholder="Unlimited"
-                                    value={formData.max_uses}
-                                    onChange={(e) => setFormData({ ...formData, max_uses: e.target.value })}
-                                />
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" checked={form.auto_apply} onChange={(e) => set({ auto_apply: e.target.checked })} className="w-4 h-4 rounded" />
+                                    {t('promo.autoApply')}
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" checked={form.is_active} onChange={(e) => set({ is_active: e.target.checked })} className="w-4 h-4 rounded" />
+                                    {t('status.active')}
+                                </label>
                             </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <Input
-                                    label="Start Date (optional)"
-                                    type="date"
-                                    value={formData.start_date}
-                                    onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                                />
-                                <Input
-                                    label="End Date (optional)"
-                                    type="date"
-                                    value={formData.end_date}
-                                    onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                                />
-                            </div>
-
-                            <Input
-                                label="Coupon Code (optional)"
-                                placeholder="e.g., SUMMER20"
-                                value={formData.coupon_code}
-                                onChange={(e) => setFormData({ ...formData, coupon_code: e.target.value.toUpperCase() })}
-                            />
-
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        id="auto_apply"
-                                        checked={formData.auto_apply}
-                                        onChange={(e) => setFormData({ ...formData, auto_apply: e.target.checked })}
-                                        className="w-4 h-4 rounded border-zinc-600 text-indigo-500 focus:ring-indigo-500"
-                                    />
-                                    <label htmlFor="auto_apply" className="text-sm text-zinc-300">Auto-apply at checkout</label>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        id="is_active"
-                                        checked={formData.is_active}
-                                        onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                                        className="w-4 h-4 rounded border-zinc-600 text-indigo-500 focus:ring-indigo-500"
-                                    />
-                                    <label htmlFor="is_active" className="text-sm text-zinc-300">Active</label>
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3 pt-4">
-                                <Button variant="secondary" className="flex-1" onClick={() => { setShowFormModal(false); resetForm(); }}>
-                                    Cancel
-                                </Button>
-                                <Button className="flex-1" onClick={handleSave}>
-                                    {editingPromo ? 'Update' : 'Create'} Promotion
-                                </Button>
-                            </div>
+                            {!form.auto_apply && !form.coupon_code && <p className="form-hint text-amber-300">{t('promo.needsCouponOrAuto')}</p>}
                         </div>
                     </ModalBody>
+                    <ModalFooter>
+                        <Button variant="secondary" onClick={close}>{t('common.cancel')}</Button>
+                        <Button onClick={save}>{editing ? t('common.save') : t('promo.create')}</Button>
+                    </ModalFooter>
                 </Modal>
             )}
 
-            {/* Delete Confirmation Dialog */}
             <ConfirmDialog
-                isOpen={showDeleteConfirm}
-                onClose={() => { setShowDeleteConfirm(false); setDeletingId(null); }}
+                isOpen={!!deleting}
+                onClose={() => setDeleting(null)}
                 onConfirm={confirmDelete}
-                title="Delete Promotion"
-                message="Are you sure you want to delete this promotion? This action cannot be undone."
-                confirmText="Delete"
+                title={t('promo.delete')}
+                message={t('promo.deleteConfirm')}
+                confirmText={t('common.delete')}
                 variant="danger"
             />
+        </div>
+    );
+}
+
+
+/** Pick the articles of a promotion: search by name, SKU or barcode; the chosen ones stay on top. */
+function ArticlePicker({ products, selected, query, onQuery, onChange }) {
+    const chosen = selected.map(id => products.find(p => p.id === id) || { id, name: '?' });
+    const q = query.trim().toLowerCase();
+    const results = q
+        ? products.filter(p => !selected.includes(p.id) && (p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.barcode?.toLowerCase().includes(q))).slice(0, 30)
+        : [];
+    return (
+        <div className="space-y-2">
+            {chosen.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                    {chosen.map(p => (
+                        <span key={p.id} className="inline-flex items-center gap-1 ps-3 pe-1 h-8 rounded-full border border-indigo-500 bg-indigo-500/20 text-sm">
+                            <span className="truncate max-w-[14rem]">{p.name}</span>
+                            <button type="button" onClick={() => onChange(selected.filter(id => id !== p.id))} className="p-1 rounded-full hover:bg-white/10" aria-label={t('common.delete')}>
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </span>
+                    ))}
+                </div>
+            ) : <p className="form-hint">{t('promo.noArticlePicked')}</p>}
+            {products.length === 0 ? <p className="form-hint">{t('promo.noArticles')}</p> : (
+                <>
+                    <div className="relative">
+                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                        <input className="input ps-9" placeholder={t('promo.searchArticle')} value={query} onChange={(e) => onQuery(e.target.value)} />
+                    </div>
+                    {q && (
+                        results.length === 0 ? <p className="form-hint">{t('common.noResults')}</p> : (
+                            <ul className="max-h-40 overflow-y-auto rounded-lg border border-dark-border divide-y divide-dark-border">
+                                {results.map(p => (
+                                    <li key={p.id}>
+                                        <button type="button" onClick={() => { onChange([...selected, p.id]); onQuery(''); }}
+                                            className="w-full flex items-center justify-between gap-3 px-3 py-2 text-sm text-start hover:bg-dark-tertiary">
+                                            <span className="min-w-0">
+                                                <span className="block truncate">{p.name}</span>
+                                                {p.sku && <span className="block text-xs text-zinc-500 ltr truncate">{p.sku}</span>}
+                                            </span>
+                                            <span className="flex-none text-zinc-400 tabular"><bdi>{formatMoney(p.price)}</bdi></span>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )
+                    )}
+                </>
+            )}
         </div>
     );
 }

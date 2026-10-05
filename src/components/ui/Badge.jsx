@@ -1,3 +1,5 @@
+import { useT } from '../../i18n';
+
 const variants = {
     primary: 'badge-primary',
     success: 'badge-success',
@@ -14,19 +16,20 @@ export function Badge({ children, variant = 'default', className = '' }) {
     );
 }
 
+const STATUS_VARIANTS = {
+    active: 'success',
+    inactive: 'danger',
+    completed: 'success',
+    pending: 'warning',
+    cancelled: 'danger',
+    'low-stock': 'warning',
+    'in-stock': 'success',
+    'out-of-stock': 'danger',
+};
+
 export function StatusBadge({ status }) {
-    const statusMap = {
-        active: { label: 'Active', variant: 'success' },
-        inactive: { label: 'Inactive', variant: 'danger' },
-        completed: { label: 'Completed', variant: 'success' },
-        pending: { label: 'Pending', variant: 'warning' },
-        cancelled: { label: 'Cancelled', variant: 'danger' },
-        'low-stock': { label: 'Low Stock', variant: 'warning' },
-        'in-stock': { label: 'In Stock', variant: 'success' },
-        'out-of-stock': { label: 'Out of Stock', variant: 'danger' },
-    };
-
-    const config = statusMap[status] || { label: status, variant: 'default' };
-
-    return <Badge variant={config.variant}>{config.label}</Badge>;
+    const { t } = useT();
+    const key = `status.${status}`;
+    const label = t(key);
+    return <Badge variant={STATUS_VARIANTS[status] || 'default'}>{label === key ? status : label}</Badge>;
 }

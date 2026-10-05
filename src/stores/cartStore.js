@@ -1,5 +1,22 @@
+import { t } from '../i18n';
+import { isTaxEnabled } from '../lib/tax';
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
+import { bestPromotion } from '../lib/promotions';
+
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const lineTotal = (quantity, unitPrice, discount = 0) => round2(quantity * unitPrice - (discount || 0));
+
+/** Lines of a ticket put on hold (stored as JSON); a damaged record gives none. */
+export function heldLines(held) {
+    let lines = held?.items_json ?? held?.items;
+    try {
+        while (typeof lines === 'string') lines = JSON.parse(lines);
+    } catch {
+        lines = [];
+    }
+    return Array.isArray(lines) ? lines : [];
+}
 
 export const useCartStore = create((set, get) => ({
     items: [],
@@ -9,17 +26,30 @@ export const useCartStore = create((set, get) => ({
     notes: '',
 
     taxType: 'inclusive', // 'exclusive' or 'inclusive' - default to inclusive
-    globalTaxRate: 10, // Default to 10% to match database default
-    currency: 'USD',
+    globalTaxRate: 0,
+    currency: 'DZD',
     serviceCharge: 0,
     taxExempt: false,
+    // Promotions that can apply automatically, and a coupon typed at checkout
+    promotions: [],
+    coupon: '',
+    // Line added last (highlighted in the ticket after a scan)
+    lastAddedId: null,
+
+    loadPromotions: async () => {
+        try {
+            const promotions = await window.electronAPI.promotions.getActive();
+            set({ promotions: Array.isArray(promotions) ? promotions : [] });
+        } catch {
+            set({ promotions: [] });
+        }
+    },
+
+    setCoupon: (coupon) => set({ coupon: String(coupon || '').trim() }),
 
     loadSettings: async () => {
         try {
             const settings = await window.electronAPI.settings.getAll();
-            console.log('=== LOAD SETTINGS DEBUG ===');
-            console.log('Raw settings from DB:', settings);
-
             let parsed = { ...settings };
             if (settings.store_config) {
                 try {
@@ -28,7 +58,6 @@ export const useCartStore = create((set, get) => ({
                     if (typeof storeConfig === 'string') {
                         storeConfig = JSON.parse(storeConfig);
                     }
-                    console.log('Parsed store_config:', storeConfig);
                     parsed = { ...parsed, ...storeConfig };
                 } catch (e) {
                     console.error('Error parsing store_config:', e);
@@ -36,17 +65,15 @@ export const useCartStore = create((set, get) => ({
             }
 
             const finalTaxType = parsed.taxType || 'inclusive';
-            const finalTaxRate = parseFloat(parsed.taxRate) || 10;
-            const finalCurrency = parsed.currency || 'LKR';
-
-            console.log('Final taxType:', finalTaxType);
-            console.log('Final globalTaxRate:', finalTaxRate);
-            console.log('Final currency:', finalCurrency);
-            console.log('===========================');
+            // 0 is a valid rate (most small Algerian shops sell without TVA)
+            const rate = parseFloat(parsed.taxRate);
+            const finalTaxRate = Number.isFinite(rate) && rate >= 0 ? rate : 0;
+            const finalCurrency = parsed.currency || 'DZD';
 
             set({
                 taxType: finalTaxType,
                 globalTaxRate: finalTaxRate,
+                taxEnabled: isTaxEnabled(parsed),
                 currency: finalCurrency
             });
         } catch (e) {
@@ -57,44 +84,69 @@ export const useCartStore = create((set, get) => ({
     setServiceCharge: (amount) => set({ serviceCharge: amount }),
     setTaxExempt: (isExempt) => set({ taxExempt: isExempt }),
 
-    addItem: (product, quantity = 1) => {
+    /**
+     * Add a product, or one variant (colour/size) of it, to the cart.
+     * Lines are keyed by product + variant, so scanning the same variant again
+     * increases its quantity while a different size gets its own line.
+     */
+    addItem: (product, quantity = 1, variant = null) => {
         const { items, globalTaxRate } = get();
-        const existingIndex = items.findIndex(item => item.product_id === product.id);
+        const variantId = variant ? variant.id : null;
+        const existingIndex = items.findIndex(item =>
+            item.product_id === product.id && (item.variant_id || null) === variantId);
         // Use product-specific tax only if explicitly set (> 0), otherwise use global rate
         const itemTaxRate = (product.tax_rate && product.tax_rate > 0) ? product.tax_rate : globalTaxRate;
+        const unitPrice = variant && variant.price !== null && variant.price !== undefined && variant.price !== ''
+            ? Number(variant.price)
+            : Number(product.price) || 0;
+        const available = variant ? (variant.stock_quantity ?? 0) : product.stock_quantity;
 
         if (existingIndex >= 0) {
             const newItems = [...items];
-            const currentQty = newItems[existingIndex].quantity;
-            const maxStock = newItems[existingIndex].max_stock || product.stock_quantity || 999999;
+            const line = newItems[existingIndex];
+            const maxStock = line.max_stock ?? available ?? 999999;
 
-            if (currentQty + quantity > maxStock) {
-                return { success: false, message: 'Insufficient stock' };
+            if (line.quantity + quantity > maxStock) {
+                return { success: false, message: t('cart.insufficientStock') };
             }
 
-            newItems[existingIndex].quantity += quantity;
-            newItems[existingIndex].total = newItems[existingIndex].quantity * newItems[existingIndex].unit_price;
-            set({ items: newItems });
-            return { success: true };
-        } else {
-            if (quantity > product.stock_quantity) {
-                return { success: false, message: 'Insufficient stock' };
-            }
-
-            const newItem = {
-                id: uuid(),
-                product_id: product.id,
-                product_name: product.name,
-                quantity,
-                unit_price: product.price,
-                tax_rate: itemTaxRate,
-                discount: 0,
-                total: quantity * product.price,
-                max_stock: product.stock_quantity
+            newItems[existingIndex] = {
+                ...line,
+                quantity: line.quantity + quantity,
+                total: lineTotal(line.quantity + quantity, line.unit_price, line.discount),
             };
-            set({ items: [...items, newItem] });
-            return { success: true };
+            set({ items: newItems, lastAddedId: line.id });
+            return { success: true, quantity: newItems[existingIndex].quantity };
         }
+
+        if (quantity > available) {
+            return { success: false, message: t('cart.insufficientStock') };
+        }
+
+        const variantLabel = variant ? [variant.color, variant.size].filter(Boolean).join(' / ') : '';
+        const newItem = {
+            id: uuid(),
+            product_id: product.id,
+            product_name: product.name,
+            category_id: product.category_id || null,
+            brand: product.brand || null,
+            image_path: product.image_path || null,
+            variant_id: variantId,
+            variant_label: variantLabel || null,
+            color: variant?.color || null,
+            color_code: variant?.color_code || null,
+            size: variant?.size || null,
+            sku: variant ? variant.sku : (product.sku || null),
+            quantity,
+            unit_price: unitPrice,
+            original_price: unitPrice,
+            tax_rate: itemTaxRate,
+            discount: 0,
+            total: lineTotal(quantity, unitPrice),
+            max_stock: available
+        };
+        set({ items: [...items, newItem], lastAddedId: newItem.id });
+        return { success: true, quantity };
     },
 
     updateItemQuantity: (itemId, quantity) => {
@@ -105,16 +157,16 @@ export const useCartStore = create((set, get) => ({
 
         const { items } = get();
         const item = items.find(i => i.id === itemId);
-        if (!item) return { success: false, message: 'Item not found' };
+        if (!item) return { success: false, message: t('cart.itemNotFound') };
 
         if (item.max_stock !== undefined && quantity > item.max_stock) {
-            return { success: false, message: 'Cannot exceed available stock' };
+            return { success: false, message: t('cart.insufficientStock') };
         }
 
         set(state => ({
             items: state.items.map(item =>
                 item.id === itemId
-                    ? { ...item, quantity, total: quantity * item.unit_price }
+                    ? { ...item, quantity, total: lineTotal(quantity, item.unit_price, item.discount) }
                     : item
             )
         }));
@@ -131,7 +183,19 @@ export const useCartStore = create((set, get) => ({
         set(state => ({
             items: state.items.map(item =>
                 item.id === itemId
-                    ? { ...item, discount, total: (item.quantity * item.unit_price) - discount }
+                    ? { ...item, discount, total: lineTotal(item.quantity, item.unit_price, discount) }
+                    : item
+            )
+        }));
+    },
+
+    /** Price agreed with the customer for one line (the usual bargaining). */
+    setLinePrice: (itemId, price) => {
+        const value = Math.max(0, round2(price));
+        set(state => ({
+            items: state.items.map(item =>
+                item.id === itemId
+                    ? { ...item, unit_price: value, total: lineTotal(item.quantity, value, item.discount) }
                     : item
             )
         }));
@@ -151,49 +215,52 @@ export const useCartStore = create((set, get) => ({
 
     getSubtotal: () => {
         const { items } = get();
-        return items.reduce((sum, item) => sum + item.total, 0);
+        return round2(items.reduce((sum, item) => sum + item.total, 0));
     },
 
-    getTaxAmount: () => {
-        const { items, taxType, taxExempt, globalTaxRate } = get();
-        if (taxExempt) return 0;
-        return items.reduce((sum, item) => {
-            // Use item's tax_rate if set, otherwise use global rate
-            const effectiveRate = (item.tax_rate && item.tax_rate > 0) ? item.tax_rate : globalTaxRate;
-            const rate = effectiveRate / 100;
-            let itemTax = 0;
-            if (taxType === 'inclusive') {
-                const baseAmount = item.total / (1 + rate);
-                itemTax = item.total - baseAmount;
-            } else {
-                itemTax = item.total * rate;
-            }
-            return sum + itemTax;
-        }, 0);
+    /** Discount typed by the cashier for the whole ticket (fixed DA or %). */
+    getManualDiscount: () => {
+        const { discount, discountType } = get();
+        const subtotal = get().getSubtotal();
+        const value = Number(discount) || 0;
+        const amount = discountType === 'percent' ? subtotal * Math.min(100, Math.max(0, value)) / 100 : value;
+        return round2(Math.min(Math.max(0, amount), subtotal));
+    },
+
+    /** Best active promotion for this ticket: { promotion, amount } or null. */
+    getPromotion: () => {
+        const { promotions, items, coupon } = get();
+        return bestPromotion(promotions, items, { coupon });
     },
 
     getDiscountAmount: () => {
-        const { discount, discountType } = get();
         const subtotal = get().getSubtotal();
-        if (discountType === 'percent') {
-            return (subtotal * discount) / 100;
-        }
-        return discount;
+        const promo = get().getPromotion();
+        return round2(Math.min(subtotal, get().getManualDiscount() + (promo ? promo.amount : 0)));
+    },
+
+    // Tax is computed on what the customer really pays (after discounts)
+    getTaxAmount: () => {
+        const { items, taxType, taxExempt, globalTaxRate, taxEnabled } = get();
+        // TVA turned off in Settings: none is computed
+        if (taxExempt || taxEnabled === false) return 0;
+        const subtotal = get().getSubtotal();
+        if (subtotal <= 0) return 0;
+        const factor = (subtotal - get().getDiscountAmount()) / subtotal;
+        const tax = items.reduce((sum, item) => {
+            const effectiveRate = (item.tax_rate && item.tax_rate > 0) ? item.tax_rate : globalTaxRate;
+            const rate = (Number(effectiveRate) || 0) / 100;
+            const paid = item.total * factor;
+            return sum + (taxType === 'inclusive' ? paid - paid / (1 + rate) : paid * rate);
+        }, 0);
+        return round2(tax);
     },
 
     getTotal: () => {
-        const subtotal = get().getSubtotal();
-        const tax = get().getTaxAmount();
-        const discountAmount = get().getDiscountAmount();
         const { taxType, serviceCharge } = get();
-
-        let total = subtotal;
-        if (taxType === 'inclusive') {
-            total = subtotal - discountAmount;
-        } else {
-            total = subtotal + tax - discountAmount;
-        }
-        return total + (serviceCharge || 0);
+        const net = get().getSubtotal() - get().getDiscountAmount();
+        const total = taxType === 'inclusive' ? net : net + get().getTaxAmount();
+        return round2(Math.max(0, total + (Number(serviceCharge) || 0)));
     },
 
     getItemCount: () => {
@@ -210,6 +277,8 @@ export const useCartStore = create((set, get) => ({
             serviceCharge: 0,
             taxExempt: false,
             notes: '',
+            coupon: '',
+            lastAddedId: null,
         });
     },
 
@@ -230,9 +299,7 @@ export const useCartStore = create((set, get) => ({
     },
 
     recallTransaction: (held) => {
-        const items = typeof held.items_json === 'string'
-            ? JSON.parse(held.items_json)
-            : held.items;
+        const items = heldLines(held);
         set({
             items,
             customer: held.customer_id ? { id: held.customer_id, name: held.customer_name } : null,
@@ -250,6 +317,8 @@ export const useCartStore = create((set, get) => ({
                 id: uuid(),
                 product_id: item.product_id,
                 product_name: item.product_name,
+                variant_id: item.variant_id || null,
+                variant_label: item.variant_label || null,
                 quantity: item.quantity,
                 unit_price: item.unit_price,
                 tax_rate: 0,
@@ -262,9 +331,9 @@ export const useCartStore = create((set, get) => ({
         });
     },
 
-    processPayment: async (payments, employeeId) => {
-        const { items, customer, notes, discount, discountType, serviceCharge, taxExempt } = get();
-        if (items.length === 0) throw new Error('Cart is empty');
+    processPayment: async (payments, employeeId, employeeName = null) => {
+        const { items, customer, notes, serviceCharge, taxExempt } = get();
+        if (items.length === 0) throw new Error(t('cart.empty'));
 
         const receiptNumber = await window.electronAPI.generateReceiptNumber();
         const subtotal = get().getSubtotal();
@@ -272,15 +341,18 @@ export const useCartStore = create((set, get) => ({
         const discountAmount = get().getDiscountAmount();
         const total = get().getTotal();
 
+        const promo = get().getPromotion();
         const saleItems = items.map(item => ({
             ...item,
-            tax_amount: (taxExempt) ? 0 : (item.total * (item.tax_rate / 100)), // Approximate for record
+            tax_amount: (taxExempt || get().taxEnabled === false) ? 0 : (item.total * (item.tax_rate / 100)), // Approximate for record
         }));
 
         const sale = {
             id: uuid(),
             receipt_number: receiptNumber,
             employee_id: employeeId,
+            employee_name: employeeName,
+            created_at: new Date().toISOString(),
             customer_id: customer?.id || null,
             subtotal,
             tax_amount: taxAmount,
@@ -289,23 +361,19 @@ export const useCartStore = create((set, get) => ({
             tax_exempt: taxExempt ? 1 : 0,      // NEW field
             total,
             status: 'completed',
-            notes,
+            notes: promo ? [notes, promo.promotion.name].filter(Boolean).join(' · ') : notes,
+            promotion_id: promo ? promo.promotion.id : null,
+            promotion_name: promo ? promo.promotion.name : null,
             items: saleItems,
             payments: payments.map(p => ({ ...p, id: uuid() })),
         };
 
-        await window.electronAPI.sales.create(sale);
+        // The saved sale comes back with the variant/SKU snapshot of each line
+        const saved = await window.electronAPI.sales.create(sale);
+        if (saved && saved.items) sale.items = saved.items;
 
-        if (customer) {
-            const points = Math.floor(total / 10);
-            const updatedCustomer = {
-                ...customer,
-                loyalty_points: (customer.loyalty_points || 0) + points,
-                total_spent: (customer.total_spent || 0) + total,
-            };
-            await window.electronAPI.customers.update(updatedCustomer);
-        }
-
+        // Loyalty points and total spent are updated by the main process in
+        // the same transaction as the sale.
         get().clearCart();
         return sale;
     },

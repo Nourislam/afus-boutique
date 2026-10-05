@@ -1,17 +1,23 @@
-import { AlertTriangle, Info, HelpCircle, X } from 'lucide-react';
+import { useT } from '../../i18n';
+import { AlertTriangle, Info } from 'lucide-react';
 import { Button } from './Button';
 
 export function ConfirmDialog({
     isOpen,
     onClose,
     onConfirm,
-    title = 'Confirm Action',
-    message = 'Are you sure you want to proceed?',
-    confirmText = 'Confirm',
-    cancelText = 'Cancel',
+    title,
+    message,
+    confirmText,
+    cancelText,
     variant = 'danger', // danger, warning, info
 }) {
+    const { t } = useT();
     if (!isOpen) return null;
+    title = title || t('common.confirmTitle');
+    message = message || t('common.confirmMessage');
+    confirmText = confirmText || t('common.confirm');
+    cancelText = cancelText || t('common.cancel');
 
     const icons = {
         danger: <AlertTriangle className="w-10 h-10 text-red-400" />,

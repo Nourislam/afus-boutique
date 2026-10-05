@@ -1,0 +1,11 @@
+{
+  "companyName": "Afus",
+  "productName": "Afus Boutique",
+  "shortName": "Afus",
+  "appId": "dz.afus.boutique",
+  "packageName": "afus-boutique",
+  "executableName": "AfusBoutique",
+  "dataDirName": "AfusBoutique",
+  "databaseFile": "afus-boutique.db",
+  "fileSlug": "afus-boutique"
+}

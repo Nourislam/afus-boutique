@@ -1,20 +1,61 @@
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/cairo';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Root Variables */
+/* Theme colours (space-separated RGB so Tailwind can add opacity).
+   Dark is the default; html.theme-light switches every surface and grey. */
 :root {
-  --bg-primary: #0f0f0f;
-  --bg-secondary: #1a1a1a;
-  --bg-tertiary: #252525;
+  color-scheme: dark;
+  --surface-0: 11 11 13;
+  --surface-1: 19 19 22;
+  --surface-2: 28 28 33;
+  --surface-border: 38 38 44;
+  --fg: 244 244 245;
+  --scrollbar: 42 42 49;
+  --zinc-50: 250 250 250;
+  --zinc-100: 244 244 245;
+  --zinc-200: 228 228 231;
+  --zinc-300: 212 212 216;
+  --zinc-400: 161 161 170;
+  --zinc-500: 113 113 122;
+  --zinc-600: 82 82 91;
+  --zinc-700: 63 63 70;
+  --zinc-800: 39 39 42;
+  --zinc-900: 24 24 27;
+  --zinc-950: 9 9 11;
   --accent-primary: #6366f1;
   --accent-secondary: #8b5cf6;
   --accent-success: #22c55e;
   --accent-warning: #f59e0b;
   --accent-danger: #ef4444;
-  --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --border-color: #27272a;
+  /* Space kept free for the native window buttons (set by TitleBar) */
+  --titlebar-height: 40px;
+}
+
+/* Light theme: surfaces become light and the grey scale is reversed, so
+   "light grey text on dark" becomes "dark grey text on light" everywhere. */
+html.theme-light {
+  color-scheme: light;
+  --surface-0: 243 244 247;
+  --surface-1: 255 255 255;
+  --surface-2: 236 237 241;
+  --surface-border: 222 223 229;
+  --fg: 24 24 27;
+  --scrollbar: 205 206 213;
+  --zinc-50: 9 9 11;
+  --zinc-100: 24 24 27;
+  --zinc-200: 39 39 42;
+  --zinc-300: 63 63 70;
+  --zinc-400: 82 82 91;
+  --zinc-500: 113 113 122;
+  --zinc-600: 161 161 170;
+  --zinc-700: 212 212 216;
+  --zinc-800: 228 228 231;
+  --zinc-900: 244 244 245;
+  --zinc-950: 250 250 250;
 }
 
 /* Base Styles */
@@ -33,11 +74,41 @@ body,
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: #0f0f0f;
-  color: #ffffff;
+  /* Fonts are bundled with the app (no internet needed) and look the same on
+     Windows and macOS: Inter for Latin text, Cairo for Arabic. */
+  font-family: 'Inter Variable', 'Cairo Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  background-color: rgb(var(--surface-0));
+  color: rgb(var(--fg));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html.lang-ar body {
+  font-family: 'Cairo Variable', 'Inter Variable', system-ui, sans-serif;
+  font-feature-settings: normal;
+}
+
+/* Numbers line up in tables and totals */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Codes, phone numbers and amounts stay left-to-right inside Arabic text */
+.ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+input.ltr,
+textarea.ltr {
+  text-align: left;
+}
+
+/* Icons that point in the reading direction (arrows, chevrons) */
+[dir='rtl'] .flip-rtl {
+  transform: scaleX(-1);
 }
 
 /* Custom Scrollbar */
@@ -47,17 +118,21 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1a1a1a;
-  border-radius: 4px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #252525;
+  background: rgb(var(--scrollbar));
   border-radius: 4px;
 }
 
+/* Horizontal strips (tabs, category chips) scroll without a visible bar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: rgb(var(--zinc-600));
 }
 
 /* Selection */
@@ -79,67 +154,79 @@ body {
 /* Custom Components */
 @layer components {
   .btn {
-    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-150 inline-flex items-center justify-center gap-2 whitespace-nowrap select-none disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-primary {
-    @apply bg-indigo-500 hover:bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30;
+    @apply bg-indigo-500 hover:bg-indigo-600 text-white;
   }
 
   .btn-secondary {
-    @apply bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700;
+    @apply bg-dark-tertiary hover:bg-zinc-700/70 text-zinc-100 border border-dark-border;
   }
 
   .btn-success {
-    @apply bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/20;
+    @apply bg-emerald-600 hover:bg-emerald-500 text-white;
   }
 
   .btn-danger {
-    @apply bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20;
+    @apply bg-red-500/90 hover:bg-red-500 text-white;
   }
 
   .btn-warning {
-    @apply bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20;
+    @apply bg-amber-500 hover:bg-amber-600 text-white;
   }
 
   .btn-ghost {
-    @apply bg-transparent hover:bg-zinc-800 text-zinc-400 hover:text-white;
+    @apply bg-transparent hover:bg-dark-tertiary text-zinc-400 hover:text-white;
   }
 
   .input {
-    @apply w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200;
+    @apply w-full h-10 px-3 bg-dark-primary border border-dark-border rounded-lg text-zinc-100 placeholder-zinc-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors duration-150;
+  }
+
+  textarea.input {
+    @apply h-auto py-2;
   }
 
   .input-sm {
-    @apply px-3 py-2 text-sm;
+    @apply h-8 px-2.5 text-sm;
   }
 
   .card {
-    @apply bg-zinc-900 border border-zinc-800 rounded-xl p-4 shadow-lg shadow-black/10;
+    @apply bg-dark-secondary border border-dark-border rounded-xl p-4;
+  }
+
+  .panel-title {
+    @apply text-sm font-semibold text-zinc-200;
+  }
+
+  .muted {
+    @apply text-zinc-500;
   }
 
   .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap;
   }
 
   .badge-primary {
-    @apply bg-indigo-500/20 text-indigo-400;
+    @apply bg-indigo-500/15 text-indigo-300;
   }
 
   .badge-success {
-    @apply bg-green-500/20 text-green-400;
+    @apply bg-emerald-500/15 text-emerald-300;
   }
 
   .badge-warning {
-    @apply bg-amber-500/20 text-amber-400;
+    @apply bg-amber-500/15 text-amber-300;
   }
 
   .badge-danger {
-    @apply bg-red-500/20 text-red-400;
+    @apply bg-red-500/15 text-red-300;
   }
 
   .table-container {
-    @apply overflow-x-auto rounded-xl border border-zinc-800;
+    @apply overflow-x-auto rounded-xl border border-dark-border bg-dark-secondary;
   }
 
   .table {
@@ -147,11 +234,11 @@ body {
   }
 
   .table th {
-    @apply px-4 py-3 text-left font-medium text-zinc-400 bg-zinc-800 border-b border-zinc-700;
+    @apply px-4 py-3 text-start text-xs font-semibold uppercase tracking-wide text-zinc-500 bg-dark-secondary border-b border-dark-border whitespace-nowrap;
   }
 
   .table td {
-    @apply px-4 py-3 border-b border-zinc-800;
+    @apply px-4 py-3 border-b border-dark-border/70;
   }
 
   .table tr:last-child td {
@@ -159,15 +246,19 @@ body {
   }
 
   .table tbody tr {
-    @apply hover:bg-zinc-800/50 transition-colors;
+    @apply hover:bg-dark-tertiary/60 transition-colors;
   }
 
   .sidebar-item {
-    @apply flex items-center gap-3 px-4 py-3 rounded-lg font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all duration-200 cursor-pointer;
+    @apply flex items-center gap-3 px-3 h-10 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-dark-tertiary transition-colors duration-150 cursor-pointer;
   }
 
   .sidebar-item.active {
-    @apply bg-indigo-500 text-white shadow-lg shadow-indigo-500/20;
+    @apply bg-indigo-500/15 text-indigo-200;
+  }
+
+  .sidebar-item.active svg {
+    @apply text-indigo-400;
   }
 
   .stat-card {
@@ -187,27 +278,31 @@ body {
   }
 
   .modal-content {
-    @apply bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/50 w-full animate-scale-in flex flex-col max-h-[90vh];
+    @apply bg-dark-secondary border border-dark-border rounded-2xl shadow-2xl shadow-black/50 w-full animate-scale-in flex flex-col max-h-[90vh];
   }
 
   .modal-header {
-    @apply flex items-center justify-between px-6 py-4 border-b border-zinc-800 flex-none;
+    @apply flex items-center justify-between gap-4 px-6 py-4 border-b border-dark-border flex-none;
   }
 
   .modal-body {
-    @apply px-6 py-4 overflow-y-auto flex-1 min-h-0;
+    @apply px-6 py-5 overflow-y-auto flex-1 min-h-0;
   }
 
   .modal-footer {
-    @apply flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-800 flex-none;
+    @apply flex items-center justify-end gap-3 px-6 py-4 border-t border-dark-border flex-none;
   }
 
   .form-group {
-    @apply flex flex-col gap-2;
+    @apply flex flex-col gap-1.5 min-w-0;
   }
 
   .form-label {
     @apply text-sm font-medium text-zinc-300;
+  }
+
+  .form-hint {
+    @apply text-xs text-zinc-500;
   }
 
   .form-error {
@@ -219,7 +314,7 @@ body {
   }
 
   .numpad-btn {
-    @apply flex items-center justify-center text-2xl font-semibold bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all duration-150 active:scale-95 h-16 select-none;
+    @apply flex items-center justify-center text-xl font-semibold bg-dark-tertiary hover:bg-zinc-700/70 rounded-xl transition-colors duration-100 active:scale-95 h-14 select-none;
   }
 
   .numpad-btn-action {
@@ -227,15 +322,11 @@ body {
   }
 
   .numpad-btn-danger {
-    @apply bg-red-500 hover:bg-red-600;
+    @apply bg-red-500/90 hover:bg-red-500;
   }
 
   .product-card {
-    @apply bg-zinc-900 border border-zinc-800 rounded-xl p-3 cursor-pointer transition-all duration-200 hover:border-indigo-500 hover:shadow-lg hover:shadow-indigo-500/10 select-none;
-  }
-
-  .product-card:hover {
-    transform: translateY(-2px);
+    @apply bg-dark-secondary border border-dark-border rounded-xl p-2.5 cursor-pointer transition-colors duration-150 hover:border-indigo-500/70 select-none;
   }
 
   .product-card:active {
@@ -243,8 +334,128 @@ body {
   }
 
   .cart-item {
-    @apply flex items-center gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 transition-all duration-200;
+    @apply flex items-center gap-3 p-3 rounded-lg bg-dark-tertiary/60 hover:bg-dark-tertiary transition-colors duration-150;
   }
+
+  /* Page layout used by every screen */
+  .page {
+    @apply h-full flex flex-col overflow-hidden;
+  }
+
+  .page-body {
+    @apply flex-1 overflow-y-auto p-6;
+  }
+
+  .segmented {
+    @apply inline-flex items-center gap-1 p-1 rounded-lg bg-dark-tertiary border border-dark-border;
+  }
+
+  .segmented > button {
+    @apply px-3 h-8 rounded-md text-sm font-medium text-zinc-400 hover:text-white transition-colors whitespace-nowrap;
+  }
+
+  .segmented > button.active {
+    @apply bg-dark-secondary text-white shadow-sm shadow-black/40;
+  }
+}
+
+/* Light theme: "white" text means strong text, except on coloured buttons
+   and badges where it must stay white. */
+html.theme-light .text-white,
+html.theme-light .hover\:text-white:hover,
+html.theme-light .segmented > button.active,
+html.theme-light .segmented > button:hover {
+  color: rgb(var(--fg));
+}
+
+html.theme-light :is(.btn-primary, .btn-success, .btn-danger, .btn-warning, .numpad-btn-action, .numpad-btn-danger,
+  .gradient-primary, .gradient-success, .gradient-danger,
+  [class~="bg-indigo-500"], [class~="bg-indigo-600"], [class~="bg-emerald-500"], [class~="bg-emerald-600"],
+  [class~="bg-green-500"], [class~="bg-green-600"], [class~="bg-red-500"], [class~="bg-red-600"],
+  [class~="bg-amber-500"], [class~="bg-amber-600"], [class~="bg-purple-500"], [class~="bg-sky-500"],
+  [class~="bg-accent-primary"], [class~="bg-blue-500"], [class~="bg-blue-600"]),
+html.theme-light :is(.btn-primary, .btn-success, .btn-danger, .btn-warning, .numpad-btn-action, .numpad-btn-danger,
+  .gradient-primary, .gradient-success, .gradient-danger,
+  [class~="bg-indigo-500"], [class~="bg-indigo-600"], [class~="bg-emerald-500"], [class~="bg-emerald-600"],
+  [class~="bg-green-500"], [class~="bg-green-600"], [class~="bg-red-500"], [class~="bg-red-600"],
+  [class~="bg-amber-500"], [class~="bg-amber-600"], [class~="bg-purple-500"], [class~="bg-sky-500"],
+  [class~="bg-accent-primary"], [class~="bg-blue-500"], [class~="bg-blue-600"]) .text-white {
+  color: #fff;
+}
+
+/* Pale accent text (made for dark backgrounds) is darkened on light ones */
+  html.theme-light .text-indigo-100, html.theme-light .hover\:text-indigo-100:hover { color: #4338ca; }
+  html.theme-light .text-indigo-200, html.theme-light .hover\:text-indigo-200:hover { color: #4338ca; }
+  html.theme-light .text-indigo-300, html.theme-light .hover\:text-indigo-300:hover { color: #4338ca; }
+  html.theme-light .text-indigo-400, html.theme-light .hover\:text-indigo-400:hover { color: #4f46e5; }
+  html.theme-light .text-violet-100, html.theme-light .hover\:text-violet-100:hover { color: #6d28d9; }
+  html.theme-light .text-violet-200, html.theme-light .hover\:text-violet-200:hover { color: #6d28d9; }
+  html.theme-light .text-violet-300, html.theme-light .hover\:text-violet-300:hover { color: #6d28d9; }
+  html.theme-light .text-violet-400, html.theme-light .hover\:text-violet-400:hover { color: #7c3aed; }
+  html.theme-light .text-purple-100, html.theme-light .hover\:text-purple-100:hover { color: #7e22ce; }
+  html.theme-light .text-purple-200, html.theme-light .hover\:text-purple-200:hover { color: #7e22ce; }
+  html.theme-light .text-purple-300, html.theme-light .hover\:text-purple-300:hover { color: #7e22ce; }
+  html.theme-light .text-purple-400, html.theme-light .hover\:text-purple-400:hover { color: #9333ea; }
+  html.theme-light .text-fuchsia-100, html.theme-light .hover\:text-fuchsia-100:hover { color: #a21caf; }
+  html.theme-light .text-fuchsia-200, html.theme-light .hover\:text-fuchsia-200:hover { color: #a21caf; }
+  html.theme-light .text-fuchsia-300, html.theme-light .hover\:text-fuchsia-300:hover { color: #a21caf; }
+  html.theme-light .text-fuchsia-400, html.theme-light .hover\:text-fuchsia-400:hover { color: #c026d3; }
+  html.theme-light .text-pink-100, html.theme-light .hover\:text-pink-100:hover { color: #be185d; }
+  html.theme-light .text-pink-200, html.theme-light .hover\:text-pink-200:hover { color: #be185d; }
+  html.theme-light .text-pink-300, html.theme-light .hover\:text-pink-300:hover { color: #be185d; }
+  html.theme-light .text-pink-400, html.theme-light .hover\:text-pink-400:hover { color: #db2777; }
+  html.theme-light .text-rose-100, html.theme-light .hover\:text-rose-100:hover { color: #be123c; }
+  html.theme-light .text-rose-200, html.theme-light .hover\:text-rose-200:hover { color: #be123c; }
+  html.theme-light .text-rose-300, html.theme-light .hover\:text-rose-300:hover { color: #be123c; }
+  html.theme-light .text-rose-400, html.theme-light .hover\:text-rose-400:hover { color: #e11d48; }
+  html.theme-light .text-red-100, html.theme-light .hover\:text-red-100:hover { color: #b91c1c; }
+  html.theme-light .text-red-200, html.theme-light .hover\:text-red-200:hover { color: #b91c1c; }
+  html.theme-light .text-red-300, html.theme-light .hover\:text-red-300:hover { color: #b91c1c; }
+  html.theme-light .text-red-400, html.theme-light .hover\:text-red-400:hover { color: #dc2626; }
+  html.theme-light .text-orange-100, html.theme-light .hover\:text-orange-100:hover { color: #c2410c; }
+  html.theme-light .text-orange-200, html.theme-light .hover\:text-orange-200:hover { color: #c2410c; }
+  html.theme-light .text-orange-300, html.theme-light .hover\:text-orange-300:hover { color: #c2410c; }
+  html.theme-light .text-orange-400, html.theme-light .hover\:text-orange-400:hover { color: #ea580c; }
+  html.theme-light .text-amber-100, html.theme-light .hover\:text-amber-100:hover { color: #b45309; }
+  html.theme-light .text-amber-200, html.theme-light .hover\:text-amber-200:hover { color: #b45309; }
+  html.theme-light .text-amber-300, html.theme-light .hover\:text-amber-300:hover { color: #b45309; }
+  html.theme-light .text-amber-400, html.theme-light .hover\:text-amber-400:hover { color: #d97706; }
+  html.theme-light .text-yellow-100, html.theme-light .hover\:text-yellow-100:hover { color: #a16207; }
+  html.theme-light .text-yellow-200, html.theme-light .hover\:text-yellow-200:hover { color: #a16207; }
+  html.theme-light .text-yellow-300, html.theme-light .hover\:text-yellow-300:hover { color: #a16207; }
+  html.theme-light .text-yellow-400, html.theme-light .hover\:text-yellow-400:hover { color: #ca8a04; }
+  html.theme-light .text-green-100, html.theme-light .hover\:text-green-100:hover { color: #15803d; }
+  html.theme-light .text-green-200, html.theme-light .hover\:text-green-200:hover { color: #15803d; }
+  html.theme-light .text-green-300, html.theme-light .hover\:text-green-300:hover { color: #15803d; }
+  html.theme-light .text-green-400, html.theme-light .hover\:text-green-400:hover { color: #16a34a; }
+  html.theme-light .text-emerald-100, html.theme-light .hover\:text-emerald-100:hover { color: #047857; }
+  html.theme-light .text-emerald-200, html.theme-light .hover\:text-emerald-200:hover { color: #047857; }
+  html.theme-light .text-emerald-300, html.theme-light .hover\:text-emerald-300:hover { color: #047857; }
+  html.theme-light .text-emerald-400, html.theme-light .hover\:text-emerald-400:hover { color: #059669; }
+  html.theme-light .text-teal-100, html.theme-light .hover\:text-teal-100:hover { color: #0f766e; }
+  html.theme-light .text-teal-200, html.theme-light .hover\:text-teal-200:hover { color: #0f766e; }
+  html.theme-light .text-teal-300, html.theme-light .hover\:text-teal-300:hover { color: #0f766e; }
+  html.theme-light .text-teal-400, html.theme-light .hover\:text-teal-400:hover { color: #0d9488; }
+  html.theme-light .text-cyan-100, html.theme-light .hover\:text-cyan-100:hover { color: #0e7490; }
+  html.theme-light .text-cyan-200, html.theme-light .hover\:text-cyan-200:hover { color: #0e7490; }
+  html.theme-light .text-cyan-300, html.theme-light .hover\:text-cyan-300:hover { color: #0e7490; }
+  html.theme-light .text-cyan-400, html.theme-light .hover\:text-cyan-400:hover { color: #0891b2; }
+  html.theme-light .text-sky-100, html.theme-light .hover\:text-sky-100:hover { color: #0369a1; }
+  html.theme-light .text-sky-200, html.theme-light .hover\:text-sky-200:hover { color: #0369a1; }
+  html.theme-light .text-sky-300, html.theme-light .hover\:text-sky-300:hover { color: #0369a1; }
+  html.theme-light .text-sky-400, html.theme-light .hover\:text-sky-400:hover { color: #0284c7; }
+  html.theme-light .text-blue-100, html.theme-light .hover\:text-blue-100:hover { color: #1d4ed8; }
+  html.theme-light .text-blue-200, html.theme-light .hover\:text-blue-200:hover { color: #1d4ed8; }
+  html.theme-light .text-blue-300, html.theme-light .hover\:text-blue-300:hover { color: #1d4ed8; }
+  html.theme-light .text-blue-400, html.theme-light .hover\:text-blue-400:hover { color: #2563eb; }
+
+html.theme-light .modal-content,
+html.theme-light .segmented > button.active {
+  box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.18);
+}
+
+html.theme-light .modal-overlay {
+  background-color: rgb(24 24 27 / 0.45);
 }
 
 /* Gradient backgrounds */
@@ -299,3 +510,8 @@ body {
   outline: none !important;
   box-shadow: none !important;
 }
+/* Afus logo: blue square on the dark theme, white square on the light theme */
+.afus-logo-bg { fill: #1239B0; }
+.afus-logo-a { fill: #FFFFFF; }
+html.theme-light .afus-logo-bg { fill: #FFFFFF; }
+html.theme-light .afus-logo-a { fill: #1239B0; }

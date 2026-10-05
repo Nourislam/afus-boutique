@@ -1,13 +1,18 @@
+import { t } from '../../i18n';
+import { translateError } from '../../i18n/errors';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { toast } from '../ui/Toast';
 import { Printer, Mail, Download } from 'lucide-react';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
     const [html, setHtml] = useState('');
     const [loading, setLoading] = useState(true);
+    // Sending by e-mail only when the E-mail module is on
+    const emailOn = useSettingsStore(state => !!state.settings.features?.email);
     const [email, setEmail] = useState('');
     const [sendingEmail, setSendingEmail] = useState(false);
     const [printing, setPrinting] = useState(false);
@@ -28,7 +33,7 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
             setHtml(content);
         } catch (error) {
             console.error('Failed to load receipt:', error);
-            toast.error('Failed to load receipt preview');
+            toast.error(t('receipt.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -38,10 +43,10 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
         setPrinting(true);
         try {
             await window.electronAPI.receipts.print(sale);
-            toast.success('Sent to printer');
+            toast.success(t('receipt.printed'));
         } catch (error) {
             console.error('Print failed:', error);
-            toast.error('Failed to print');
+            toast.error(t('receipt.printFailed'));
         } finally {
             setPrinting(false);
         }
@@ -49,16 +54,16 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
 
     const handleEmail = async () => {
         if (!email) {
-            toast.error('Please enter an email address');
+            toast.error(t('receipt.enterEmail'));
             return;
         }
         setSendingEmail(true);
         try {
             await window.electronAPI.email.sendReceipt(sale, email);
-            toast.success(`Receipt sent to ${email}`);
+            toast.success(t('receipt.sentTo', { email }));
         } catch (error) {
             console.error('Email failed:', error);
-            toast.error(error.message || 'Failed to send email');
+            toast.error(translateError(error) || t('receipt.emailFailed'));
         } finally {
             setSendingEmail(false);
         }
@@ -69,35 +74,36 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
         try {
             const path = await window.electronAPI.receipts.savePdf(sale);
             if (path) {
-                toast.success('Receipt saved as PDF');
+                toast.success(t('receipt.pdfSaved'));
             }
         } catch (error) {
             console.error('Save PDF failed:', error);
-            toast.error('Failed to save PDF');
+            toast.error(t('gift.pdfFailed'));
         } finally {
             setSaving(false);
         }
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Receipt Preview" size="lg">
+        <Modal isOpen={isOpen} onClose={onClose} title={t('receipt.title')} size="lg">
             <ModalBody>
                 <div className="grid grid-cols-2 gap-6 h-[500px]">
                     {/* Preview Section - Using iframe to isolate styles */}
                     <div className="border border-dark-border rounded-lg bg-white overflow-hidden h-full">
                         {loading ? (
                             <div className="h-full flex items-center justify-center text-black">
-                                Loading preview...
+                                {t('receipt.loading')}
                             </div>
                         ) : html ? (
                             <iframe
-                                title="Receipt Preview"
-                                src={`data:text/html;charset=utf-8,${encodeURIComponent(html)}`}
+                                title={t('receipt.title')}
+                                sandbox=""
+                                srcDoc={html}
                                 className="w-full h-full border-0"
                             />
                         ) : (
                             <div className="h-full flex items-center justify-center text-red-500">
-                                Failed to load preview
+                                {t('receipt.previewFailed')}
                             </div>
                         )}
                     </div>
@@ -105,15 +111,15 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
                     {/* Actions Section */}
                     <div className="flex flex-col gap-4">
                         <div className="p-4 rounded-lg bg-dark-tertiary">
-                            <h3 className="font-semibold mb-2">Actions</h3>
+                            <h3 className="font-semibold mb-2">{t('inventory.actions')}</h3>
                             <Button
                                 onClick={handlePrint}
                                 loading={printing}
                                 className="w-full justify-start mb-2"
                                 size="lg"
                             >
-                                <Printer className="w-5 h-5 mr-2" />
-                                Print Receipt
+                                <Printer className="w-5 h-5 me-2" />
+                                {t('receipt.print')}
                             </Button>
                             <Button
                                 onClick={handleSavePdf}
@@ -122,16 +128,17 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
                                 variant="outline"
                                 size="lg"
                             >
-                                <Download className="w-5 h-5 mr-2" />
-                                Save as PDF
+                                <Download className="w-5 h-5 me-2" />
+                                {t('receipt.savePdf')}
                             </Button>
                         </div>
 
+                        {emailOn && (
                         <div className="p-4 rounded-lg bg-dark-tertiary flex-1">
-                            <h3 className="font-semibold mb-2">Email Receipt</h3>
+                            <h3 className="font-semibold mb-2">{t('receipt.email')}</h3>
                             <div className="space-y-3">
                                 <Input
-                                    label="Customer Email"
+                                    label={t('receipt.customerEmail')}
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -144,14 +151,15 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
                                     variant="secondary"
                                     className="w-full"
                                 >
-                                    <Mail className="w-4 h-4 mr-2" />
-                                    Send Email
+                                    <Mail className="w-4 h-4 me-2" />
+                                    {t('receipt.send')}
                                 </Button>
                             </div>
                         </div>
+                        )}
 
                         <Button variant="ghost" onClick={onClose} className="mt-auto">
-                            Close
+                            {t('common.close')}
                         </Button>
                     </div>
                 </div>

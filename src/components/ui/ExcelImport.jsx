@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 /**
  * Excel Import Component
  * 
@@ -8,12 +9,13 @@
 import { useState, useCallback, useRef } from 'react';
 import {
     Upload, FileSpreadsheet, Download, Check, X, AlertTriangle,
-    ChevronRight, RefreshCw, Trash2, ArrowRight
+    ChevronRight, RefreshCw, ArrowRight
 } from 'lucide-react';
 import { Button } from './Button';
 import { Select } from './Select';
 import { Modal, ModalBody, ModalFooter } from './Modal';
 import { toast } from './Toast';
+import { translateError } from '../../i18n/errors';
 
 export function ExcelImport({
     isOpen,
@@ -23,7 +25,6 @@ export function ExcelImport({
     title = 'Import from Excel'
 }) {
     const [step, setStep] = useState(1); // 1: Upload, 2: Map, 3: Preview
-    const [file, setFile] = useState(null);
     const [sheetData, setSheetData] = useState(null);
     const [selectedSheet, setSelectedSheet] = useState('');
     const [columnMappings, setColumnMappings] = useState({});
@@ -55,11 +56,10 @@ export function ExcelImport({
 
     const handleFile = async (selectedFile) => {
         if (!selectedFile.name.match(/\.(xlsx|xls)$/i)) {
-            toast.error('Please select an Excel file (.xlsx or .xls)');
+            toast.error(t('excel.selectFile'));
             return;
         }
 
-        setFile(selectedFile);
 
         try {
             const buffer = await selectedFile.arrayBuffer();
@@ -79,7 +79,7 @@ export function ExcelImport({
 
             setStep(2);
         } catch (error) {
-            toast.error('Failed to read Excel file');
+            toast.error(t('excel.readFailed'));
             console.error(error);
         }
     };
@@ -99,7 +99,7 @@ export function ExcelImport({
         setColumnMappings(stringMappings);
 
         if (result.missingRequired.length > 0) {
-            toast.warning(`Missing required columns: ${result.missingRequired.join(', ')}`);
+            toast.warning(t('excel.missingColumns', { fields: result.missingRequired.map(f => t(`excel.field.${f}`)).join(', ') }));
         }
     };
 
@@ -119,7 +119,7 @@ export function ExcelImport({
         // Check required fields
         const missingRequired = fieldMappings.required.filter(f => !(f in columnMappings));
         if (missingRequired.length > 0) {
-            toast.error(`Please map required fields: ${missingRequired.join(', ')}`);
+            toast.error(t('excel.missingColumns', { fields: missingRequired.map(f => t(`excel.field.${f}`)).join(', ') }));
             return;
         }
 
@@ -136,17 +136,17 @@ export function ExcelImport({
 
     const handleImport = async () => {
         if (!validationResult?.valid.length) {
-            toast.error('No valid records to import');
+            toast.error(t('excel.noValid'));
             return;
         }
 
         setImporting(true);
         try {
             await onImport(validationResult.valid);
-            toast.success(`Imported ${validationResult.valid.length} records`);
+            toast.success(t('excel.imported', { n: validationResult.valid.length }));
             handleClose();
         } catch (error) {
-            toast.error('Import failed: ' + error.message);
+            toast.error(t('excel.importFailed', { error: translateError(error) }));
         } finally {
             setImporting(false);
         }
@@ -154,7 +154,6 @@ export function ExcelImport({
 
     const handleClose = () => {
         setStep(1);
-        setFile(null);
         setSheetData(null);
         setSelectedSheet('');
         setColumnMappings({});
@@ -173,9 +172,9 @@ export function ExcelImport({
             a.download = `${dataType}_template.xlsx`;
             a.click();
             URL.revokeObjectURL(url);
-            toast.success('Template downloaded');
-        } catch (error) {
-            toast.error('Failed to download template');
+            toast.success(t('excel.templateDone'));
+        } catch {
+            toast.error(t('excel.templateFailed'));
         }
     };
 
@@ -200,9 +199,9 @@ export function ExcelImport({
                     ))}
                 </div>
                 <div className="flex justify-center mb-6 text-sm text-zinc-400 gap-8">
-                    <span className={step === 1 ? 'text-indigo-400' : ''}>Upload</span>
-                    <span className={step === 2 ? 'text-indigo-400' : ''}>Map Columns</span>
-                    <span className={step === 3 ? 'text-indigo-400' : ''}>Preview</span>
+                    <span className={step === 1 ? 'text-indigo-400' : ''}>{t('excel.upload')}</span>
+                    <span className={step === 2 ? 'text-indigo-400' : ''}>{t('excel.map')}</span>
+                    <span className={step === 3 ? 'text-indigo-400' : ''}>{t('products.preview')}</span>
                 </div>
 
                 {/* Step 1: Upload */}
@@ -219,9 +218,9 @@ export function ExcelImport({
                     >
                         <FileSpreadsheet className="w-16 h-16 mx-auto text-zinc-500 mb-4" />
                         <h3 className="text-lg font-medium mb-2">
-                            Drag & drop your Excel file here
+                            {t('excel.drop')}
                         </h3>
-                        <p className="text-zinc-500 mb-4">or click to browse</p>
+                        <p className="text-zinc-500 mb-4">{t('excel.orBrowse')}</p>
                         <input
                             type="file"
                             accept=".xlsx,.xls"
@@ -235,7 +234,7 @@ export function ExcelImport({
                             onClick={() => fileInputRef.current?.click()}
                         >
                             <Upload className="w-4 h-4" />
-                            Browse Files
+                            {t('excel.browse')}
                         </Button>
                         <div className="mt-6 pt-6 border-t border-zinc-700">
                             <button
@@ -243,7 +242,7 @@ export function ExcelImport({
                                 className="text-indigo-400 hover:text-indigo-300 text-sm flex items-center gap-2 mx-auto"
                             >
                                 <Download className="w-4 h-4" />
-                                Download {dataType} template
+                                {t('excel.downloadTemplate')}
                             </button>
                         </div>
                     </div>
@@ -254,7 +253,7 @@ export function ExcelImport({
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <label className="text-sm font-medium">Select Sheet</label>
+                                <label className="text-sm font-medium">{t('excel.sheet')}</label>
                                 <Select
                                     value={selectedSheet}
                                     onChange={(val) => handleSheetChange(val)}
@@ -262,24 +261,24 @@ export function ExcelImport({
                                         value: name,
                                         label: name
                                     }))}
-                                    placeholder="Select sheet"
+                                    placeholder={t('excel.sheetPlaceholder')}
                                     className="mt-1"
                                 />
                             </div>
                             <Button variant="secondary" size="sm" onClick={detectMappings}>
                                 <RefreshCw className="w-4 h-4" />
-                                Auto-Detect
+                                {t('excel.autoDetect')}
                             </Button>
                         </div>
 
                         <div className="bg-zinc-800 rounded-lg p-4 max-h-80 overflow-y-auto">
-                            <h4 className="font-medium mb-3 sticky top-0 bg-zinc-800 pb-2">Column Mappings</h4>
+                            <h4 className="font-medium mb-3 sticky top-0 bg-zinc-800 pb-2">{t('excel.mappings')}</h4>
                             <div className="space-y-3">
                                 {allFields.map(field => (
                                     <div key={field} className="flex items-center gap-4">
                                         <div className="w-40">
                                             <span className={fieldMappings.required.includes(field) ? 'text-red-400' : ''}>
-                                                {field}
+                                                {t(`excel.field.${field}`)}
                                                 {fieldMappings.required.includes(field) && ' *'}
                                             </span>
                                         </div>
@@ -288,13 +287,13 @@ export function ExcelImport({
                                             value={columnMappings[field] ?? ''}
                                             onChange={(val) => updateColumnMapping(field, val)}
                                             options={[
-                                                { value: '', label: '-- Select Column --' },
+                                                { value: '', label: t('excel.selectColumn') },
                                                 ...currentHeaders.map((header, index) => ({
                                                     value: index.toString(),
-                                                    label: header || `Column ${index + 1}`
+                                                    label: header || t('excel.column', { n: index + 1 })
                                                 }))
                                             ]}
-                                            placeholder="Select column"
+                                            placeholder={t('excel.selectColumnPlaceholder')}
                                             className="flex-1"
                                         />
                                     </div>
@@ -303,7 +302,7 @@ export function ExcelImport({
                         </div>
 
                         <p className="text-xs text-zinc-500">
-                            Found {sheetData[selectedSheet]?.rowCount || 0} rows in sheet "{selectedSheet}"
+                            {t('excel.found', { n: sheetData[selectedSheet]?.rowCount || 0, sheet: selectedSheet })}
                         </p>
                     </div>
                 )}
@@ -316,32 +315,32 @@ export function ExcelImport({
                             <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-4 text-center">
                                 <Check className="w-6 h-6 mx-auto text-green-400" />
                                 <p className="text-2xl font-bold text-green-400">{validationResult.valid.length}</p>
-                                <p className="text-sm text-green-400/80">Valid Records</p>
+                                <p className="text-sm text-green-400/80">{t('excel.valid')}</p>
                             </div>
                             <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 text-center">
                                 <X className="w-6 h-6 mx-auto text-red-400" />
                                 <p className="text-2xl font-bold text-red-400">{validationResult.errors.length}</p>
-                                <p className="text-sm text-red-400/80">Errors</p>
+                                <p className="text-sm text-red-400/80">{t('excel.errors')}</p>
                             </div>
                             <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4 text-center">
                                 <AlertTriangle className="w-6 h-6 mx-auto text-yellow-400" />
                                 <p className="text-2xl font-bold text-yellow-400">{validationResult.warnings.length}</p>
-                                <p className="text-sm text-yellow-400/80">Warnings</p>
+                                <p className="text-sm text-yellow-400/80">{t('excel.warnings')}</p>
                             </div>
                         </div>
 
                         {/* Errors */}
                         {validationResult.errors.length > 0 && (
                             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-                                <h4 className="font-medium text-red-400 mb-2">Errors (will not be imported)</h4>
+                                <h4 className="font-medium text-red-400 mb-2">{t('excel.errorsTitle')}</h4>
                                 <div className="max-h-32 overflow-auto text-sm space-y-1">
                                     {validationResult.errors.slice(0, 10).map((err, i) => (
                                         <p key={i} className="text-red-300">
-                                            Row {err.row}: {err.errors.join(', ')}
+                                            {t('errors.row', { n: err.row })} : {err.errors.map(e => translateError(e)).join(', ')}
                                         </p>
                                     ))}
                                     {validationResult.errors.length > 10 && (
-                                        <p className="text-red-400">...and {validationResult.errors.length - 10} more errors</p>
+                                        <p className="text-red-400">{t('excel.moreErrors', { n: validationResult.errors.length - 10 })}</p>
                                     )}
                                 </div>
                             </div>
@@ -350,14 +349,14 @@ export function ExcelImport({
                         {/* Preview Table */}
                         <div className="bg-zinc-800 rounded-lg overflow-hidden">
                             <div className="p-3 border-b border-zinc-700">
-                                <h4 className="font-medium">Preview (first 5 records)</h4>
+                                <h4 className="font-medium">{t('excel.previewTitle')}</h4>
                             </div>
                             <div className="overflow-auto max-h-48">
                                 <table className="w-full text-sm">
                                     <thead className="bg-zinc-700">
                                         <tr>
                                             {allFields.map(f => (
-                                                <th key={f} className="px-3 py-2 text-left whitespace-nowrap">{f}</th>
+                                                <th key={f} className="px-3 py-2 text-start whitespace-nowrap">{t(`excel.field.${f}`)}</th>
                                             ))}
                                         </tr>
                                     </thead>
@@ -382,17 +381,17 @@ export function ExcelImport({
             <ModalFooter>
                 {step > 1 && (
                     <Button variant="secondary" onClick={() => setStep(step - 1)}>
-                        Back
+                        {t('common.back')}
                     </Button>
                 )}
                 <div className="flex-1" />
                 <Button variant="secondary" onClick={handleClose}>
-                    Cancel
+                    {t('common.cancel')}
                 </Button>
                 {step === 2 && (
                     <Button onClick={validateAndPreview}>
                         <ChevronRight className="w-4 h-4" />
-                        Preview
+                        {t('products.preview')}
                     </Button>
                 )}
                 {step === 3 && (
@@ -405,7 +404,7 @@ export function ExcelImport({
                         ) : (
                             <Upload className="w-4 h-4" />
                         )}
-                        Import {validationResult?.valid.length} Records
+                        {t('excel.importN', { n: validationResult?.valid.length || 0 })}
                     </Button>
                 )}
             </ModalFooter>

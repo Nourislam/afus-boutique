@@ -1,9 +1,12 @@
+import { t } from '../../i18n';
+import { formatMoney } from '../../i18n/format';
 import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { toast } from '../ui/Toast';
+import { translateError } from '../../i18n/errors';
 import { useAuthStore } from '../../stores/authStore';
 
 export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) {
@@ -14,20 +17,8 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
 
     useEffect(() => {
         if (sale && isOpen) {
-            // Initialize items with 0 return quantity
-            if (sale.items) {
-                setItems(sale.items.map(item => ({
-                    ...item,
-                    returnQty: 0,
-                    condition: 'sellable'
-                })));
-            } else {
-                // Fetch items if missing?
-                // TransactionsPage usually fetches full sale for receipt, 
-                // but if passing row object, it might be partial.
-                // We'll rely on TransactionsPage to pass full object or we fetch here.
-                fetchSaleDetails();
-            }
+            // Always read the sale again: it gives what was already returned
+            fetchSaleDetails();
         }
     }, [sale, isOpen]);
 
@@ -36,12 +27,14 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
             const fullSale = await window.electronAPI.sales.getById(sale.id);
             setItems(fullSale.items.map(item => ({
                 ...item,
+                // Pieces that can still come back on this line
+                maxReturn: Math.max(0, (Number(item.quantity) || 0) - (Number(item.returned_quantity) || 0)),
                 returnQty: 0,
                 condition: 'sellable'
             })));
         } catch (error) {
             console.error('Failed to fetch sale details:', error);
-            toast.error('Failed to load items');
+            toast.error(t('return.loadFailed'));
         }
     };
 
@@ -49,8 +42,8 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
         setItems(items.map(item => {
             if (item.id === itemId) {
                 const val = parseInt(qty) || 0;
-                // Clamp between 0 and original quantity
-                const clamped = Math.min(Math.max(0, val), item.quantity);
+                // Between 0 and what was sold minus earlier returns
+                const clamped = Math.min(Math.max(0, val), item.maxReturn ?? item.quantity);
                 return { ...item, returnQty: clamped };
             }
             return item;
@@ -71,7 +64,7 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
         const itemsToReturn = items.filter(i => i.returnQty > 0);
 
         if (itemsToReturn.length === 0) {
-            toast.error('No items selected for return');
+            toast.error(t('return.noneSelected'));
             return;
         }
 
@@ -94,46 +87,54 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
             };
 
             await window.electronAPI.returns.create(returnData);
-            toast.success('Return processed successfully');
+            toast.success(t('return.done'));
             if (onReturnSuccess) onReturnSuccess();
             onClose();
         } catch (error) {
             console.error('Return failed:', error);
-            toast.error('Failed to process return');
+            // The reason (e.g. more pieces than can still be returned)
+            toast.error(`${t('return.failed')} — ${translateError(error)}`);
         } finally {
             setLoading(false);
         }
     };
 
-    const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+    const formatCurrency = (val) => formatMoney(val);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Return for Receipt #${sale?.receipt_number}`} size="lg">
+        <Modal isOpen={isOpen} onClose={onClose} title={t('return.titleFor', { receipt: sale?.receipt_number || '' })} size="lg">
             <ModalBody>
                 <div className="space-y-4">
                     <div className="border border-dark-border rounded-lg">
-                        <table className="w-full text-left text-sm">
+                        <table className="w-full text-start text-sm">
                             <thead className="bg-dark-tertiary text-zinc-400 sticky top-0">
                                 <tr>
-                                    <th className="p-3">Product</th>
-                                    <th className="p-3">Sold Qty</th>
-                                    <th className="p-3">Price</th>
-                                    <th className="p-3">Return Qty</th>
-                                    <th className="p-3">Condition</th>
-                                    <th className="p-3 text-right">Refund</th>
+                                    <th className="p-3">{t('inventory.product')}</th>
+                                    <th className="p-3">{t('return.soldQty')}</th>
+                                    <th className="p-3">{t('qr.price')}</th>
+                                    <th className="p-3">{t('return.qty')}</th>
+                                    <th className="p-3">{t('return.condition')}</th>
+                                    <th className="p-3 text-end">{t('return.refund')}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-dark-border">
                                 {items.map(item => (
                                     <tr key={item.id} className={item.returnQty > 0 ? 'bg-blue-500/10' : ''}>
-                                        <td className="p-3 text-white font-medium">{item.product_name}</td>
-                                        <td className="p-3 text-zinc-300">{item.quantity}</td>
+                                        <td className="p-3 text-white font-medium">
+                                            {item.product_name}
+                                            {item.variant_label && <div className="text-xs text-accent-primary">{item.variant_label}{item.sku ? ` · ${item.sku}` : ''}</div>}
+                                        </td>
+                                        <td className="p-3 text-zinc-300">
+                                            {item.quantity}
+                                            {item.returned_quantity > 0 && <div className="text-xs text-amber-400">{t('return.alreadyReturned', { n: item.returned_quantity })}</div>}
+                                        </td>
                                         <td className="p-3 text-zinc-300">{formatCurrency(item.unit_price)}</td>
                                         <td className="p-3">
                                             <input
                                                 type="number"
                                                 min="0"
-                                                max={item.quantity}
+                                                max={item.maxReturn ?? item.quantity}
+                                                disabled={item.maxReturn === 0}
                                                 value={item.returnQty}
                                                 onChange={(e) => handleQtyChange(item.id, e.target.value)}
                                                 className="w-16 bg-zinc-900 border border-dark-border rounded px-2 py-1 text-white text-center focus:outline-none focus:border-accent-primary"
@@ -145,14 +146,14 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
                                                     value={item.condition}
                                                     onChange={(val) => handleConditionChange(item.id, val)}
                                                     options={[
-                                                        { value: 'sellable', label: 'Sellable (Restock)' },
-                                                        { value: 'damaged', label: 'Damaged' }
+                                                        { value: 'sellable', label: t('return.sellable') },
+                                                        { value: 'damaged', label: t('return.damaged') }
                                                     ]}
                                                     className="w-32"
                                                 />
                                             )}
                                         </td>
-                                        <td className="p-3 text-right font-medium text-accent-primary">
+                                        <td className="p-3 text-end font-medium text-accent-primary">
                                             {item.returnQty > 0 ? formatCurrency(item.returnQty * item.unit_price) : '-'}
                                         </td>
                                     </tr>
@@ -163,24 +164,24 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
 
                     <div className="flex gap-4 items-end">
                         <div className="flex-1">
-                            <label className="text-sm text-zinc-400 mb-1 block">Reason for Return</label>
+                            <label className="text-sm text-zinc-400 mb-1 block">{t('return.reason')}</label>
                             <Input
                                 value={returnReason}
                                 onChange={(e) => setReturnReason(e.target.value)}
-                                placeholder="Defective, Wrong item, etc."
+                                placeholder={t('return.reasonPlaceholder')}
                             />
                         </div>
-                        <div className="text-right p-4 bg-dark-tertiary rounded-lg min-w-[200px]">
-                            <p className="text-sm text-zinc-400">Total Refund</p>
+                        <div className="text-end p-4 bg-dark-tertiary rounded-lg min-w-[200px]">
+                            <p className="text-sm text-zinc-400">{t('return.total')}</p>
                             <p className="text-2xl font-bold text-accent-primary">{formatCurrency(calculateTotalRefund())}</p>
                         </div>
                     </div>
                 </div>
             </ModalBody>
             <ModalFooter>
-                <Button variant="secondary" onClick={onClose}>Cancel</Button>
+                <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
                 <Button variant="danger" loading={loading} onClick={handleSubmit} disabled={calculateTotalRefund() <= 0}>
-                    Confirm Return
+                    {t('return.confirm')}
                 </Button>
             </ModalFooter>
         </Modal>

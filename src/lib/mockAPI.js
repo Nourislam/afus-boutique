@@ -2,32 +2,27 @@
 // This provides fake data so the UI can be tested without Electron
 
 const mockEmployees = [
-    { id: '1', name: 'Admin', email: 'admin@pos.com', role: 'admin', is_active: 1, pin: '1234', created_at: new Date().toISOString() },
-    { id: '2', name: 'John Doe', email: 'john@pos.com', role: 'cashier', is_active: 1, pin: '1111', created_at: new Date().toISOString() },
-    { id: '3', name: 'Jane Smith', email: 'jane@pos.com', role: 'manager', is_active: 1, pin: '2222', created_at: new Date().toISOString() },
+    { id: '1', name: 'Admin', email: '', role: 'admin', is_active: 1, pin: '1234', created_at: new Date().toISOString() },
+    { id: '2', name: 'Karim', email: '', role: 'cashier', is_active: 1, pin: '1111', created_at: new Date().toISOString() },
+    { id: '3', name: 'Amina', email: '', role: 'manager', is_active: 1, pin: '2222', created_at: new Date().toISOString() },
 ];
 
 const mockCategories = [
-    { id: 'cat1', name: 'Food', color: '#ef4444', icon: 'utensils' },
-    { id: 'cat2', name: 'Beverages', color: '#3b82f6', icon: 'coffee' },
-    { id: 'cat3', name: 'Snacks', color: '#f59e0b', icon: 'cookie' },
-    { id: 'cat4', name: 'Electronics', color: '#8b5cf6', icon: 'smartphone' },
+    { id: 'cat1', name: 'تيشيرتات', color: '#3b82f6', icon: null },
+    { id: 'cat2', name: 'سراويل', color: '#22c55e', icon: null },
+    { id: 'cat3', name: 'أحذية', color: '#a855f7', icon: null },
+    { id: 'cat4', name: 'إكسسوارات', color: '#f59e0b', icon: null },
 ];
 
 const mockProducts = [
-    { id: 'p1', name: 'Burger', sku: 'BRG001', barcode: '123456', price: 9.99, cost: 4.50, stock_quantity: 50, min_stock_level: 10, tax_rate: 10, is_active: 1, category_id: 'cat1', category_name: 'Food', category_color: '#ef4444' },
-    { id: 'p2', name: 'Pizza', sku: 'PIZ001', barcode: '123457', price: 14.99, cost: 6.00, stock_quantity: 30, min_stock_level: 5, tax_rate: 10, is_active: 1, category_id: 'cat1', category_name: 'Food', category_color: '#ef4444' },
-    { id: 'p3', name: 'Coffee', sku: 'COF001', barcode: '123458', price: 4.99, cost: 1.50, stock_quantity: 100, min_stock_level: 20, tax_rate: 5, is_active: 1, category_id: 'cat2', category_name: 'Beverages', category_color: '#3b82f6' },
-    { id: 'p4', name: 'Soda', sku: 'SOD001', barcode: '123459', price: 2.49, cost: 0.75, stock_quantity: 80, min_stock_level: 15, tax_rate: 5, is_active: 1, category_id: 'cat2', category_name: 'Beverages', category_color: '#3b82f6' },
-    { id: 'p5', name: 'Chips', sku: 'CHP001', barcode: '123460', price: 3.49, cost: 1.25, stock_quantity: 60, min_stock_level: 10, tax_rate: 5, is_active: 1, category_id: 'cat3', category_name: 'Snacks', category_color: '#f59e0b' },
-    { id: 'p6', name: 'Chocolate Bar', sku: 'CHO001', barcode: '123461', price: 2.99, cost: 1.00, stock_quantity: 45, min_stock_level: 10, tax_rate: 5, is_active: 1, category_id: 'cat3', category_name: 'Snacks', category_color: '#f59e0b' },
-    { id: 'p7', name: 'Sandwich', sku: 'SAN001', barcode: '123462', price: 7.99, cost: 3.50, stock_quantity: 25, min_stock_level: 5, tax_rate: 10, is_active: 1, category_id: 'cat1', category_name: 'Food', category_color: '#ef4444' },
-    { id: 'p8', name: 'Water Bottle', sku: 'WAT001', barcode: '123463', price: 1.99, cost: 0.50, stock_quantity: 120, min_stock_level: 25, tax_rate: 0, is_active: 1, category_id: 'cat2', category_name: 'Beverages', category_color: '#3b82f6' },
+    { id: 'p1', name: 'T-shirt basique', brand: 'Zara', sku: 'TSH-001', barcode: '', price: 1500, cost: 900, stock_quantity: 24, min_stock_level: 3, tax_rate: 0, is_active: 1, category_id: 'cat1', category_name: 'تيشيرتات', category_color: '#3b82f6' },
+    { id: 'p2', name: 'Jean slim', brand: "Levi's", sku: 'JEA-001', barcode: '', price: 4500, cost: 2800, stock_quantity: 12, min_stock_level: 2, tax_rate: 0, is_active: 1, category_id: 'cat2', category_name: 'سراويل', category_color: '#22c55e' },
+    { id: 'p3', name: 'Basket sport', brand: 'Nike', sku: 'SHO-001', barcode: '', price: 8500, cost: 6000, stock_quantity: 6, min_stock_level: 2, tax_rate: 0, is_active: 1, category_id: 'cat3', category_name: 'أحذية', category_color: '#a855f7' },
+    { id: 'p4', name: 'Ceinture cuir', brand: '', sku: 'ACC-001', barcode: '', price: 1200, cost: 600, stock_quantity: 15, min_stock_level: 3, tax_rate: 0, is_active: 1, category_id: 'cat4', category_name: 'إكسسوارات', category_color: '#f59e0b' },
 ];
 
 const mockCustomers = [
-    { id: 'c1', name: 'Walk-in Customer', email: '', phone: '', address: '', loyalty_points: 0, total_spent: 0, notes: '', created_at: new Date().toISOString() },
-    { id: 'c2', name: 'John Customer', email: 'john@email.com', phone: '555-1234', address: '123 Main St', loyalty_points: 150, total_spent: 1500, notes: 'Regular customer', created_at: new Date().toISOString() },
+    { id: 'c1', name: 'Amina B.', email: '', phone: '0555 12 34 56', address: 'Alger', loyalty_points: 150, total_spent: 15000, notes: '', created_at: new Date().toISOString() },
 ];
 
 let mockSales = [];
@@ -37,16 +32,18 @@ let mockBundles = [];
 let mockPromotions = [];
 
 const mockSettings = {
-    businessName: 'POSbyCirvex Demo',
-    businessAddress: '123 Demo Street',
-    businessPhone: '555-0000',
-    businessEmail: 'demo@pos.com',
-    taxRate: 10,
-    currency: 'USD',
-    currencySymbol: '$',
-    receiptHeader: 'Thank you for shopping!',
-    receiptFooter: 'Please come again!',
-};
+    businessName: 'Boutique démo',
+    businessAddress: 'Rue Didouche Mourad',
+    businessWilaya: '16 - Alger',
+    businessPhone: '0555 00 00 00',
+    businessEmail: '',
+    taxRate: 0,
+    currency: 'DZD',
+    currencySymbol: 'DA',
+    defaultLanguage: 'ar',
+    receiptHeader: '',
+    receiptFooter: '',
+}
 
 // Create mock API
 export const mockElectronAPI = {

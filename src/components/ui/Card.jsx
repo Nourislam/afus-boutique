@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 export function Card({ children, className = '', onClick }) {
     return (
         <div
@@ -35,7 +36,7 @@ export function StatCard({ label, value, icon: Icon, trend, trendValue, color = 
                     <span className={trend === 'up' ? 'text-green-400' : 'text-red-400'}>
                         {trend === 'up' ? '↑' : '↓'} {trendValue}
                     </span>
-                    <span className="text-zinc-500">vs last period</span>
+                    <span className="text-zinc-500">{t('dashboard.vsLast')}</span>
                 </div>
             )}
         </div>
