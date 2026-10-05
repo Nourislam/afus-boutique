@@ -21,8 +21,9 @@ import products from './products';
 import errors from './errors';
 import catalog from './catalog';
 import login from './login';
+import printing from './printing';
 
-const MODULES = { common, round2, misc, ecommerce, excel, barcode, modals, purchases, gift, promos, reports, credit, customers, inventory, dashboard, pos, settings, setup, products, errors, catalog, login };
+const MODULES = { common, round2, misc, ecommerce, excel, barcode, modals, purchases, gift, promos, reports, credit, customers, inventory, dashboard, pos, settings, setup, products, errors, catalog, login, printing };
 
 function merge(modules) {
     const all = {};

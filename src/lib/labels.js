@@ -27,7 +27,7 @@ export async function printArticleLabels(productId, quantity = '') {
     }
     const printed = items.reduce((sum, i) => sum + i.quantity, 0);
     const result = await api.labels.print(items, layout, printers.label || {});
-    return { printed: result?.success ? printed : 0, created: result?.created || 0, cancelled: !result?.success };
+    return { printed: result?.success ? (result.printed || printed) : 0, created: result?.created || 0, cancelled: !result?.success, issues: result?.issues || [] };
 }
 
 /** Toasts describing the result of printArticleLabels. */

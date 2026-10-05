@@ -86,6 +86,24 @@ function matchPrinter(installed, wanted) {
     return loose ? loose.name : null;
 }
 
+/**
+ * How a job is sent. A saved printer that is installed prints directly,
+ * without the system dialog: it was chosen once in Settings and is not asked
+ * again. The dialog is shown only when no printer is saved, or when the saved
+ * one is not installed any more (printerMissing: the caller warns the shop).
+ * @param {Array<{name: string, displayName?: string}>|null} installed null = list unavailable
+ * @param {string} saved printer name stored in Settings
+ * @returns {{ printerName: string, silent: boolean, printerMissing: boolean }}
+ */
+function choosePrinter(installed, saved) {
+    if (!saved) return { printerName: '', silent: false, printerMissing: false };
+    // The list can be empty when the print spooler is not answering: try the saved printer
+    if (!Array.isArray(installed) || !installed.length) return { printerName: saved, silent: true, printerMissing: false };
+    const name = matchPrinter(installed, saved);
+    if (name === null) return { printerName: '', silent: false, printerMissing: true };
+    return { printerName: name, silent: true, printerMissing: false };
+}
+
 /** Remove documents left behind by a crash (called at start-up). */
 function cleanTempFiles() {
     fs.promises.readdir(TEMP_DIR)
@@ -93,4 +111,4 @@ function cleanTempFiles() {
         .catch(() => { });
 }
 
-module.exports = { loadHtml, hiddenWindow, printContents, matchPrinter, cleanTempFiles, TEMP_DIR };
+module.exports = { loadHtml, hiddenWindow, printContents, matchPrinter, choosePrinter, cleanTempFiles, TEMP_DIR };

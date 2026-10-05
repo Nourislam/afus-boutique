@@ -258,7 +258,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         updateStatus: (data) => ipcRenderer.invoke('db:receipts:updateStatus', data),
         getBySale: (saleId) => ipcRenderer.invoke('db:receipts:getBySale', saleId),
         print: (sale, overrides) => ipcRenderer.invoke('receipts:print', sale, overrides),
-        getHtml: (sale) => ipcRenderer.invoke('receipts:getHtml', sale),
+        getHtml: (sale, overrides) => ipcRenderer.invoke('receipts:getHtml', sale, overrides),
         savePdf: (sale) => ipcRenderer.invoke('receipts:savePdf', sale),
     },
 
@@ -276,13 +276,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     printers: {
         list: () => ipcRenderer.invoke('printers:list'),
         getSettings: () => ipcRenderer.invoke('printers:getSettings'),
+        // The saved printer was not found: the job went through the print dialog
+        onMissing: (callback) => {
+            const subscription = (_event, value) => callback(value);
+            ipcRenderer.on('printers:missing', subscription);
+            return () => ipcRenderer.removeListener('printers:missing', subscription);
+        },
     },
 
     // QR labels (generated locally, printed through Electron)
     labels: {
         getTemplates: () => ipcRenderer.invoke('labels:getTemplates'),
         getSettings: () => ipcRenderer.invoke('labels:getSettings'),
-        preview: (items, layout) => ipcRenderer.invoke('labels:preview', { items, layout }),
+        preview: (items, layout, printer) => ipcRenderer.invoke('labels:preview', { items, layout, printer }),
+        codeOptions: (layout, printer) => ipcRenderer.invoke('labels:codeOptions', { layout, printer }),
         print: (items, layout, printer) => ipcRenderer.invoke('labels:print', { items, layout, printer }),
         savePdf: (items, layout) => ipcRenderer.invoke('labels:savePdf', { items, layout }),
         qrSvg: (text) => ipcRenderer.invoke('labels:qrSvg', text),

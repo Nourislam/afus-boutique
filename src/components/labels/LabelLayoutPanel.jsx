@@ -89,7 +89,8 @@ export function LabelPrintPanel({ setup, items, totalLabels, beforePrint, onPrin
     const print = () => run(async (ready) => {
         const result = await window.electronAPI.labels.print(ready, layout, printer);
         if (result?.created) toast.success(t('labels.codesCreated', { n: result.created }));
-        if (result?.success) toast.success(t('labels.sent', { n: totalLabels }));
+        if (result?.success) toast.success(t('labels.sent', { n: result.printed || totalLabels }));
+        if (result?.issues?.length) toast.warning(t('printing.issuesAfterPrint'), 8000);
         onPrinted?.(result);
     });
     const pdf = () => run(async (ready) => {
@@ -111,10 +112,10 @@ export function LabelPrintPanel({ setup, items, totalLabels, beforePrint, onPrin
                 </Button>
             </div>
 
-            <LabelPreview items={items.length ? items : [{ sample: true, quantity: 1 }]} layout={layout} />
+            <LabelPreview items={items.length ? items : [{ sample: true, quantity: 1 }]} layout={layout} printer={{ dpi: printer.dpi || 0 }} />
             <p className="text-xs text-zinc-500">
                 {items.length ? t('labels.previewReal') : t('labels.previewSample')}
-                {' '}{printer.printerName ? t('labels.printerIs', { name: printer.printerName }) : t('labels.printerAsk')}
+                {' '}{printer.printerName ? t('printing.printsOn', { name: printer.printerName }) : t('printing.opensDialog')}
             </p>
 
             <div className="flex gap-2">

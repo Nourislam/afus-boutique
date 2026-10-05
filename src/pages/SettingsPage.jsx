@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { translateError } from '../i18n/errors';
 import {
     Building, Receipt, Percent, Database, Save, Download, Upload, Mail, Lock, CheckCircle, Printer, ScanLine, Hash,
-    Languages, Tags, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor,
+    Languages, Tags, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor, Eye, FlaskConical,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, TextArea } from '../components/ui/Input';
@@ -14,7 +14,8 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
 import { ShopInfoForm } from '../components/settings/ShopInfoForm';
-import { ReceiptPrinterForm, LabelPrinterForm } from '../components/settings/PrinterSettingsForm';
+import { ReceiptPrinterForm, LabelPrinterForm, ReceiptPreview, PrintTestPanel, Panel } from '../components/settings/PrinterSettingsForm';
+import BRAND from '../config/brand';
 import { ScannerSettingsForm } from '../components/settings/ScannerSettingsForm';
 import { DEFAULT_SHOP, loadShopConfiguration, saveShopConfiguration } from '../lib/shopSettings';
 import { DEFAULT_FEATURES, resolveFeatures } from '../lib/features';
@@ -276,10 +277,14 @@ export default function SettingsPage() {
     }
 
     const money = (amount) => formatMoney(amount, { lang });
-    const sampleTotal = 4500;
-    const sampleTax = settings.taxType === 'exclusive'
-        ? Math.round(sampleTotal * (parseFloat(settings.taxRate) || 0)) / 100
-        : 0;
+    // Ticket fields being edited, shown in the preview and used by the test ticket before saving
+    const receiptShop = {
+        businessName: settings.businessName, businessAddress: settings.businessAddress, businessCity: settings.businessCity,
+        businessWilaya: settings.businessWilaya, businessPhone: settings.businessPhone, businessRc: settings.businessRc,
+        businessTaxId: settings.businessTaxId, businessNis: settings.businessNis, businessAi: settings.businessAi,
+        receiptHeader: settings.receiptHeader, receiptFooter: settings.receiptFooter, receiptShowBrand: settings.receiptShowBrand !== false,
+        taxName: settings.taxName, taxType: settings.taxType,
+    };
 
     return (
         <div className="page">
@@ -319,7 +324,7 @@ export default function SettingsPage() {
                 </nav>
 
                 <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6">
-                    <div className="max-w-5xl">
+                    <div className={['receipt', 'labelPrinter'].includes(activeTab) ? 'max-w-7xl' : 'max-w-5xl'}>
                         {activeTab === 'business' && (
                             <Card className="space-y-6">
                                 <SectionHeader icon={Building} color="bg-accent-primary/20 text-accent-primary" title={t('settings.shopTitle')} text={t('setup.shopText')} />
@@ -430,127 +435,106 @@ export default function SettingsPage() {
                         )}
 
                         {activeTab === 'receipt' && printers && (
-                            <div className="space-y-4">
-                            <Card className="space-y-6">
-                                <SectionHeader icon={Printer} color="bg-violet-500/20 text-violet-400" title={t('settings.tab.receipt')} text={t('settings.receiptPrinterText')} />
-                                <ReceiptPrinterForm printers={printers} onPrintersChange={setPrinters} />
-                            </Card>
-                            <Card className="space-y-6">
-                                <SectionHeader icon={Receipt} color="bg-green-500/20 text-green-400" title={t('settings.receiptTitle')} text={t('settings.receiptText')} />
-                                <div className="grid gap-4">
-                                    <TextArea
-                                        label={t('settings.receiptHeader')}
-                                        value={settings.receiptHeader}
-                                        onChange={(e) => handleChange('receiptHeader', e.target.value)}
-                                    />
-                                    <TextArea
-                                        label={t('settings.receiptFooter')}
-                                        value={settings.receiptFooter}
-                                        onChange={(e) => handleChange('receiptFooter', e.target.value)}
-                                        placeholder={t('settings.receiptFooterDefault')}
-                                    />
-                                    <div className="flex flex-wrap gap-2">
-                                        {['settings.footer.exchange7', 'settings.footer.noReturn', 'settings.footer.keepTicket', 'settings.footer.thanks'].map(key => (
-                                            <button key={key} type="button"
-                                                onClick={() => handleChange('receiptFooter', [settings.receiptFooter, t(key)].filter(Boolean).join('\n'))}
-                                                className="px-3 py-1.5 rounded-full border border-dark-border text-xs text-zinc-300 hover:border-indigo-500 hover:text-white">
-                                                + {t(key)}
-                                            </button>
-                                        ))}
-                                    </div>
+                            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] gap-4 items-start">
+                                <div className="space-y-4 min-w-0">
+                                    <Panel icon={Printer} title={t('printers.receipt')} hint={t('printing.receiptPrinterHint')}>
+                                        <ReceiptPrinterForm printers={printers} onPrintersChange={setPrinters} />
+                                    </Panel>
+                                    <Panel icon={Receipt} title={t('settings.receiptTitle')} hint={t('printing.ticketTextHint')}>
+                                        <div className="grid gap-4 sm:grid-cols-2">
+                                            <TextArea
+                                                label={t('settings.receiptHeader')}
+                                                value={settings.receiptHeader}
+                                                onChange={(e) => handleChange('receiptHeader', e.target.value)}
+                                                placeholder={t('printing.headerPlaceholder')}
+                                                className="min-h-[76px]"
+                                            />
+                                            <TextArea
+                                                label={t('settings.receiptFooter')}
+                                                value={settings.receiptFooter}
+                                                onChange={(e) => handleChange('receiptFooter', e.target.value)}
+                                                placeholder={t('settings.receiptFooterDefault')}
+                                                className="min-h-[76px]"
+                                            />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-zinc-500 mb-1.5">{t('printing.footerIdeas')}</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {['settings.footer.exchange7', 'settings.footer.noReturn', 'settings.footer.keepTicket', 'settings.footer.thanks'].map(key => (
+                                                    <button key={key} type="button"
+                                                        onClick={() => handleChange('receiptFooter', [settings.receiptFooter, t(key)].filter(Boolean).join('\n'))}
+                                                        className="px-3 py-1.5 rounded-full border border-dark-border text-xs text-zinc-300 hover:border-indigo-500 hover:text-white">
+                                                        + {t(key)}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <label className="flex items-start gap-3 cursor-pointer select-none rounded-lg border border-dark-border px-3 py-2.5 hover:border-zinc-600">
+                                            <input type="checkbox" checked={settings.receiptShowBrand !== false}
+                                                onChange={(e) => handleChange('receiptShowBrand', e.target.checked)}
+                                                className="mt-0.5 w-4 h-4 rounded bg-dark-tertiary border-dark-border flex-none" />
+                                            <span className="min-w-0">
+                                                <span className="text-sm">{t('printing.showBrand', { name: BRAND.productName })}</span>
+                                                <span className="block text-xs text-zinc-500 mt-0.5">{t('printing.showBrandHint')}</span>
+                                            </span>
+                                        </label>
+                                        <p className="form-hint">{t('printing.shopDataHint')}</p>
+                                    </Panel>
+
+                                    {/* Purchase order signature (printed on purchase orders, not on tickets) */}
+                                    <Panel icon={Upload} title={t('settings.signature.title')} hint={t('settings.signature.text')}>
+                                        <div className="flex flex-wrap items-center gap-4">
+                                            <div className="w-48 h-24 border-2 border-dashed border-dark-border rounded-lg flex items-center justify-center bg-dark-tertiary overflow-hidden">
+                                                {settings.poSignatureImage ? (
+                                                    <img src={`app://${settings.poSignatureImage}`} alt="" className="max-w-full max-h-full object-contain" />
+                                                ) : (
+                                                    <span className="text-zinc-500 text-sm">{t('settings.signature.none')}</span>
+                                                )}
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                <Button size="sm" variant="secondary" onClick={selectSignature}>
+                                                    <Upload className="w-4 h-4" /> {t('settings.signature.upload')}
+                                                </Button>
+                                                {settings.poSignatureImage && (
+                                                    <Button size="sm" variant="danger" onClick={removeSignature}>{t('common.delete')}</Button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <Input
+                                                label={t('settings.signature.name')}
+                                                value={settings.poSignatureName || ''}
+                                                onChange={(e) => handleChange('poSignatureName', e.target.value)}
+                                            />
+                                            <Input
+                                                label={t('settings.signature.role')}
+                                                value={settings.poSignatureTitle || ''}
+                                                onChange={(e) => handleChange('poSignatureTitle', e.target.value)}
+                                            />
+                                        </div>
+                                    </Panel>
                                 </div>
 
-                                {/* Receipt preview */}
-                                <div>
-                                    <h4 className="text-sm font-medium text-zinc-400 mb-3">{t('products.preview')}</h4>
-                                    <div className="bg-white text-black p-6 rounded-lg max-w-xs mx-auto text-center text-sm">
-                                        <h3 className="font-bold text-lg mb-1">{settings.businessName || t('shop.name').replace(' *', '')}</h3>
-                                        {settings.businessAddress && <p className="text-gray-600 text-xs">{settings.businessAddress}</p>}
-                                        {(settings.businessCity || settings.businessWilaya) && (
-                                            <p className="text-gray-600 text-xs">{[settings.businessCity, settings.businessWilaya].filter(Boolean).join(' — ')}</p>
-                                        )}
-                                        {settings.businessPhone && <p className="text-gray-600 text-xs ltr">{settings.businessPhone}</p>}
-                                        {settings.receiptHeader && (
-                                            <div className="border-t border-b border-gray-300 py-2 my-2">
-                                                <p className="italic text-gray-600">{settings.receiptHeader}</p>
-                                            </div>
-                                        )}
-                                        <div className="text-start my-4 space-y-1">
-                                            <div className="flex justify-between gap-2">
-                                                <span>T-shirt — {colorName('black')} / M × 1</span>
-                                                <span className="ltr">{money(1500)}</span>
-                                            </div>
-                                            <div className="flex justify-between gap-2">
-                                                <span>Jean — {colorName('navy')} / 40 × 1</span>
-                                                <span className="ltr">{money(3000)}</span>
-                                            </div>
-                                        </div>
-                                        <div className="border-t border-gray-300 pt-2 text-start">
-                                            {sampleTax > 0 && (
-                                                <div className="flex justify-between">
-                                                    <span>{settings.taxName} ({settings.taxRate}%)</span>
-                                                    <span className="ltr">{money(sampleTax)}</span>
-                                                </div>
-                                            )}
-                                            <div className="flex justify-between font-bold mt-1">
-                                                <span>{t('settings.preview.total')}</span>
-                                                <span className="ltr">{money(sampleTotal + sampleTax)}</span>
-                                            </div>
-                                        </div>
-                                        <div className="border-t border-gray-300 py-2 mt-4">
-                                            <p className="italic text-gray-600">{settings.receiptFooter || t('settings.receiptFooterDefault')}</p>
-                                        </div>
-                                    </div>
+                                {/* The real ticket and the test prints, kept in view */}
+                                <div className="min-w-0 space-y-4 xl:sticky xl:top-0">
+                                    <Panel icon={Eye} title={t('printing.ticketPreview')} hint={t('printing.ticketPreviewHint')}>
+                                        <ReceiptPreview shop={receiptShop} paperWidthMm={parseInt(printers.receipt?.paperWidthMm, 10) === 58 ? 58 : 80} />
+                                    </Panel>
+                                    <Panel icon={FlaskConical} title={t('printing.testsTitle')} hint={t('printing.testsHint')}>
+                                        <PrintTestPanel printers={printers} layout={labels} shop={receiptShop} only={['receipt']} />
+                                    </Panel>
                                 </div>
-
-                                {/* Purchase order signature */}
-                                <div className="pt-4 border-t border-dark-border">
-                                    <h4 className="font-medium text-zinc-300 mb-1">{t('settings.signature.title')}</h4>
-                                    <p className="text-sm text-zinc-500 mb-4">{t('settings.signature.text')}</p>
-                                    <div className="flex items-center gap-4 mb-4">
-                                        <div className="w-48 h-24 border-2 border-dashed border-dark-border rounded-lg flex items-center justify-center bg-dark-tertiary overflow-hidden">
-                                            {settings.poSignatureImage ? (
-                                                <img src={`app://${settings.poSignatureImage}`} alt="" className="max-w-full max-h-full object-contain" />
-                                            ) : (
-                                                <span className="text-zinc-500 text-sm">{t('settings.signature.none')}</span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col gap-2">
-                                            <Button size="sm" variant="secondary" onClick={selectSignature}>
-                                                <Upload className="w-4 h-4" /> {t('settings.signature.upload')}
-                                            </Button>
-                                            {settings.poSignatureImage && (
-                                                <Button size="sm" variant="danger" onClick={removeSignature}>{t('common.delete')}</Button>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <Input
-                                            label={t('settings.signature.name')}
-                                            value={settings.poSignatureName || ''}
-                                            onChange={(e) => handleChange('poSignatureName', e.target.value)}
-                                        />
-                                        <Input
-                                            label={t('settings.signature.role')}
-                                            value={settings.poSignatureTitle || ''}
-                                            onChange={(e) => handleChange('poSignatureTitle', e.target.value)}
-                                        />
-                                    </div>
-                                </div>
-                            </Card>
                             </div>
                         )}
 
                         {activeTab === 'labelPrinter' && printers && (
-                            <Card className="space-y-6">
-                                <SectionHeader icon={Tags} color="bg-violet-500/20 text-violet-400" title={t('settings.tab.labelPrinter')} text={t('settings.labelPrinterText')} />
-                                <LabelPrinterForm
-                                    printers={printers}
-                                    onPrintersChange={setPrinters}
-                                    labels={labels}
-                                    onLabelsChange={setLabels}
-                                />
-                            </Card>
+                            <LabelPrinterForm
+                                printers={printers}
+                                onPrintersChange={setPrinters}
+                                labels={labels}
+                                onLabelsChange={setLabels}
+                                shop={settings}
+                            />
                         )}
 
                         {activeTab === 'scanner' && scanner && (

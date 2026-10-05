@@ -1780,42 +1780,55 @@ function printerError(error, printerName) {
 }
 
 /**
- * The installed printer to send a job to: the saved name is checked against
- * the printers Windows/macOS report, so a printer that was removed gives a
- * clear message instead of a silent failure. Without a selected printer the
- * system print dialog is shown.
+ * The installed printer to send a job to (see printDocument.choosePrinter):
+ * the saved printer prints directly; without one the system print dialog is
+ * shown. A saved printer that was removed or renamed falls back to the dialog,
+ * and the interface is told so it can say "choose it again in Settings".
+ * kind: 'receipt' | 'label'
  */
-async function resolvePrinterOptions(options) {
-  const printer = { ...options };
-  if (!printer.printerName) {
-    printer.silent = false;
-    return printer;
+async function resolvePrinterOptions(options, kind) {
+  const saved = String(options.printerName || '');
+  let installed = null;
+  if (saved) {
+    try {
+      installed = mainWindow ? await mainWindow.webContents.getPrintersAsync() : null;
+    } catch {
+      installed = null;
+    }
   }
-  let installed = [];
-  try {
-    installed = mainWindow ? await mainWindow.webContents.getPrintersAsync() : [];
-  } catch {
-    return printer;
+  const choice = printDocument.choosePrinter(installed, saved);
+  if (choice.printerMissing && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('printers:missing', { kind, name: saved });
   }
-  // The list can be empty when the print spooler is not answering: try anyway
-  if (!installed.length) return printer;
-  const name = printDocument.matchPrinter(installed, printer.printerName);
-  if (name === null) throw catalog.codedError('PRINTER_NOT_FOUND', { name: printer.printerName });
-  printer.printerName = name;
-  return printer;
+  return { ...options, ...choice, savedName: saved };
+}
+
+// Ticket fields that Settings can show before they are saved (preview, test print)
+const RECEIPT_PREVIEW_KEYS = [
+  'businessName', 'businessAddress', 'businessCity', 'businessWilaya', 'businessPhone',
+  'businessRc', 'businessTaxId', 'businessNis', 'businessAi', 'receiptHeader', 'receiptFooter',
+  'receiptShowBrand', 'receiptPaperWidthMm', 'taxName', 'taxType',
+];
+function shopSettingsWith(overrides) {
+  const settings = getShopSettingsForPrint();
+  if (!overrides || typeof overrides !== 'object') return settings;
+  for (const key of RECEIPT_PREVIEW_KEYS) if (overrides[key] !== undefined) settings[key] = overrides[key];
+  return settings;
 }
 
 ipcMain.handle('receipts:print', async (_, sale, overrides = {}) => {
-  const printer = await resolvePrinterOptions({ ...getPrinterSettings().receipt, ...overrides });
+  // overrides: printer settings being edited, and { shop } for the ticket text
+  const { shop: shopOverrides, ...printerOverrides } = overrides || {};
+  const printer = await resolvePrinterOptions({ ...getPrinterSettings().receipt, ...printerOverrides }, 'receipt');
   try {
-    return await receiptService.print(enrichSaleForPrint(sale), getShopSettingsForPrint(), printer);
+    return await receiptService.print(enrichSaleForPrint(sale), shopSettingsWith(shopOverrides), printer);
   } catch (error) {
-    throw printerError(error, printer.printerName);
+    throw printerError(error, printer.savedName || printer.printerName);
   }
 });
 
-ipcMain.handle('receipts:getHtml', async (_, sale) => {
-  return receiptService.getHtml(enrichSaleForPrint(sale), getShopSettingsForPrint());
+ipcMain.handle('receipts:getHtml', async (_, sale, overrides) => {
+  return receiptService.getHtml(enrichSaleForPrint(sale), shopSettingsWith(overrides));
 });
 
 ipcMain.handle('receipts:savePdf', async (_, sale) => {
@@ -1896,7 +1909,8 @@ function buildLabelData(items, layout = {}) {
         productName: i18n.translate(lang, 'labels.sampleName'),
         variantLabel: articleScope ? '' : i18n.variantLabel({ color: 'black', color_code: 'black', size: 'M' }, lang),
         sku: articleScope ? barcode : 'TSH-BLK-M-001',
-        ...articleCode(layout, { qrValue: articleScope ? barcode : 'TSH-BLK-M-001', barcode, sku: 'TSH-BLK-M-001' }),
+        // Like a real piece: its barcode for EAN-13 (created when printing), its SKU otherwise
+        ...articleCode(layout, { qrValue: articleScope ? barcode : 'TSH-BLK-M-001', barcode: articleScope || layout.codeType === 'ean13' ? barcode : '', sku: 'TSH-BLK-M-001' }),
         price: 2500,
         ...money,
         quantity,
@@ -1919,7 +1933,8 @@ function buildLabelData(items, layout = {}) {
       const barcode = item.previewBarcode || variant.barcode;
       labels.push({
         productName: product ? product.name : '',
-        variantLabel: catalog.variantLabel(variant),
+        // Colour in the shop's language, like the ticket ("Noir" / "أسود")
+        variantLabel: i18n.variantLabel(variant, i18n.normalizeLanguage(settings.defaultLanguage)),
         sku: variant.sku,
         ...articleCode(layout, { qrValue: variant.qr_code || variant.sku, barcode, sku: variant.sku }),
         price: catalog.effectivePrice(product || {}, variant),
@@ -1963,13 +1978,40 @@ function buildLabelsDocument(items, layoutOverrides, { preview = false } = {}) {
   const ensure = (list) => catalog.ensureLabelCodes(dbApi, list, { scope: layout.codeScope, codeType: layout.codeType, dryRun: preview });
   const prepared = article.length ? (preview ? ensure(article) : dbApi.transaction(() => ensure(article))) : { items: [], created: 0 };
   const allItems = [...(items || []).filter(i => i.code || i.sample), ...prepared.items];
-  const html = labelService.buildLabelsHtml(buildLabelData(allItems, layout), layout, {
+  const labels = buildLabelData(allItems, layout);
+  const shopInfo = {
     name: shop.businessName,
     logo: shop.shopLogoDataUri,
     lang: i18n.normalizeLanguage(shop.defaultLanguage),
-    preview,
-  });
-  return { html, layout, created: prepared.created };
+  };
+  const html = labelService.buildLabelsHtml(labels, layout, { ...shopInfo, preview });
+  return { html, layout, created: prepared.created, labels, shopInfo };
+}
+
+// Codes of a document that a scanner may not read once printed (too small
+// for the label size and the printer resolution)
+function labelIssues(doc, dpi) {
+  return labelService.inspectLabels(doc.labels, doc.layout, doc.shopInfo, { dpi }).filter(entry => !entry.ok);
+}
+
+// For each code type, whether it can be read on this label (unsaved layout
+// from Settings), with the example label: options that cannot work are shown
+// as unavailable instead of printing codes nobody can scan
+function labelCodeOptions(layoutOverrides = {}, dpi) {
+  const shop = getShopSettingsForPrint();
+  const shopInfo = { name: shop.businessName, logo: shop.shopLogoDataUri, lang: i18n.normalizeLanguage(shop.defaultLanguage) };
+  const check = (overrides) => {
+    const layout = getLabelSettings({ ...layoutOverrides, ...overrides });
+    const entries = labelService.inspectLabels(buildLabelData([{ sample: true, quantity: 1 }], layout), layout, shopInfo, { dpi });
+    return entries;
+  };
+  const codeTypes = {};
+  for (const type of ['qr', 'ean13', 'code128', 'code39', 'datamatrix']) {
+    const code = check({ codeType: type, showBarcode: false }).find(e => e.kind === 'code');
+    codeTypes[type] = code ? { ok: code.ok, moduleMm: code.moduleMm, minMm: code.minMm } : { ok: false };
+  }
+  const bars = check({ codeType: 'qr', showBarcode: true }).find(e => e.kind === 'bars');
+  return { codeTypes, bars: bars ? { ok: bars.ok, moduleMm: bars.moduleMm, minMm: bars.minMm } : { ok: false, unavailable: true } };
 }
 
 ipcMain.handle('labels:getTemplates', () => ({
@@ -1979,18 +2021,33 @@ ipcMain.handle('labels:getTemplates', () => ({
 
 ipcMain.handle('labels:getSettings', () => getLabelSettings());
 
-ipcMain.handle('labels:preview', (_, { items, layout }) => {
+const labelDpi = (printer) => (printer && printer.dpi !== undefined ? printer.dpi : getPrinterSettings().label.dpi);
+
+ipcMain.handle('labels:preview', (_, { items, layout, printer }) => {
   const doc = buildLabelsDocument(items, layout, { preview: true });
-  return { html: doc.html, page: labelService.getPageSize(labelService.resolveLayout(doc.layout)) };
+  return {
+    html: doc.html,
+    page: labelService.getPageSize(labelService.resolveLayout(doc.layout)),
+    issues: labelIssues(doc, labelDpi(printer)),
+  };
 });
+
+ipcMain.handle('labels:codeOptions', (_, { layout, printer } = {}) => labelCodeOptions(layout, labelDpi(printer)));
 
 ipcMain.handle('labels:print', async (_, { items, layout, printer }) => {
   // Printer first: no codes are created for a job that cannot print
-  const options = await resolvePrinterOptions({ ...getPrinterSettings().label, ...(printer || {}) });
+  const options = await resolvePrinterOptions({ ...getPrinterSettings().label, ...(printer || {}) }, 'label');
   const doc = buildLabelsDocument(items, layout);
   const result = await labelService.printLabels(BrowserWindow, doc.html, doc.layout, options)
-    .catch((error) => { throw printerError(error, options.printerName); });
-  return { ...result, created: doc.created };
+    .catch((error) => { throw printerError(error, options.savedName || options.printerName); });
+  // What was really sent (checked on the printed labels, not on the preview)
+  return {
+    ...result,
+    created: doc.created,
+    printerMissing: options.printerMissing,
+    printed: doc.labels.reduce((sum, l) => sum + Math.min(Math.max(parseInt(l.quantity, 10) || 1, 1), 1000), 0),
+    issues: labelIssues(doc, options.dpi),
+  };
 });
 
 ipcMain.handle('labels:savePdf', async (_, { items, layout }) => {

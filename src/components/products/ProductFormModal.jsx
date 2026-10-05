@@ -238,6 +238,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 try {
                     const result = await printArticleLabels(data.id, labelQty);
                     labelResultMessages(result).forEach(msg => toast.success(msg));
+                    if (result.issues?.length) toast.warning(t('printing.issuesAfterPrint'), 8000);
                 } catch (printError) {
                     toast.error(t('barcode.printFailed', { error: translateErrorLines(printError).join(' ') }));
                 }

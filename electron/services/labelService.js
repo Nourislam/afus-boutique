@@ -89,7 +89,7 @@ const SYMBOLOGIES = {
 };
 
 /** Vector image of a code in any supported symbology (throws on invalid data). */
-function codeSvg(symbology, text, { includeText = true, eclevel = 'M' } = {}) {
+function codeSvg(symbology, text, { includeText = true, eclevel = 'M', height = 12 } = {}) {
     const spec = SYMBOLOGIES[symbology] || SYMBOLOGIES.code128;
     let value = String(text || '').trim();
     if (!value) throw new Error('Code is empty');
@@ -98,7 +98,7 @@ function codeSvg(symbology, text, { includeText = true, eclevel = 'M' } = {}) {
     if (spec.twoD) {
         if (spec.bcid === 'qrcode') options.eclevel = eclevel;
     } else {
-        options.height = 12;
+        options.height = height;
         if (includeText) {
             options.includetext = true;
             options.textxalign = 'center';
@@ -163,21 +163,62 @@ function qrSvg(text, eclevel = 'M') {
     return bwipjs.toSVG({ bcid: 'qrcode', text: String(text), eclevel, paddingwidth: 0, paddingheight: 0 });
 }
 
-// Code 128 accepts printable ASCII; SKUs always are, free barcodes may not be
-function code128Svg(text) {
-    const value = String(text || '');
-    if (!value || !/^[\x20-\x7e]+$/.test(value)) return '';
-    return bwipjs.toSVG({ bcid: 'code128', text: value, height: 6, includetext: false, paddingwidth: 0, paddingheight: 0 });
+// bwip-js draws one module of a 1D code as 2 SVG units (4 for a 2D code)
+// and a bar 1 mm high as 72/25.4*2 units
+const UNITS_PER_MODULE = 2;
+const UNITS_PER_MODULE_2D = 4;
+const UNITS_PER_MM = (72 / 25.4) * 2;
+
+function viewBox(svg) {
+    const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);
+    return m ? { width: parseFloat(m[1]), height: parseFloat(m[2]) } : { width: 1, height: 1 };
 }
 
-function renderLabel(label, layout, shop) {
+/**
+ * A 1D barcode drawn to fill a box of boxW × boxH mm: the bar height is set
+ * from the box, so the bars always use the full width (wider modules, easier
+ * to scan) instead of being shrunk by the height.
+ * @returns {{ svg: string, modules: number }}
+ */
+function fitBars(make, boxW, boxH) {
+    const probe = make(10);
+    const a = viewBox(probe);
+    const extra = a.height - 10 * UNITS_PER_MM;
+    const wantedH = (a.width * boxH) / Math.max(boxW, 0.1);
+    const bar = Math.max(2, (wantedH - extra) / UNITS_PER_MM);
+    const svg = make(Number(bar.toFixed(2)));
+    return { svg, modules: viewBox(svg).width / UNITS_PER_MODULE };
+}
+
+/**
+ * The narrowest element a scanner must read, in mm. A printer dot is
+ * 25.4 / dpi mm; a bar thinner than 1.5 dots (a QR square thinner than
+ * 2 dots) is printed unevenly and is often not read. Without a set dpi a
+ * roll label printer is taken as 203 dpi, a sheet printer as 300 dpi.
+ */
+function minModuleMm(twoD, dpi, mode) {
+    const value = parseInt(dpi, 10) > 0 ? parseInt(dpi, 10) : (mode === 'sheet' ? 300 : 203);
+    const dot = 25.4 / value;
+    return twoD ? Math.max(2 * dot, 0.2) : Math.max(1.5 * dot, 0.15);
+}
+
+function note(report, kind, symbology, moduleMm) {
+    if (report) report.push({ kind, symbology, moduleMm: Number(moduleMm.toFixed(3)) });
+}
+
+function renderLabel(label, layout, shop, report) {
     const pad = layout.paddingMm;
     const innerH = layout.heightMm - pad * 2;
     const innerW = layout.widthMm - pad * 2;
+    // Optional Code 128 of the SKU: a strip across the whole label under the
+    // QR and the text, so its bars are as wide as the label allows
+    const barsValue = layout.showBarcode ? String(label.sku || label.qrValue || '') : '';
+    const barsH = barsValue && /^[\x20-\x7e]+$/.test(barsValue) ? Math.max(3, innerH * 0.22) : 0;
+    const rowH = barsH ? innerH - barsH - 0.6 : innerH;
     // Square QR on the left; keep a quiet zone of ~1.2 mm around it and leave
     // at least 40% of the width for text.
     const quiet = 1.2;
-    const qrSize = Math.max(8, Math.min(innerH, innerW * 0.5) - quiet * 2);
+    const qrSize = Math.max(8, Math.min(rowH, innerW * 0.5) - quiet * 2);
     // Font size in mm, scaled to the label so text fits next to the QR
     const base = Math.max(1.5, Math.min(layout.heightMm / 10, layout.widthMm / 15, 3.2));
 
@@ -202,15 +243,23 @@ function renderLabel(label, layout, shop) {
         lines.push(`<div class="price" style="font-size:${fit(price, base * 1.25, 0.6)}mm">${escapeHtml(price)}</div>`);
     }
     if (layout.extraText) lines.push(`<div class="extra">${escapeHtml(layout.extraText)}</div>`);
-    if (layout.showBarcode) {
-        const bars = code128Svg(label.sku || label.qrValue);
-        if (bars) lines.push(`<div class="bars" style="height:${Math.max(3, innerH * 0.22).toFixed(2)}mm">${bars}</div>`);
+
+    const qr = qrSvg(label.qrValue, layout.qrErrorCorrection);
+    note(report, 'code', 'qrcode', qrSize / (viewBox(qr).width / UNITS_PER_MODULE_2D));
+    let bars = '';
+    if (barsH) {
+        const fitted = fitBars((height) => bwipjs.toSVG({ bcid: 'code128', text: barsValue, height, includetext: false, paddingwidth: 0, paddingheight: 0 }), innerW, barsH);
+        note(report, 'bars', 'code128', innerW / fitted.modules);
+        bars = `<div class="bars" style="height:${barsH.toFixed(2)}mm">${fitted.svg}</div>`;
     }
 
     return `
-        <div class="label" style="width:${layout.widthMm}mm;height:${layout.heightMm}mm;padding:${pad}mm;font-size:${base.toFixed(2)}mm">
-            <div class="qr" style="width:${qrSize.toFixed(2)}mm;height:${qrSize.toFixed(2)}mm;margin:${quiet}mm">${qrSvg(label.qrValue, layout.qrErrorCorrection)}</div>
-            <div class="text">${lines.join('')}</div>
+        <div class="label${bars ? ' with-bars' : ''}" style="width:${layout.widthMm}mm;height:${layout.heightMm}mm;padding:${pad}mm;font-size:${base.toFixed(2)}mm">
+            <div class="row" style="height:${rowH.toFixed(2)}mm">
+                <div class="qr" style="width:${qrSize.toFixed(2)}mm;height:${qrSize.toFixed(2)}mm;margin:${quiet}mm">${qr}</div>
+                <div class="text">${lines.join('')}</div>
+            </div>
+            ${bars}
         </div>`;
 }
 
@@ -219,14 +268,17 @@ function renderLabel(label, layout, shop) {
  * printed with a barcode instead of a QR): shop name and title on top, the
  * code in the middle, the price below.
  */
-function renderCodeLabel(label, layout, shop) {
+function renderCodeLabel(label, layout, shop, report) {
     const round = layout.shape === 'round';
     // Inside a round sticker only the inscribed square is safe
     const inset = round ? Math.min(layout.widthMm, layout.heightMm) * 0.146 : 0;
     const pad = layout.paddingMm + inset;
     const innerW = layout.widthMm - pad * 2;
     const innerH = layout.heightMm - pad * 2;
-    const base = Math.max(1.4, Math.min(layout.heightMm / 11, layout.widthMm / 14, 3));
+    // In a circle only the inner square is used: text is sized on it, so the code keeps room
+    const base = round
+        ? Math.max(1.2, Math.min(innerH / 9, innerW / 12, 3))
+        : Math.max(1.4, Math.min(layout.heightMm / 11, layout.widthMm / 14, 3));
     const spec = SYMBOLOGIES[label.symbology] || SYMBOLOGIES.code128;
 
     const top = [];
@@ -246,14 +298,24 @@ function renderCodeLabel(label, layout, shop) {
 
     const textLines = top.length + bottom.length;
     const codeH = Math.max(5, innerH - textLines * base * 1.35);
-    const codeBox = spec.twoD
-        ? `width:${Math.min(codeH, innerW).toFixed(2)}mm;height:${Math.min(codeH, innerW).toFixed(2)}mm`
-        : `width:${innerW.toFixed(2)}mm;height:${codeH.toFixed(2)}mm`;
+    let codeBox;
+    let code;
+    if (spec.twoD) {
+        const side = Math.min(codeH, innerW);
+        codeBox = `width:${side.toFixed(2)}mm;height:${side.toFixed(2)}mm`;
+        code = codeSvg(label.symbology, label.qrValue, { eclevel: layout.qrErrorCorrection });
+        note(report, 'code', spec.bcid, side / (viewBox(code).width / UNITS_PER_MODULE_2D));
+    } else {
+        codeBox = `width:${innerW.toFixed(2)}mm;height:${codeH.toFixed(2)}mm`;
+        const fitted = fitBars((height) => codeSvg(label.symbology, label.qrValue, { includeText: layout.showSku !== false, height }), innerW, codeH);
+        code = fitted.svg;
+        note(report, 'code', spec.bcid, innerW / fitted.modules);
+    }
 
     return `
         <div class="label code-label ${layout.shape || 'rect'}" style="width:${layout.widthMm}mm;height:${layout.heightMm}mm;padding:${pad.toFixed(2)}mm;font-size:${base.toFixed(2)}mm">
             ${top.join('')}
-            <div class="code" style="${codeBox}">${codeSvg(label.symbology, label.qrValue, { eclevel: layout.qrErrorCorrection, includeText: layout.showSku !== false })}</div>
+            <div class="code" style="${codeBox}">${code}</div>
             ${bottom.join('')}
         </div>`;
 }
@@ -263,8 +325,36 @@ function renderCodeLabel(label, layout, shop) {
 const LOGO_TAG = '<img class="logo" alt="">';
 const cssUrl = (uri) => `url("${String(uri).replace(/["\\\n\r]/g, '')}")`;
 
-function renderAny(label, layout, shop) {
-    return label.symbology && label.symbology !== 'qr-side' ? renderCodeLabel(label, layout, shop) : renderLabel(label, layout, shop);
+function renderAny(label, layout, shop, report) {
+    if (label.symbology && label.symbology !== 'qr-side') return renderCodeLabel(label, layout, shop, report);
+    // A QR beside the text does not fit in a circle: centred, like the other codes
+    if (layout.shape === 'round') return renderCodeLabel({ ...label, symbology: 'qrcode' }, layout, shop, report);
+    return renderLabel(label, layout, shop, report);
+}
+
+/**
+ * Whether the codes of these labels can be scanned once printed, for the
+ * label size and the printer resolution. One entry per label.
+ * @returns {Array<{ index, sku, kind: 'code'|'bars', symbology, moduleMm, minMm, ok }>}
+ */
+function inspectLabels(labels, settings = {}, shop = {}, { dpi = 0 } = {}) {
+    const layout = resolveLayout(settings);
+    const out = [];
+    (labels || []).forEach((label, index) => {
+        const report = [];
+        try {
+            renderAny(label, layout, shop, report);
+        } catch (error) {
+            out.push({ index, sku: label.sku, kind: 'code', symbology: label.symbology || 'qrcode', error: error.message, ok: false });
+            return;
+        }
+        for (const entry of report) {
+            const twoD = entry.symbology === 'qrcode' || entry.symbology === 'datamatrix';
+            const minMm = minModuleMm(twoD, dpi, layout.mode);
+            out.push({ index, sku: label.sku, ...entry, minMm: Number(minMm.toFixed(3)), ok: entry.moduleMm >= minMm - 1e-6 });
+        }
+    });
+    return out;
 }
 
 /**
@@ -284,14 +374,20 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
     }
     if (expanded.length === 0) throw new Error('No labels to print');
 
+    // Copies of one label share the same drawing
+    const drawn = new Map();
+    const render = (l) => {
+        if (!drawn.has(l)) drawn.set(l, renderAny(l, layout, shop));
+        return drawn.get(l);
+    };
     let body;
     if (layout.mode === 'roll') {
-        body = expanded.map(l => `<div class="page roll">${renderAny(l, layout, shop)}</div>`).join('');
+        body = expanded.map(l => `<div class="page roll">${render(l)}</div>`).join('');
     } else {
         const perPage = layout.columns * layout.rows;
         const pages = [];
         for (let i = 0; i < expanded.length; i += perPage) {
-            const cells = expanded.slice(i, i + perPage).map(l => renderAny(l, layout, shop)).join('');
+            const cells = expanded.slice(i, i + perPage).map(render).join('');
             pages.push(`
                 <div class="page sheet" style="padding:${layout.pageMarginTopMm}mm 0 0 ${layout.pageMarginLeftMm}mm;
                     grid-template-columns:repeat(${layout.columns}, ${layout.widthMm}mm);
@@ -311,6 +407,9 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
     .page:last-child { page-break-after: auto; break-after: auto; }
     .page.sheet { display: grid; align-content: start; }
     .label { display: flex; align-items: center; overflow: hidden; }
+    .label.with-bars { flex-direction: column; align-items: stretch; justify-content: center; gap: 0.6mm; }
+    .row { display: flex; align-items: center; min-height: 0; }
+    .label > .row { width: 100%; }
     .qr { flex: none; }
     .qr svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
     .text { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.25em; line-height: 1.1; }
@@ -321,7 +420,8 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
     .name { font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
     .variant { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sku, .price { direction: ltr; unicode-bidi: isolate; }
-    .bars svg { display: block; width: 100%; height: 100%; }
+    .bars { flex: none; }
+    .bars svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
     .sku { font-family: "Courier New", monospace; font-size: 0.8em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .price { font-weight: 800; font-size: 1.25em; white-space: nowrap; overflow: hidden; }
     .extra { font-size: 0.7em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -402,6 +502,8 @@ module.exports = {
     buildLabelsHtml,
     printLabels,
     labelsToPdf,
+    inspectLabels,
+    minModuleMm,
     qrSvg,
     codeSvg,
     SYMBOLOGIES,

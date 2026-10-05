@@ -4,6 +4,7 @@ const os = require('os');
 const { BrowserWindow } = require('electron');
 const { translator, formatMoney, formatDate, variantLabel, paymentLabel } = require('../i18n');
 const { loadHtml, hiddenWindow, printContents } = require('./printDocument');
+const { BRAND } = require('../brand');
 
 class ReceiptService {
     constructor() {
@@ -825,6 +826,10 @@ class ReceiptService {
     .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
     .grand { font-size: 1.35em; font-weight: bold; border-top: 1px solid #000; margin-top: 1mm; padding-top: 1mm; }
     .footer { text-align: center; margin-top: 2mm; white-space: pre-line; }
+    .brand { text-align: center; margin-top: 2mm; font-size: 0.8em; color: #444; letter-spacing: 0.03em; }
+    /* Long names and words without spaces wrap inside the roll instead of being cut */
+    .row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+    .shop-name, .item-name, .item-variant, .muted, .footer, .header { overflow-wrap: anywhere; }
 </style></head>
 <body>
     <div class="center">
@@ -834,7 +839,7 @@ class ReceiptService {
         ${shop.city ? `<div class="muted">${esc(shop.city)}</div>` : ''}
         ${shop.phone ? `<div class="muted ltr">${esc(shop.phone)}</div>` : ''}
         ${legal.length ? `<div class="muted small">${legal.join(' · ')}</div>` : ''}
-        ${shop.header ? `<div style="margin-top:1.5mm">${esc(shop.header)}</div>` : ''}
+        ${shop.header ? `<div class="header" style="margin-top:1.5mm;white-space:pre-line">${esc(shop.header)}</div>` : ''}
     </div>
     <div class="sep"></div>
     <div class="row"><span>${T('receipt.number')}</span><span class="ltr">${esc(data.receipt_number || (data.id || '').slice(0, 8))}</span></div>
@@ -856,6 +861,7 @@ class ReceiptService {
     ${change > 0.004 ? `<div class="row" style="font-weight:bold"><span>${T('receipt.change')}</span><span class="ltr">${money(change)}</span></div>` : ''}
     <div class="sep"></div>
     <div class="footer">${esc(shop.footer)}</div>
+    ${storeSettings.receiptShowBrand !== false ? `<div class="brand">${esc(BRAND.productName)}</div>` : ''}
 </body></html>`;
     }
 

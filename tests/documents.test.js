@@ -89,6 +89,32 @@ describe('labels', () => {
         expect(withBars).toContain('dir="rtl"');
         expect((withBars.match(/<svg/g) || []).length).toBe(2);
     });
+
+    it('centres the QR on round stickers instead of putting it beside the text', () => {
+        const html = labelService.buildLabelsHtml([label], { template: 'round-40', codeType: 'qr' }, { name: 'Boutique', lang: 'fr' });
+        expect(html).toContain('code-label round');
+    });
+
+    it('says which codes are too small to be scanned on the label size', () => {
+        const check = (template, symbology, dpi = 203) => labelService.inspectLabels([{ ...label, symbology, ...(symbology === 'ean13' ? { qrValue: '2001234567893' } : {}) }], { template }, { name: 'Boutique' }, { dpi })[0];
+        expect(check('roll-30x20', 'code39').ok).toBe(false);
+        expect(check('roll-50x30', 'code39').ok).toBe(true);
+        expect(check('roll-30x20', 'ean13').ok).toBe(true);
+        expect(check('round-30', undefined).ok).toBe(true);
+        // A finer printer prints thinner bars cleanly
+        expect(check('roll-40x30', 'code39', 203).ok).toBe(false);
+        expect(check('roll-40x30', 'code39', 600).ok).toBe(true);
+        const bars = labelService.inspectLabels([label], { template: 'roll-30x20', showBarcode: true }, {}, { dpi: 203 }).find(e => e.kind === 'bars');
+        expect(bars.ok).toBe(false);
+        expect(labelService.minModuleMm(false, 203)).toBeCloseTo(0.1876, 3);
+    });
+});
+
+describe('ticket extras', () => {
+    it('prints the small Afus Boutique line unless it is turned off', () => {
+        expect(receiptService.generateThermalReceiptHtml(SALE, { ...SHOP })).toContain('class="brand">Afus Boutique<');
+        expect(receiptService.generateThermalReceiptHtml(SALE, { ...SHOP, receiptShowBrand: false })).not.toContain('class="brand"');
+    });
 });
 
 describe('money formatting', () => {

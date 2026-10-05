@@ -73,3 +73,21 @@ describe('loadHtml', () => {
         expect(fs.existsSync(loaded.file)).toBe(false);
     });
 });
+
+describe('choosePrinter', () => {
+    const { choosePrinter } = require('../electron/services/printDocument');
+    const installed = [{ name: 'EPSON_TM_T20', displayName: 'EPSON TM-T20' }, { name: 'XP-365B' }];
+    it('prints directly on the saved printer, without the dialog', () => {
+        expect(choosePrinter(installed, 'EPSON TM-T20')).toEqual({ printerName: 'EPSON_TM_T20', silent: true, printerMissing: false });
+    });
+    it('shows the dialog when no printer is saved', () => {
+        expect(choosePrinter(installed, '')).toEqual({ printerName: '', silent: false, printerMissing: false });
+    });
+    it('falls back to the dialog and reports a saved printer that is gone', () => {
+        expect(choosePrinter(installed, 'Zebra GK420')).toEqual({ printerName: '', silent: false, printerMissing: true });
+    });
+    it('still tries the saved printer when the system list is unavailable', () => {
+        expect(choosePrinter([], 'XP-365B')).toEqual({ printerName: 'XP-365B', silent: true, printerMissing: false });
+        expect(choosePrinter(null, 'XP-365B')).toEqual({ printerName: 'XP-365B', silent: true, printerMissing: false });
+    });
+});

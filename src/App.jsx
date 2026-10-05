@@ -24,8 +24,8 @@ import { TitleBar } from './components/layout/TitleBar';
 import { useAuthStore, PERMISSIONS } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
-import { Toaster } from './components/ui/Toast';
-import { useT } from './i18n';
+import { Toaster, toast } from './components/ui/Toast';
+import { useT, t as translate } from './i18n';
 
 function App() {
     const { isAuthenticated, checkAuth, startSession } = useAuthStore();
@@ -62,7 +62,15 @@ function App() {
         init();
         // Colours and sizes edited in the Catalogue apply everywhere at once
         window.addEventListener('pos:settings-changed', loadCatalogCustomization);
-        return () => window.removeEventListener('pos:settings-changed', loadCatalogCustomization);
+        // A saved printer that was removed or renamed: the job was sent through the
+        // print dialog, and the shop is told where to choose the printer again
+        const offMissing = window.electronAPI.printers?.onMissing?.(({ kind, name }) => {
+            toast.warning(translate(kind === 'label' ? 'printing.missingLabel' : 'printing.missingReceipt', { name }), 8000);
+        });
+        return () => {
+            window.removeEventListener('pos:settings-changed', loadCatalogCustomization);
+            offMissing?.();
+        };
     }, []);
 
     const handleSetupComplete = async (adminEmployee) => {
