@@ -1325,6 +1325,65 @@ ipcMain.handle('db:reports:clothingDashboard', (_, range) => {
   return dashboard.getClothingDashboard(dbApi, range || {});
 });
 
+// Home screen: what needs doing now, read-only. The screen passes its own day
+// limits (same form as sales.created_at) and local calendar dates.
+async function printerStatus() {
+  const { receipt, label } = getPrinterSettings();
+  if (!receipt.printerName && !label.printerName) return { receipt: 'none', label: 'none' };
+  let names = null;
+  try {
+    names = mainWindow ? (await mainWindow.webContents.getPrintersAsync()).map(p => p.name) : null;
+  } catch { names = null; }
+  const state = (name) => (!name ? 'none' : !names ? 'unknown' : names.includes(name) ? 'ok' : 'missing');
+  return { receipt: state(receipt.printerName), label: state(label.printerName) };
+}
+
+ipcMain.handle('dashboard:home', async (_, { today, tomorrow, since30, todayRange }) => {
+  const outOfStock = dashboard.outOfStockSelling(dbApi, since30);
+  const backups = backupService.listBackups(backupFolder());
+  return {
+    outOfStock: { count: outOfStock.length, items: outOfStock.slice(0, 3) },
+    lowCount: dashboard.runningLow(dbApi).length,
+    missingCost: dashboard.missingCost(dbApi),
+    soldWithoutCost: todayRange ? dashboard.soldWithoutCost(dbApi, todayRange) : 0,
+    overdueCredit: dashboard.overdueCredit(dbApi, today),
+    offersEnding: dashboard.offersEnding(dbApi, today, tomorrow),
+    openShifts: shiftService.getOpenShifts(),
+    lastBackupAt: backups.length ? backups[0].createdAt : null,
+    printers: await printerStatus(),
+    firstSteps: dashboard.firstSteps(dbApi),
+  };
+});
+ipcMain.handle('dashboard:selling', (_, { range, since30 }) => ({
+  best: dashboard.bestSellers(dbApi, range),
+  slow: dashboard.slowMovers(dbApi, since30),
+}));
+ipcMain.handle('dashboard:series', (_, { range, bucket, offsetMinutes }) => dashboard.salesSeries(dbApi, range, bucket, offsetMinutes));
+ipcMain.handle('dashboard:stock', (_, { since30 }) => ({
+  outOfStock: dashboard.outOfStockSelling(dbApi, since30).slice(0, 10),
+  low: dashboard.runningLow(dbApi).slice(0, 10),
+  missingSizes: dashboard.missingSizes(dbApi, since30).slice(0, 10),
+  slow: dashboard.slowMovers(dbApi, since30, 10),
+  value: dashboard.stockValue(dbApi),
+}));
+ipcMain.handle('dashboard:cash', (_, { range, closuresSince }) => {
+  const openShifts = shiftService.getOpenShifts().map(shift => {
+    let stats = null;
+    try { stats = shiftService.getShiftStats(shift.id); } catch { stats = null; }
+    return { ...shift, stats };
+  });
+  const closures = shiftService.getShiftHistory(closuresSince, range.endDate)
+    .filter(s => s.end_time)
+    .slice(0, 5)
+    .map(s => ({ id: s.id, employee_name: s.employee_name, start_time: s.start_time, end_time: s.end_time, closing_cash: s.closing_cash, expected_cash: s.stats?.expected_cash ?? null, cash_difference: s.stats?.cash_difference ?? null }));
+  return {
+    openShifts,
+    credit: dashboard.creditMoves(dbApi, range),
+    employees: shiftService.getEmployeeActivity(range.startDate, range.endDate).filter(e => e.sales_count > 0 || e.minutes_worked > 0 || e.open_shift_start),
+    closures,
+  };
+});
+
 ipcMain.handle('db:reports:topProducts', (_, { startDate, endDate, limit = 10, employeeId }) => {
   let query = `
     SELECT 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Percent, Plus, Search, Edit2, Trash2, Calendar, Tag, Banknote, LayoutGrid, List, Shirt, Store, Gift, TrendingUp, Pause, Play, Package, Sun, X } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
@@ -76,6 +77,20 @@ export default function PromotionsPage() {
     };
 
     useEffect(() => { load(); }, []);
+
+    // Opened from the home screen ("make a discount" on an article that does not sell):
+    // the form opens on "by article" with that article chosen
+    const [searchParams, setSearchParams] = useSearchParams();
+    useEffect(() => {
+        const productId = searchParams.get('discountProduct');
+        if (!productId) return;
+        setEditing(null);
+        setProductQuery('');
+        setForm({ ...EMPTY_FORM, ...promotionPreset('product'), applies_to_ids: [productId], name: t('promo.preset.productName'), preset: 'product' });
+        const next = new URLSearchParams(searchParams);
+        next.delete('discountProduct');
+        setSearchParams(next, { replace: true });
+    }, [searchParams, setSearchParams]);
 
     const changeView = (next) => {
         setView(next);

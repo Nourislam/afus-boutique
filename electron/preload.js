@@ -40,6 +40,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // Products
+    // Home screen (read-only)
+    dashboard: {
+        home: (args) => ipcRenderer.invoke('dashboard:home', args),
+        selling: (args) => ipcRenderer.invoke('dashboard:selling', args),
+        series: (args) => ipcRenderer.invoke('dashboard:series', args),
+        stock: (args) => ipcRenderer.invoke('dashboard:stock', args),
+        cash: (args) => ipcRenderer.invoke('dashboard:cash', args),
+    },
     products: {
         getAll: () => ipcRenderer.invoke('db:products:getAll'),
         getById: (id) => ipcRenderer.invoke('db:products:getById', id),
