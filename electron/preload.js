@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Customers
     customers: {
+        overview: () => ipcRenderer.invoke('db:customers:overview'),
+        history: (customerId) => ipcRenderer.invoke('db:customers:history', customerId),
         getAll: () => ipcRenderer.invoke('db:customers:getAll'),
         getById: (id) => ipcRenderer.invoke('db:customers:getById', id),
         search: (query) => ipcRenderer.invoke('db:customers:search', query),
@@ -192,6 +194,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Suppliers
     suppliers: {
+        overview: () => ipcRenderer.invoke('db:suppliers:overview'),
         getAll: () => ipcRenderer.invoke('db:suppliers:getAll'),
         getById: (id) => ipcRenderer.invoke('db:suppliers:getById', id),
         getHistory: (id) => ipcRenderer.invoke('db:suppliers:getHistory', id),

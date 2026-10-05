@@ -105,3 +105,35 @@ export function bestPromotion(promotions, items, { coupon = '', now = Date.now()
     }
     return best;
 }
+
+/** "YYYY-MM-DD" of a local date, n days later. */
+export function addDays(date, n) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + n);
+    const pad = (v) => String(v).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Quick starts in the promotion form. Each only fills the form: the shop
+// still types the percentage and can change everything before saving.
+export const PROMOTION_PRESETS = ['season', 'category', 'product'];
+
+/**
+ * Form fields for a quick start:
+ * - season: soldes on the whole shop, a percentage, from today for 30 days
+ * - category: a percentage on some categories, from today
+ * - product: a percentage on some articles, from today
+ */
+export function promotionPreset(kind, today = new Date()) {
+    const start = addDays(today, 0);
+    switch (kind) {
+        case 'season':
+            return { type: 'percentage', applies_to: 'all', applies_to_ids: [], start_date: start, end_date: addDays(today, 30), auto_apply: true, is_active: true };
+        case 'category':
+            return { type: 'percentage', applies_to: 'category', applies_to_ids: [], start_date: start, end_date: '', auto_apply: true, is_active: true };
+        case 'product':
+            return { type: 'percentage', applies_to: 'product', applies_to_ids: [], start_date: start, end_date: '', auto_apply: true, is_active: true };
+        default:
+            return {};
+    }
+}

@@ -119,3 +119,26 @@ describe('TVA turned off in Settings', () => {
         expect(cart().getTotal()).toBe(4000);
     });
 });
+
+describe('promotion quick starts', () => {
+    it('fills a seasonal sale on the whole shop for 30 days, and category/article scopes from today', async () => {
+        const { promotionPreset, addDays } = await import('../src/lib/promotions');
+        const today = new Date(2026, 5, 15);
+        expect(addDays(today, 30)).toBe('2026-07-15');
+        expect(promotionPreset('season', today)).toMatchObject({ type: 'percentage', applies_to: 'all', start_date: '2026-06-15', end_date: '2026-07-15', auto_apply: true });
+        expect(promotionPreset('category', today)).toMatchObject({ applies_to: 'category', applies_to_ids: [], start_date: '2026-06-15', end_date: '' });
+        expect(promotionPreset('product', today)).toMatchObject({ applies_to: 'product', applies_to_ids: [] });
+        expect(promotionPreset('unknown')).toEqual({});
+    });
+
+    it('a discount on chosen articles only lowers those lines, inside its dates', () => {
+        const promo = { is_active: 1, auto_apply: 1, type: 'percentage', value: 20, applies_to: 'product', applies_to_ids: '["p1"]', start_date: '2026-06-15', end_date: '2026-07-15' };
+        const items = [
+            { product_id: 'p1', category_id: 'c1', unit_price: 1000, quantity: 2 },
+            { product_id: 'p2', category_id: 'c1', unit_price: 5000, quantity: 1 },
+        ];
+        expect(bestPromotion([promo], items, { now: new Date(2026, 5, 20).getTime() })?.amount).toBe(400);
+        expect(bestPromotion([promo], items, { now: new Date(2026, 6, 15, 23).getTime() })?.amount).toBe(400);
+        expect(bestPromotion([promo], items, { now: new Date(2026, 6, 16, 1).getTime() })).toBeNull();
+    });
+});

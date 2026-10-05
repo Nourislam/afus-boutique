@@ -25,8 +25,9 @@ import printing from './printing';
 import layout from './layout';
 import settingsHub from './settingsHub';
 import catalogHub from './catalogHub';
+import partners from './partners';
 
-const MODULES = { common, round2, misc, ecommerce, excel, barcode, modals, purchases, gift, promos, reports, credit, customers, inventory, dashboard, pos, settings, setup, products, errors, catalog, login, printing, layout, settingsHub, catalogHub };
+const MODULES = { common, round2, misc, ecommerce, excel, barcode, modals, purchases, gift, promos, reports, credit, customers, inventory, dashboard, pos, settings, setup, products, errors, catalog, login, printing, layout, settingsHub, catalogHub, partners };
 
 function merge(modules) {
     const all = {};

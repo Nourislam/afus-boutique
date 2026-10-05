@@ -3,7 +3,8 @@ import { translateError } from '../i18n/errors';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Users, Star, ShoppingBag, Phone, Mail } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, Phone, Mail, MapPin, Wallet, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Input, SearchInput, TextArea } from '../components/ui/Input';
@@ -15,27 +16,41 @@ import { ExcelImport } from '../components/ui/ExcelImport';
 import { FileSpreadsheet } from 'lucide-react';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore, PERMISSIONS } from '../stores/authStore';
+import { paymentLabel } from '../lib/payments';
+
+// Phone numbers are compared by their digits only ("0555 12 34 56" = "0555123456")
+const digits = (v) => String(v || '').replace(/\D/g, '');
+
+/** "2 days ago"-style date, short and readable, or a dash. */
+function when(value) {
+    return value ? formatLocalDate(value, 'date') : '—';
+}
+
+function OwedBadge({ amount }) {
+    if (!(amount > 0.004)) return <span className="text-sm text-zinc-500">{t('partners.nothingOwed')}</span>;
+    return <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-red-500/15 text-red-300 font-semibold tabular whitespace-nowrap"><bdi>{formatMoney(amount)}</bdi></span>;
+}
 
 export default function CustomersPage() {
+    const navigate = useNavigate();
     const [customers, setCustomers] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [onlyOwing, setOnlyOwing] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
-    const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
+    const [history, setHistory] = useState(null);
     const [loading, setLoading] = useState(true);
-    const { loadSettings } = useSettingsStore();
+    const creditOn = useSettingsStore(state => state.settings.features?.credit !== false);
+    const canSeeCredit = useAuthStore(state => state.hasPermission(PERMISSIONS.CUSTOMERS_VIEW));
+    const showCredit = creditOn && canSeeCredit;
 
-    useEffect(() => {
-        loadData();
-        loadSettings();
-    }, []);
+    useEffect(() => { loadData(); }, []);
 
     const loadData = async () => {
         try {
-            const data = await window.electronAPI.customers.getAll();
-            setCustomers(data);
+            setCustomers(await window.electronAPI.customers.overview());
         } catch {
             toast.error(t('customers.loadFailed'));
         } finally {
@@ -43,19 +58,18 @@ export default function CustomersPage() {
         }
     };
 
-    const filteredCustomers = customers.filter(customer =>
-        customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        customer.phone?.includes(searchQuery) ||
-        customer.email?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const query = searchQuery.trim().toLowerCase();
+    const queryDigits = digits(searchQuery);
+    const filteredCustomers = customers.filter(c => {
+        if (showCredit && onlyOwing && !(c.owed > 0.004)) return false;
+        if (!query) return true;
+        return c.name.toLowerCase().includes(query)
+            || (queryDigits.length >= 2 && digits(c.phone).includes(queryDigits))
+            || c.email?.toLowerCase().includes(query);
+    });
 
-    const totalCustomers = customers.length;
-    const totalLoyaltyPoints = customers.reduce((sum, c) => sum + (c.loyalty_points || 0), 0);
-    const totalSpent = customers.reduce((sum, c) => sum + (c.total_spent || 0), 0);
-
-    const formatCurrency = (amount) => {
-        return formatMoney(amount);
-    };
+    const owing = customers.filter(c => c.owed > 0.004);
+    const totalOwed = owing.reduce((sum, c) => sum + c.owed, 0);
 
     const handleDelete = async (customer) => {
         if (confirm(t('common.deleteConfirm', { name: customer.name }))) {
@@ -92,10 +106,14 @@ export default function CustomersPage() {
         loadData();
     };
 
-    const handleViewDetails = async (customer) => {
+    const openDetails = async (customer) => {
         setSelectedCustomer(customer);
-        // In a real app, you'd fetch customer's purchase history here
-        setShowDetailsModal(true);
+        setHistory(null);
+        try {
+            setHistory(await window.electronAPI.customers.history(customer.id));
+        } catch {
+            setHistory({ owed: 0, paid: 0, credits: [], payments: [], sales: [] });
+        }
     };
 
     return (
@@ -103,7 +121,7 @@ export default function CustomersPage() {
             <PageHeader
                 icon={Users}
                 title={t('customers.title')}
-                subtitle={t('customers.subtitle')}
+                subtitle={t('partners.customersSubtitle')}
                 actions={(
                     <>
                         <Button variant="secondary" onClick={() => setShowImportModal(true)}>
@@ -117,16 +135,49 @@ export default function CustomersPage() {
                     </>
                 )}
             >
-                <div className="flex flex-wrap items-center gap-4">
-                    <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder={t('customers.search')} className="w-80" />
-                    <span className="text-sm text-zinc-400">{t('customers.total')}: <b className="text-white tabular">{totalCustomers}</b></span>
-                    <span className="text-sm text-zinc-400">{t('customers.points')}: <b className="text-amber-300 tabular">{totalLoyaltyPoints.toLocaleString('fr-FR')}</b></span>
-                    <span className="text-sm text-zinc-400">{t('customers.spent')}: <b className="text-emerald-300 tabular">{formatCurrency(totalSpent)}</b></span>
+                <div className="flex flex-wrap items-center gap-3">
+                    <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder={t('partners.customerSearch')} className="w-full sm:w-96" />
+                    {showCredit && (
+                        <div className="segmented">
+                            <button type="button" className={!onlyOwing ? 'active' : ''} onClick={() => setOnlyOwing(false)}>
+                                {t('partners.all')} <span className="ms-1 text-zinc-500 tabular">{customers.length}</span>
+                            </button>
+                            <button type="button" className={onlyOwing ? 'active' : ''} onClick={() => setOnlyOwing(true)}>
+                                {t('partners.owing')} <span className="ms-1 text-red-300 tabular">{owing.length}</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
             </PageHeader>
 
-            {/* Content */}
-            <div className="page-body">
+            <div className="page-body space-y-4">
+                {/* What matters first: how much customers still owe */}
+                {showCredit && customers.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="card flex items-center gap-3">
+                            <Wallet className="w-8 h-8 text-red-300 flex-none" />
+                            <div className="min-w-0">
+                                <p className="text-xs text-zinc-500">{t('partners.totalOwedByCustomers')}</p>
+                                <p className="text-xl font-bold text-red-300 tabular"><bdi>{formatMoney(totalOwed)}</bdi></p>
+                            </div>
+                        </div>
+                        <div className="card flex items-center gap-3">
+                            <AlertCircle className="w-8 h-8 text-amber-300 flex-none" />
+                            <div className="min-w-0">
+                                <p className="text-xs text-zinc-500">{t('partners.customersOwing')}</p>
+                                <p className="text-xl font-bold tabular">{owing.length}</p>
+                            </div>
+                        </div>
+                        <div className="card flex items-center gap-3">
+                            <Users className="w-8 h-8 text-indigo-300 flex-none" />
+                            <div className="min-w-0">
+                                <p className="text-xs text-zinc-500">{t('customers.total')}</p>
+                                <p className="text-xl font-bold tabular">{customers.length}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {loading ? (
                     <div className="flex items-center justify-center h-64">
                         <div className="w-10 h-10 border-4 border-accent-primary border-t-transparent rounded-full animate-spin" />
@@ -134,86 +185,55 @@ export default function CustomersPage() {
                 ) : filteredCustomers.length === 0 ? (
                     <EmptyState
                         icon={Users}
-                        title={t('customers.none')}
-                        description={searchQuery ? t('customers.tryOther') : t('customers.addFirst')}
-                        action={
+                        title={onlyOwing && !query ? t('partners.nobodyOwes') : t('customers.none')}
+                        description={searchQuery ? t('customers.tryOther') : (onlyOwing ? '' : t('customers.addFirst'))}
+                        action={!onlyOwing && (
                             <Button onClick={() => { setEditingCustomer(null); setShowModal(true); }}>
                                 <Plus className="w-4 h-4" />
                                 {t('customers.add')}
                             </Button>
-                        }
+                        )}
                     />
                 ) : (
                     <Table>
                         <TableHead>
                             <TableRow>
                                 <TableHeader>{t('tx.customer')}</TableHeader>
-                                <TableHeader>{t('customers.contact')}</TableHeader>
-                                <TableHeader>{t('customers.loyalty')}</TableHeader>
-                                <TableHeader>{t('customers.spent')}</TableHeader>
-                                <TableHeader>{t('customers.joined')}</TableHeader>
+                                <TableHeader>{t('customers.phone')}</TableHeader>
+                                {showCredit && <TableHeader>{t('partners.stillOwes')}</TableHeader>}
+                                <TableHeader>{t('partners.lastActivity')}</TableHeader>
+                                <TableHeader>{t('partners.purchases')}</TableHeader>
                                 <TableHeader>{t('inventory.actions')}</TableHeader>
                             </TableRow>
                         </TableHead>
                         <TableBody>
                             {filteredCustomers.map(customer => (
-                                <TableRow
-                                    key={customer.id}
-                                    onClick={() => handleViewDetails(customer)}
-                                    className="cursor-pointer"
-                                >
+                                <TableRow key={customer.id} onClick={() => openDetails(customer)} className="cursor-pointer">
                                     <TableCell>
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-accent-primary/20 flex items-center justify-center">
-                                                <span className="font-semibold text-accent-primary">
-                                                    {customer.name.charAt(0)}
-                                                </span>
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-9 h-9 rounded-full bg-accent-primary/20 flex items-center justify-center flex-none">
+                                                <span className="font-semibold text-accent-primary">{customer.name.charAt(0)}</span>
                                             </div>
-                                            <span className="font-medium">{customer.name}</span>
+                                            <span className="font-medium truncate">{customer.name}</span>
                                         </div>
                                     </TableCell>
                                     <TableCell>
-                                        <div className="space-y-1">
-                                            {customer.phone && (
-                                                <div className="flex items-center gap-2 text-sm text-zinc-400">
-                                                    <Phone className="w-3 h-3" />
-                                                    {customer.phone}
-                                                </div>
-                                            )}
-                                            {customer.email && (
-                                                <div className="flex items-center gap-2 text-sm text-zinc-400">
-                                                    <Mail className="w-3 h-3" />
-                                                    {customer.email}
-                                                </div>
-                                            )}
-                                        </div>
+                                        {customer.phone
+                                            ? <span className="inline-flex items-center gap-1.5 font-medium tabular"><Phone className="w-3.5 h-3.5 text-zinc-500" /><bdi dir="ltr">{customer.phone}</bdi></span>
+                                            : <span className="text-xs text-zinc-500">{t('partners.noPhone')}</span>}
                                     </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-1 text-amber-400">
-                                            <Star className="w-4 h-4" />
-                                            {customer.loyalty_points || 0}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="font-medium text-green-400">
-                                        {formatCurrency(customer.total_spent || 0)}
-                                    </TableCell>
-                                    <TableCell className="text-zinc-400">
-                                        {formatLocalDate(customer.created_at, 'date')}
+                                    {showCredit && <TableCell><OwedBadge amount={customer.owed} /></TableCell>}
+                                    <TableCell className="text-zinc-400 whitespace-nowrap">{when(customer.last_sale_at)}</TableCell>
+                                    <TableCell className="tabular whitespace-nowrap">
+                                        <bdi>{formatMoney(customer.sales_total)}</bdi>
+                                        <span className="text-xs text-zinc-500 ms-1">({t('partners.salesN', { n: customer.sales_count })})</span>
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => { setEditingCustomer(customer); setShowModal(true); }}
-                                            >
+                                            <Button variant="ghost" size="icon" onClick={() => { setEditingCustomer(customer); setShowModal(true); }} aria-label={t('customers.edit')}>
                                                 <Edit2 className="w-4 h-4" />
                                             </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => handleDelete(customer)}
-                                            >
+                                            <Button variant="ghost" size="icon" onClick={() => handleDelete(customer)} aria-label={t('common.delete')}>
                                                 <Trash2 className="w-4 h-4 text-red-400" />
                                             </Button>
                                         </div>
@@ -225,7 +245,6 @@ export default function CustomersPage() {
                 )}
             </div>
 
-            {/* Customer Form Modal */}
             <CustomerFormModal
                 isOpen={showModal}
                 onClose={() => setShowModal(false)}
@@ -233,7 +252,6 @@ export default function CustomersPage() {
                 onSave={() => { loadData(); setShowModal(false); }}
             />
 
-            {/* Excel Import Modal */}
             <ExcelImport
                 isOpen={showImportModal}
                 onClose={() => setShowImportModal(false)}
@@ -242,99 +260,139 @@ export default function CustomersPage() {
                 title={t('customers.import')}
             />
 
-            {/* Customer Details Modal */}
-            <Modal
-                isOpen={showDetailsModal}
-                onClose={() => setShowDetailsModal(false)}
-                title={t('customers.details')}
-                size="lg"
-            >
+            {/* One customer: contact, what he still owes, the payments, the last purchases */}
+            <Modal isOpen={!!selectedCustomer} onClose={() => setSelectedCustomer(null)} title={selectedCustomer?.name || ''} size="lg">
                 <ModalBody>
                     {selectedCustomer && (
-                        <div className="space-y-6">
-                            {/* Customer Info */}
-                            <div className="flex items-start gap-4">
-                                <div className="w-16 h-16 rounded-full bg-accent-primary/20 flex items-center justify-center">
-                                    <span className="text-2xl font-bold text-accent-primary">
-                                        {selectedCustomer.name.charAt(0)}
-                                    </span>
-                                </div>
-                                <div className="flex-1">
-                                    <h3 className="text-xl font-semibold">{selectedCustomer.name}</h3>
-                                    <div className="flex items-center gap-4 mt-2 text-sm text-zinc-400">
-                                        {selectedCustomer.phone && (
-                                            <span className="flex items-center gap-1">
-                                                <Phone className="w-4 h-4" />
-                                                {selectedCustomer.phone}
-                                            </span>
-                                        )}
-                                        {selectedCustomer.email && (
-                                            <span className="flex items-center gap-1">
-                                                <Mail className="w-4 h-4" />
-                                                {selectedCustomer.email}
-                                            </span>
-                                        )}
+                        <div className="space-y-5">
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-zinc-300">
+                                {selectedCustomer.phone
+                                    ? <span className="inline-flex items-center gap-1.5 text-base font-semibold"><Phone className="w-4 h-4 text-zinc-500" /><bdi dir="ltr">{selectedCustomer.phone}</bdi></span>
+                                    : <span className="text-zinc-500">{t('partners.noPhone')}</span>}
+                                {selectedCustomer.email && <span className="inline-flex items-center gap-1.5"><Mail className="w-4 h-4 text-zinc-500" /><bdi dir="ltr">{selectedCustomer.email}</bdi></span>}
+                                {selectedCustomer.address && <span className="inline-flex items-center gap-1.5"><MapPin className="w-4 h-4 text-zinc-500" />{selectedCustomer.address}</span>}
+                            </div>
+
+                            <div className={`grid gap-3 ${showCredit ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2'}`}>
+                                {showCredit && (
+                                    <div className={`p-4 rounded-xl border ${selectedCustomer.owed > 0.004 ? 'border-red-500/40 bg-red-500/10' : 'border-emerald-500/30 bg-emerald-500/10'}`}>
+                                        <p className="text-xs text-zinc-400">{t('partners.stillOwes')}</p>
+                                        <p className={`text-2xl font-bold tabular ${selectedCustomer.owed > 0.004 ? 'text-red-300' : 'text-emerald-300'}`}>
+                                            <bdi>{selectedCustomer.owed > 0.004 ? formatMoney(selectedCustomer.owed) : t('partners.nothingOwed')}</bdi>
+                                        </p>
+                                        <p className="text-xs text-zinc-500 mt-1">
+                                            {selectedCustomer.credit_enabled
+                                                ? (selectedCustomer.credit_limit > 0
+                                                    ? t('partners.creditLimitLeft', { limit: formatMoney(selectedCustomer.credit_limit), left: formatMoney(Math.max(0, selectedCustomer.credit_limit - selectedCustomer.owed)) })
+                                                    : t('partners.creditAllowedNoLimit'))
+                                                : t('customers.creditNotAllowed')}
+                                        </p>
                                     </div>
+                                )}
+                                <div className="p-4 rounded-xl bg-dark-tertiary">
+                                    <p className="text-xs text-zinc-400">{t('partners.purchases')}</p>
+                                    <p className="text-2xl font-bold tabular"><bdi>{formatMoney(selectedCustomer.sales_total)}</bdi></p>
+                                    <p className="text-xs text-zinc-500 mt-1">{t('partners.salesN', { n: selectedCustomer.sales_count })}</p>
+                                </div>
+                                <div className="p-4 rounded-xl bg-dark-tertiary">
+                                    <p className="text-xs text-zinc-400">{t('partners.lastActivity')}</p>
+                                    <p className="text-lg font-bold">{when(selectedCustomer.last_sale_at)}</p>
+                                    {showCredit && <p className="text-xs text-zinc-500 mt-1">{t('partners.lastPayment', { date: when(selectedCustomer.last_payment_at) })}</p>}
                                 </div>
                             </div>
 
-                            {/* Stats */}
-                            <div className="grid grid-cols-3 gap-4">
-                                <div className="p-4 rounded-lg bg-dark-tertiary text-center">
-                                    <div className="flex items-center justify-center gap-1 text-amber-400 mb-1">
-                                        <Star className="w-5 h-5" />
-                                    </div>
-                                    <p className="text-2xl font-bold">{selectedCustomer.loyalty_points || 0}</p>
-                                    <p className="text-sm text-zinc-400">{t('customers.loyalty')}</p>
-                                </div>
-                                <div className="p-4 rounded-lg bg-dark-tertiary text-center">
-                                    <div className="flex items-center justify-center gap-1 text-green-400 mb-1">
-                                        <ShoppingBag className="w-5 h-5" />
-                                    </div>
-                                    <p className="text-2xl font-bold">{formatCurrency(selectedCustomer.total_spent || 0)}</p>
-                                    <p className="text-sm text-zinc-400">{t('customers.spent')}</p>
-                                </div>
-                                <div className="p-4 rounded-lg bg-dark-tertiary text-center">
-                                    <p className="text-2xl font-bold">
-                                        {formatLocalDate(selectedCustomer.created_at, 'month')}
-                                    </p>
-                                    <p className="text-sm text-zinc-400">{t('customers.since')}</p>
-                                </div>
-                            </div>
+                            {!history ? (
+                                <p className="text-sm text-zinc-500">{t('common.loading')}</p>
+                            ) : (
+                                <>
+                                    {showCredit && (
+                                        <section>
+                                            <h4 className="text-sm font-semibold mb-2">{t('partners.unpaidCredit')}</h4>
+                                            {history.credits.filter(c => c.remaining > 0.004).length === 0 ? (
+                                                <p className="text-sm text-zinc-500 rounded-lg border border-dashed border-dark-border px-3 py-2">{t('partners.noUnpaidCredit')}</p>
+                                            ) : (
+                                                <ul className="rounded-lg border border-dark-border divide-y divide-dark-border">
+                                                    {history.credits.filter(c => c.remaining > 0.004).map(c => {
+                                                        const late = c.due_date && new Date(c.due_date).getTime() < Date.now();
+                                                        return (
+                                                            <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-sm">
+                                                                <span className="flex-1 min-w-[10rem]">
+                                                                    <span className="font-medium">{t('partners.boughtOn', { date: when(c.created_at) })}</span>
+                                                                    <span className="text-xs text-zinc-500 ms-2"><bdi dir="ltr">{c.receipt_number || c.invoice_number}</bdi></span>
+                                                                </span>
+                                                                <span className="text-zinc-400 tabular"><bdi>{t('partners.paidOf', { paid: formatMoney(c.amount_paid), total: formatMoney(c.amount_due) })}</bdi></span>
+                                                                <span className="font-semibold text-red-300 tabular"><bdi>{t('partners.leftN', { amount: formatMoney(c.remaining) })}</bdi></span>
+                                                                {late && <span className="badge bg-amber-500/15 text-amber-300">{t('partners.late')}</span>}
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            )}
+                                        </section>
+                                    )}
 
-                            {/* Notes */}
-                            {selectedCustomer.notes && (
-                                <div>
-                                    <h4 className="text-sm font-medium text-zinc-400 mb-2">{t('customers.notes')}</h4>
-                                    <p className="p-3 rounded-lg bg-dark-tertiary">{selectedCustomer.notes}</p>
-                                </div>
-                            )}
+                                    {showCredit && (
+                                        <section>
+                                            <h4 className="text-sm font-semibold mb-2">{t('partners.paymentsHistory')}</h4>
+                                            {history.payments.length === 0 ? (
+                                                <p className="text-sm text-zinc-500 rounded-lg border border-dashed border-dark-border px-3 py-2">{t('partners.noPayments')}</p>
+                                            ) : (
+                                                <ul className="rounded-lg border border-dark-border divide-y divide-dark-border max-h-52 overflow-y-auto">
+                                                    {history.payments.map(p => (
+                                                        <li key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-sm">
+                                                            <span className="flex-1 min-w-[8rem] whitespace-nowrap"><bdi dir="ltr">{formatLocalDate(p.created_at, 'datetime')}</bdi></span>
+                                                            <span className="text-zinc-400">{paymentLabel(p.payment_method)}</span>
+                                                            {p.received_by_name && <span className="text-xs text-zinc-500">{p.received_by_name}</span>}
+                                                            <span className="font-semibold text-emerald-300 tabular"><bdi>+{formatMoney(p.amount)}</bdi></span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </section>
+                                    )}
 
-                            {/* Address */}
-                            {selectedCustomer.address && (
-                                <div>
-                                    <h4 className="text-sm font-medium text-zinc-400 mb-2">{t('shop.address')}</h4>
-                                    <p className="p-3 rounded-lg bg-dark-tertiary">{selectedCustomer.address}</p>
-                                </div>
+                                    <section>
+                                        <h4 className="text-sm font-semibold mb-2">{t('partners.lastPurchases')}</h4>
+                                        {history.sales.length === 0 ? (
+                                            <p className="text-sm text-zinc-500 rounded-lg border border-dashed border-dark-border px-3 py-2">{t('partners.noPurchases')}</p>
+                                        ) : (
+                                            <ul className="rounded-lg border border-dark-border divide-y divide-dark-border max-h-52 overflow-y-auto">
+                                                {history.sales.map(sale => (
+                                                    <li key={sale.id} className="flex items-center gap-4 px-3 py-2 text-sm">
+                                                        <span className="flex-1 whitespace-nowrap"><bdi dir="ltr">{formatLocalDate(sale.created_at, 'datetime')}</bdi></span>
+                                                        <span className="text-xs text-zinc-500"><bdi dir="ltr">{sale.receipt_number}</bdi></span>
+                                                        <span className="font-semibold tabular"><bdi>{formatMoney(sale.total)}</bdi></span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </section>
+
+                                    {selectedCustomer.notes && (
+                                        <section>
+                                            <h4 className="text-sm font-semibold mb-2">{t('customers.notes')}</h4>
+                                            <p className="p-3 rounded-lg bg-dark-tertiary text-sm">{selectedCustomer.notes}</p>
+                                        </section>
+                                    )}
+                                </>
                             )}
                         </div>
                     )}
                 </ModalBody>
                 <ModalFooter>
-                    <Button variant="secondary" onClick={() => setShowDetailsModal(false)}>
-                        {t('common.close')}
-                    </Button>
-                    <Button onClick={() => {
-                        setEditingCustomer(selectedCustomer);
-                        setShowDetailsModal(false);
-                        setShowModal(true);
-                    }}>
+                    {showCredit && selectedCustomer?.owed > 0.004 && (
+                        <Button variant="secondary" onClick={() => navigate('/credit-sales')} className="me-auto">
+                            <Wallet className="w-4 h-4" /> {t('partners.receivePayment')}
+                        </Button>
+                    )}
+                    <Button variant="secondary" onClick={() => setSelectedCustomer(null)}>{t('common.close')}</Button>
+                    <Button onClick={() => { setEditingCustomer(selectedCustomer); setSelectedCustomer(null); setShowModal(true); }}>
                         <Edit2 className="w-4 h-4" />
                         {t('customers.edit')}
                     </Button>
                 </ModalFooter>
             </Modal>
-        </div >
+        </div>
     );
 }
 
@@ -422,17 +480,19 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
                             placeholder={t('customers.namePlaceholder')}
                         />
                         <Input
+                            label={t('customers.phone')}
+                            value={formData.phone}
+                            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                            placeholder={t('customers.phonePlaceholder')}
+                            className="ltr"
+                            inputMode="tel"
+                        />
+                        <Input
                             label={t('shop.email')}
                             type="email"
                             value={formData.email}
                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                             placeholder="email@example.com"
-                        />
-                        <Input
-                            label={t('customers.phone')}
-                            value={formData.phone}
-                            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                            placeholder={t('customers.phonePlaceholder')}
                         />
                         <TextArea
                             label={t('shop.address')}

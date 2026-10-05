@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Percent, Plus, Search, Edit2, Trash2, Calendar, Tag, Banknote, LayoutGrid, List, Shirt, Store, Gift, TrendingUp, Pause, Play } from 'lucide-react';
+import { Percent, Plus, Search, Edit2, Trash2, Calendar, Tag, Banknote, LayoutGrid, List, Shirt, Store, Gift, TrendingUp, Pause, Play, Package, Sun, X } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -7,7 +7,7 @@ import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/ui/Toast';
-import { isPromotionLive, parseIds } from '../lib/promotions';
+import { isPromotionLive, parseIds, promotionPreset, PROMOTION_PRESETS } from '../lib/promotions';
 import { formatDate as formatLocalDate, formatMoney } from '../i18n/format';
 import { t } from '../i18n';
 
@@ -22,6 +22,8 @@ const EMPTY_FORM = {
     name: '', description: '', type: 'percentage', value: '', min_purchase: '', max_discount: '', max_uses: '',
     start_date: '', end_date: '', coupon_code: '', auto_apply: true, is_active: true, applies_to: 'all', applies_to_ids: [],
 };
+
+const PRESET_ICONS = { season: Sun, category: Shirt, product: Package };
 
 const VIEW_KEY = 'promotions.view';
 const readView = () => { try { return localStorage.getItem(VIEW_KEY) || 'grid'; } catch { return 'grid'; } };
@@ -46,6 +48,8 @@ const STATUS_STYLE = {
 export default function PromotionsPage() {
     const [promotions, setPromotions] = useState([]);
     const [categories, setCategories] = useState([]);
+    const [products, setProducts] = useState([]);
+    const [productQuery, setProductQuery] = useState('');
     const [loading, setLoading] = useState(true);
     const [query, setQuery] = useState('');
     const [filter, setFilter] = useState('all');
@@ -56,12 +60,14 @@ export default function PromotionsPage() {
 
     const load = async () => {
         try {
-            const [promos, cats] = await Promise.all([
+            const [promos, cats, articles] = await Promise.all([
                 window.electronAPI.promotions.getAll(),
                 window.electronAPI.categories.getAll().catch(() => []),
+                window.electronAPI.products.getAll().catch(() => []),
             ]);
             setPromotions(promos);
             setCategories(cats);
+            setProducts(articles);
         } catch {
             toast.error(t('promo.loadFailed'));
         } finally {
@@ -77,11 +83,15 @@ export default function PromotionsPage() {
     };
 
     const categoryName = (id) => categories.find(c => c.id === id)?.name;
+    const productName = (id) => products.find(p => p.id === id)?.name;
     const scopeText = (promo) => {
         const scope = promo.applies_to || 'all';
         const ids = parseIds(promo.applies_to_ids);
         if (scope === 'category' && ids.length) return ids.map(categoryName).filter(Boolean).join(' · ') || t('promo.someCategories', { n: ids.length });
-        if (scope === 'product' && ids.length) return t('promo.someArticles', { n: ids.length });
+        if (scope === 'product' && ids.length) {
+            const names = ids.map(productName).filter(Boolean);
+            return names.length === ids.length && names.length <= 3 ? names.join(' · ') : t('promo.someArticles', { n: ids.length });
+        }
         return t('promo.wholeShop');
     };
 
@@ -96,9 +106,18 @@ export default function PromotionsPage() {
         }
     };
 
-    const openCreate = () => { setEditing(null); setForm({ ...EMPTY_FORM }); };
+    const openCreate = () => { setEditing(null); setProductQuery(''); setForm({ ...EMPTY_FORM }); };
+    // A quick start fills the form and suggests a name
+    const applyPreset = (kind) => setForm(prev => ({
+        ...prev,
+        ...promotionPreset(kind),
+        // Replace the name only while it is empty or still the one a quick start suggested
+        name: !prev.name.trim() || (prev.preset && prev.name === t(`promo.preset.${prev.preset}Name`)) ? t(`promo.preset.${kind}Name`) : prev.name,
+        preset: kind,
+    }));
     const openEdit = (promo) => {
         setEditing(promo);
+        setProductQuery('');
         setForm({
             ...EMPTY_FORM,
             name: promo.name,
@@ -128,6 +147,7 @@ export default function PromotionsPage() {
         if ((form.type === 'percentage' || form.type === 'threshold') && value > 100) return toast.error(t('promo.validValue'));
         if (form.type === 'threshold' && !(parseFloat(form.min_purchase) > 0)) return toast.error(t('promo.thresholdNeedsMin'));
         if (form.applies_to === 'category' && form.applies_to_ids.length === 0) return toast.error(t('promo.pickCategory'));
+        if (form.applies_to === 'product' && form.applies_to_ids.length === 0) return toast.error(t('promo.pickArticle'));
         if (form.start_date && form.end_date && form.end_date < form.start_date) return toast.error(t('promo.datesOrder'));
 
         const promo = {
@@ -341,6 +361,23 @@ export default function PromotionsPage() {
                 <Modal isOpen onClose={close} title={editing ? t('promo.edit') : t('promo.create')} size="lg" closeOnOverlay={false}>
                     <ModalBody>
                         <div className="space-y-4">
+                            {!editing && (
+                                <div className="form-group">
+                                    <label className="form-label">{t('promo.preset.title')}</label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                        {PROMOTION_PRESETS.map(kind => {
+                                            const Icon = PRESET_ICONS[kind];
+                                            return (
+                                                <button key={kind} type="button" onClick={() => applyPreset(kind)} aria-pressed={form.preset === kind}
+                                                    className={`p-3 rounded-lg border text-start transition-colors ${form.preset === kind ? 'border-indigo-500 bg-indigo-500/10' : 'border-dark-border hover:border-zinc-600'}`}>
+                                                    <p className="font-medium text-sm flex items-center gap-1.5"><Icon className="w-4 h-4 text-indigo-300 flex-none" /> {t(`promo.preset.${kind}`)}</p>
+                                                    <p className="text-xs text-zinc-500 leading-snug mt-0.5">{t(`promo.preset.${kind}Hint`)}</p>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                             <Input label={t('promo.name')} placeholder={t('promo.namePlaceholder')} value={form.name} onChange={(e) => set({ name: e.target.value })} autoFocus />
 
                             <div className="form-group">
@@ -377,17 +414,22 @@ export default function PromotionsPage() {
                             {/* Applies to */}
                             <div className="form-group">
                                 <label className="form-label">{t('promo.appliesTo')}</label>
-                                <div className="segmented w-full mb-2">
-                                    <button type="button" className={`flex-1 inline-flex items-center justify-center gap-1.5 ${form.applies_to !== 'category' ? 'active' : ''}`}
-                                        onClick={() => set({ applies_to: 'all', applies_to_ids: [] })}>
-                                        <Store className="w-4 h-4" /> {t('promo.wholeShop')}
-                                    </button>
-                                    <button type="button" className={`flex-1 inline-flex items-center justify-center gap-1.5 ${form.applies_to === 'category' ? 'active' : ''}`}
-                                        onClick={() => set({ applies_to: 'category', applies_to_ids: form.applies_to === 'category' ? form.applies_to_ids : [] })}>
-                                        <Shirt className="w-4 h-4" /> {t('promo.someCategoriesPick')}
-                                    </button>
+                                <div className="segmented w-full mb-2 no-scrollbar overflow-x-auto">
+                                    {[
+                                        { id: 'all', icon: Store, label: t('promo.wholeShop') },
+                                        { id: 'category', icon: Shirt, label: t('promo.someCategoriesPick') },
+                                        { id: 'product', icon: Package, label: t('promo.someArticlesPick') },
+                                    ].map(({ id, icon: Icon, label }) => (
+                                        <button key={id} type="button" className={`flex-1 inline-flex items-center justify-center gap-1.5 whitespace-nowrap ${form.applies_to === id ? 'active' : ''}`}
+                                            onClick={() => set({ applies_to: id, applies_to_ids: form.applies_to === id ? form.applies_to_ids : [] })}>
+                                            <Icon className="w-4 h-4" /> {label}
+                                        </button>
+                                    ))}
                                 </div>
-                                {form.applies_to === 'product' && <p className="form-hint">{t('promo.someArticles', { n: form.applies_to_ids.length })}</p>}
+                                {form.applies_to === 'product' && (
+                                    <ArticlePicker products={products} selected={form.applies_to_ids} query={productQuery} onQuery={setProductQuery}
+                                        onChange={(ids) => set({ applies_to_ids: ids })} />
+                                )}
                                 {form.applies_to === 'category' && (
                                     categories.length === 0 ? <p className="form-hint">{t('promo.noCategories')}</p> : (
                                         <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1">
@@ -410,6 +452,7 @@ export default function PromotionsPage() {
                                 <Input label={t('promo.start')} type="date" value={form.start_date} onChange={(e) => set({ start_date: e.target.value })} />
                                 <Input label={t('promo.end')} type="date" value={form.end_date} onChange={(e) => set({ end_date: e.target.value })} />
                             </div>
+                            <p className="form-hint -mt-2">{form.start_date || form.end_date ? t('promo.datesHint') : t('promo.noDatesHint')}</p>
 
                             <div className="grid grid-cols-3 gap-4">
                                 <Input label={t('promo.coupon')} placeholder={t('promo.couponPlaceholder')} value={form.coupon_code}
@@ -449,6 +492,58 @@ export default function PromotionsPage() {
                 confirmText={t('common.delete')}
                 variant="danger"
             />
+        </div>
+    );
+}
+
+
+/** Pick the articles of a promotion: search by name, SKU or barcode; the chosen ones stay on top. */
+function ArticlePicker({ products, selected, query, onQuery, onChange }) {
+    const chosen = selected.map(id => products.find(p => p.id === id) || { id, name: '?' });
+    const q = query.trim().toLowerCase();
+    const results = q
+        ? products.filter(p => !selected.includes(p.id) && (p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.barcode?.toLowerCase().includes(q))).slice(0, 30)
+        : [];
+    return (
+        <div className="space-y-2">
+            {chosen.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                    {chosen.map(p => (
+                        <span key={p.id} className="inline-flex items-center gap-1 ps-3 pe-1 h-8 rounded-full border border-indigo-500 bg-indigo-500/20 text-sm">
+                            <span className="truncate max-w-[14rem]">{p.name}</span>
+                            <button type="button" onClick={() => onChange(selected.filter(id => id !== p.id))} className="p-1 rounded-full hover:bg-white/10" aria-label={t('common.delete')}>
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </span>
+                    ))}
+                </div>
+            ) : <p className="form-hint">{t('promo.noArticlePicked')}</p>}
+            {products.length === 0 ? <p className="form-hint">{t('promo.noArticles')}</p> : (
+                <>
+                    <div className="relative">
+                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                        <input className="input ps-9" placeholder={t('promo.searchArticle')} value={query} onChange={(e) => onQuery(e.target.value)} />
+                    </div>
+                    {q && (
+                        results.length === 0 ? <p className="form-hint">{t('common.noResults')}</p> : (
+                            <ul className="max-h-40 overflow-y-auto rounded-lg border border-dark-border divide-y divide-dark-border">
+                                {results.map(p => (
+                                    <li key={p.id}>
+                                        <button type="button" onClick={() => { onChange([...selected, p.id]); onQuery(''); }}
+                                            className="w-full flex items-center justify-between gap-3 px-3 py-2 text-sm text-start hover:bg-dark-tertiary">
+                                            <span className="min-w-0">
+                                                <span className="block truncate">{p.name}</span>
+                                                {p.sku && <span className="block text-xs text-zinc-500 ltr truncate">{p.sku}</span>}
+                                            </span>
+                                            <span className="flex-none text-zinc-400 tabular"><bdi>{formatMoney(p.price)}</bdi></span>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )
+                    )}
+                </>
+            )}
         </div>
     );
 }

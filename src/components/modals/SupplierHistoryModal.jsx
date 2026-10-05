@@ -5,6 +5,10 @@ import React, { useState, useEffect } from 'react';
 import { FileText, Banknote, RefreshCcw } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
+import { paymentLabel } from '../../lib/payments';
+
+// Order states, in plain words: waiting, received (in full or in part), cancelled
+const ORDER_STATUS = { draft: 'waiting', sent: 'waiting', partial: 'partial', received: 'received', cancelled: 'cancelled' };
 
 export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
     const [history, setHistory] = useState([]);
@@ -36,7 +40,7 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`History: ${supplier.name}`}>
+        <Modal isOpen={isOpen} onClose={onClose} title={t('partners.supplierHistoryTitle', { name: supplier.name })}>
             <ModalBody>
                 <div className="space-y-6">
                     {/* Summary Card */}
@@ -44,7 +48,7 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
                         <div>
                             <p className="text-zinc-400 text-sm">{t('supplierHistory.due')}</p>
                             <p className="text-2xl font-bold text-white">
-                                {formatCurrency(supplier.balance || 0)}
+                                {formatCurrency(supplier.owed ?? supplier.balance ?? 0)}
                             </p>
                         </div>
                         <div className="text-end">
@@ -77,8 +81,11 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
                                     <div className="flex-1 pb-6">
                                         <div className="bg-dark-tertiary/50 p-3 rounded-lg border border-dark-border">
                                             <div className="flex justify-between items-start mb-1">
-                                                <h4 className="font-semibold capitalize text-sm">
-                                                    {item.type.replace('_', ' ')}
+                                                <h4 className="font-semibold text-sm">
+                                                    {t(`partners.history.${item.type}`)}
+                                                    {item.type === 'purchase_order' && item.status && (
+                                                        <span className="ms-2 text-xs font-normal text-zinc-500">{t(`partners.orderStatus.${ORDER_STATUS[item.status] || 'waiting'}`)}</span>
+                                                    )}
                                                 </h4>
                                                 <span className="text-xs text-zinc-500">
                                                     {formatLocalDate(item.date, 'datetime')}
@@ -88,20 +95,21 @@ export default function SupplierHistoryModal({ isOpen, onClose, supplier }) {
                                             <div className="flex justify-between items-center">
                                                 <div>
                                                     <p className="text-sm text-zinc-300">
-                                                        {item.reference ? item.reference : `ID: ${item.id.slice(0, 8)}`}
+                                                        {item.type === 'payment' ? paymentLabel(item.reference) : (item.reference || `#${item.id.slice(0, 8)}`)}
                                                     </p>
                                                     {item.payment_status && (
                                                         <span className={`text-[10px] px-1.5 py-0.5 rounded border ${item.payment_status === 'paid' ? 'border-green-500/30 text-green-500' :
                                                                 item.payment_status === 'partial' ? 'border-amber-500/30 text-amber-500' :
                                                                     'border-red-500/30 text-red-500'
                                                             }`}>
-                                                            {item.payment_status.toUpperCase()}
+                                                            {t(`partners.payState.${item.payment_status === 'paid' || item.payment_status === 'partial' ? item.payment_status : 'unpaid'}`)}
                                                         </span>
                                                     )}
                                                 </div>
-                                                <p className={`font-mono font-medium ${item.type === 'purchase_order' ? 'text-red-400' : 'text-green-400'
+                                                {/* Only goods received add to what is owed; a waiting or cancelled order does not */}
+                                                <p className={`font-mono font-medium ${item.type !== 'purchase_order' ? 'text-green-400' : ORDER_STATUS[item.status] === 'received' || ORDER_STATUS[item.status] === 'partial' ? 'text-red-400' : 'text-zinc-500'
                                                     }`}>
-                                                    {item.type === 'purchase_order' ? '+' : '-'} {formatCurrency(item.amount)}
+                                                    {item.type !== 'purchase_order' ? '- ' : ORDER_STATUS[item.status] === 'received' || ORDER_STATUS[item.status] === 'partial' ? '+ ' : ''}{formatCurrency(item.amount)}
                                                 </p>
                                             </div>
                                         </div>

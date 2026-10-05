@@ -781,6 +781,12 @@ ipcMain.handle('db:customers:getAll', () => {
   return runQuery('SELECT * FROM customers WHERE is_active = 1 ORDER BY name');
 });
 
+// Customers and suppliers at a glance (read only, computed from the operations)
+const partners = require('./services/partnersService');
+ipcMain.handle('db:customers:overview', () => partners.customersOverview(dbApi));
+ipcMain.handle('db:customers:history', (_, customerId) => partners.customerHistory(dbApi, customerId));
+ipcMain.handle('db:suppliers:overview', () => partners.suppliersOverview(dbApi));
+
 ipcMain.handle('db:customers:getById', (_, id) => {
   return getOne('SELECT * FROM customers WHERE id = ?', [id]);
 });

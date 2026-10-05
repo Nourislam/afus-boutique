@@ -91,4 +91,25 @@ export default {
     'promo.autoApply': ["Auto-apply at checkout", "Appliquer automatiquement à l'encaissement", "تطبيق تلقائي عند الدفع"],
     'promo.delete': ["Delete Promotion", "Supprimer la promotion", "حذف التخفيض"],
     'promo.deleteConfirm': ["Are you sure you want to delete this promotion? This action cannot be undone.", "Supprimer cette promotion ? Action irréversible.", "حذف هذا التخفيض؟ لا يمكن التراجع."],
+
+    // Quick starts (only fill the form)
+    'promo.preset.title': ["Quick start", "Démarrage rapide", "بداية سريعة"],
+    'promo.preset.season': ["Seasonal sale", "Soldes de saison", "تخفيضات الموسم"],
+    'promo.preset.seasonHint': ["Whole shop, from today for 30 days", "Toute la boutique, dès aujourd'hui pour 30 jours", "كل المحل، من اليوم لمدة 30 يومًا"],
+    'promo.preset.seasonName': ["Seasonal sale", "Soldes", "تخفيضات الموسم"],
+    'promo.preset.category': ["By category", "Par catégorie", "حسب الصنف"],
+    'promo.preset.categoryHint': ["Choose the categories, e.g. all jeans", "Choisissez les catégories, ex. tous les jeans", "اختر الأصناف، مثلاً كل الجينز"],
+    'promo.preset.categoryName': ["Category discount", "Remise catégorie", "تخفيض على صنف"],
+    'promo.preset.product': ["By article", "Par article", "حسب السلعة"],
+    'promo.preset.productHint': ["Choose one or more articles", "Choisissez un ou plusieurs articles", "اختر سلعة أو أكثر"],
+    'promo.preset.productName': ["Article discount", "Remise article", "تخفيض على سلعة"],
+    // Articles picked for a promotion
+    'promo.someArticlesPick': ["Some articles only", "Certains articles", "سلع محددة فقط"],
+    'promo.pickArticle': ["Choose at least one article", "Choisissez au moins un article", "اختر سلعة واحدة على الأقل"],
+    'promo.noArticlePicked': ["No article chosen yet: search below.", "Aucun article choisi : cherchez ci-dessous.", "لم تختر أي سلعة بعد: ابحث في الأسفل."],
+    'promo.noArticles': ["Add articles first (Products).", "Ajoutez d'abord des articles (Produits).", "أضف السلع أولاً (السلع)."],
+    'promo.searchArticle': ["Search an article by name, SKU or barcode…", "Chercher un article par nom, SKU ou code-barres…", "ابحث عن سلعة بالاسم أو الرمز أو الباركود…"],
+    // Dates
+    'promo.datesHint': ["The discount works from the start day to the end day included.", "La remise s'applique du jour de début au jour de fin inclus.", "التخفيض يعمل من يوم البداية حتى يوم النهاية (مشمول)."],
+    'promo.noDatesHint': ["No dates: the discount works as long as it is active.", "Sans dates : la remise s'applique tant qu'elle est active.", "بدون تواريخ: التخفيض يعمل ما دام مفعّلاً."],
 };
