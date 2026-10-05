@@ -1,4 +1,4 @@
-# POSbyCirvex
+# afus-boutique
 
 A complete, offline-capable Point of Sale system for retail businesses built with Electron, React, and SQLite.
 
@@ -64,4 +64,4 @@ npm run electron:build
 
 ## License
 
-MIT © Cirvex
+© afus
