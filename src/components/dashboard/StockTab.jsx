@@ -4,6 +4,7 @@ import { PackageX, PackageMinus, Ruler, Warehouse, ShoppingCart, Eye } from 'luc
 import { Button } from '../ui/Button';
 import { useT } from '../../i18n';
 import { sizeLabel, variantLabel } from '../../lib/clothing';
+import { DASHBOARD_LINKS } from '../../lib/listFilters';
 import { Money, Section, Row, Empty, Spinner } from './parts';
 import { SlowMovers } from './TodayTab';
 
@@ -24,9 +25,9 @@ export default function StockTab({ access, features, ranges }) {
     if (!data) return <Spinner />;
     // "Order" goes to the purchase orders when that module is on, to the stock otherwise
     const order = features.purchaseOrders
-        ? <Button size="sm" variant="secondary" onClick={() => navigate('/purchase-orders')}><ShoppingCart className="w-4 h-4" /> {t('dash.do.order')}</Button>
-        : <Button size="sm" variant="secondary" onClick={() => navigate('/inventory')}><Eye className="w-4 h-4" /> {t('dash.do.see')}</Button>;
-    const see = <Button size="sm" variant="ghost" onClick={() => navigate('/inventory')}>{t('dash.do.seeDetails')}</Button>;
+        ? <Button size="sm" variant="secondary" onClick={() => navigate(DASHBOARD_LINKS.orderSoldOut)}><ShoppingCart className="w-4 h-4" /> {t('dash.do.order')}</Button>
+        : <Button size="sm" variant="secondary" onClick={() => navigate(DASHBOARD_LINKS.stockOut)}><Eye className="w-4 h-4" /> {t('dash.do.see')}</Button>;
+    const see = <Button size="sm" variant="ghost" onClick={() => navigate(DASHBOARD_LINKS.stockLow)}>{t('dash.do.seeDetails')}</Button>;
     const piece = (row) => [row.product_name, variantLabel(row)].filter(Boolean).join(' · ');
 
     return (

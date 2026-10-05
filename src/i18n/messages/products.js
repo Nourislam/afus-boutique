@@ -100,4 +100,6 @@ export default {
     'variants.qrHint': ["The QR contains only this code — never the price or stock — so it stays valid when prices change.", "Le QR ne contient que ce code — jamais le prix ni le stock — il reste valable si les prix changent.", "رمز QR يحتوي فقط على هذا الرمز — لا السعر ولا المخزون — فيبقى صالحاً عند تغيير الأسعار."],
     'variants.oldLabelsWork': ["Labels already printed keep working.", "Les étiquettes déjà imprimées restent valables.", "الملصقات المطبوعة سابقاً تبقى صالحة."],
     'variants.useSkuAsQr': ["Use the current SKU as QR", "Utiliser le SKU actuel comme QR", "استعمال الرمز الحالي كـ QR"],
+    // Filter (also opened from the home screen's "complete the prices")
+    'products.filterNoCost': ["Without purchase price", "Sans prix d'achat", "بدون سعر شراء"],
 };

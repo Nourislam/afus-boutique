@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Package, AlertTriangle, Plus, Minus, History, ArrowUpDown } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, SearchInput } from '../components/ui/Input';
@@ -15,6 +16,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { variantLabel } from '../lib/clothing';
 import { MANUAL_REASONS, stockReasonLabel } from '../lib/stockReasons';
+import { readFilter, stockMatches, STOCK_FILTERS } from '../lib/listFilters';
 
 export default function InventoryPage() {
     const [products, setProducts] = useState([]);
@@ -26,6 +28,14 @@ export default function InventoryPage() {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [loading, setLoading] = useState(true);
     const [variantsByProduct, setVariantsByProduct] = useState({});
+    // Sold out / running low: read from the address (?stock=out|low), so a link from the home screen opens filtered
+    const [searchParams, setSearchParams] = useSearchParams();
+    const stockFilter = readFilter(searchParams, 'stock', STOCK_FILTERS);
+    const setStockFilter = (value) => {
+        const next = new URLSearchParams(searchParams);
+        if (value === 'all') next.delete('stock'); else next.set('stock', value);
+        setSearchParams(next, { replace: true });
+    };
 
     const { currentEmployee } = useAuthStore();
     const { loadSettings } = useSettingsStore();
@@ -57,9 +67,11 @@ export default function InventoryPage() {
     };
 
     const filteredProducts = products.filter(product =>
-        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.sku?.toLowerCase().includes(searchQuery.toLowerCase())
+        (product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            product.sku?.toLowerCase().includes(searchQuery.toLowerCase())) &&
+        stockMatches(product, variantsByProduct[product.id] || [], stockFilter)
     );
+    const stockCount = (filter) => products.filter(p => stockMatches(p, variantsByProduct[p.id] || [], filter)).length;
 
     const totalStock = products.reduce((sum, p) => sum + p.stock_quantity, 0);
     const totalValue = products.reduce((sum, p) => sum + (p.stock_quantity * p.cost), 0);
@@ -124,12 +136,22 @@ export default function InventoryPage() {
                     />
                 </div>
 
-                <SearchInput
-                    value={searchQuery}
-                    onChange={setSearchQuery}
-                    placeholder={t('inventory.search')}
-                    className="max-w-md"
-                />
+                <div className="flex flex-wrap items-center gap-3">
+                    <SearchInput
+                        value={searchQuery}
+                        onChange={setSearchQuery}
+                        placeholder={t('inventory.search')}
+                        className="max-w-md"
+                    />
+                    <div className="segmented" role="tablist" data-testid="stock-filter">
+                        {STOCK_FILTERS.map(id => (
+                            <button key={id} type="button" role="tab" aria-selected={stockFilter === id} className={stockFilter === id ? 'active' : ''} onClick={() => setStockFilter(id)}>
+                                {t(`inventory.filter.${id}`)}
+                                {!loading && <span className="ms-1.5 text-xs text-zinc-500 tabular">{stockCount(id)}</span>}
+                            </button>
+                        ))}
+                    </div>
+                </div>
             </div>
 
             {/* Content */}

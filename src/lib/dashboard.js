@@ -1,6 +1,7 @@
 // Home screen logic, kept pure so it can be tested: who sees what, the
 // "what do I do now?" list, the plain-words comparisons and the date limits.
 import { PERMISSIONS } from './permissions';
+import { DASHBOARD_LINKS } from './listFilters';
 
 export const TABS = ['today', 'sales', 'stock', 'cash'];
 export const MAX_ALERTS = 5;
@@ -141,13 +142,13 @@ export function buildAlerts(home, { access, features = {}, user = {}, now = new 
         const names = home.outOfStock.items.map(i => [i.product_name, i.size, i.color].filter(Boolean).join(' ')).join(' · ');
         add({
             id: 'outOfStock', tone: 'danger', icon: 'stock', text: ['dash.alert.outOfStock', { n: home.outOfStock.count, names }],
-            action: access.shop && features.purchaseOrders ? { label: 'dash.do.order', to: '/purchase-orders' } : { label: 'dash.do.see', to: '/inventory' },
+            action: access.shop && features.purchaseOrders ? { label: 'dash.do.order', to: DASHBOARD_LINKS.orderSoldOut } : { label: 'dash.do.see', to: DASHBOARD_LINKS.stockOut },
         });
     }
 
     // Credit: only with the module shown
     if (features.credit && access.credit && home.overdueCredit?.customers > 0) {
-        add({ id: 'overdueCredit', tone: 'warning', icon: 'credit', text: ['dash.alert.overdueCredit', { n: home.overdueCredit.customers, amount: home.overdueCredit.amount }], action: { label: 'dash.do.collect', to: '/credit-sales' } });
+        add({ id: 'overdueCredit', tone: 'warning', icon: 'credit', text: ['dash.alert.overdueCredit', { n: home.overdueCredit.customers, amount: home.overdueCredit.amount }], action: { label: 'dash.do.collect', to: DASHBOARD_LINKS.creditLate } });
     }
 
     // Backup: never made or older than a week (only who can reach the settings)
@@ -159,10 +160,10 @@ export function buildAlerts(home, { access, features = {}, user = {}, now = new 
     }
 
     if (access.shop && access.inventory && home.lowCount > 0) {
-        add({ id: 'lowStock', tone: 'warning', icon: 'stock', text: ['dash.alert.lowStock', { n: home.lowCount }], action: { label: 'dash.do.see', to: '/inventory' } });
+        add({ id: 'lowStock', tone: 'warning', icon: 'stock', text: ['dash.alert.lowStock', { n: home.lowCount }], action: { label: 'dash.do.see', to: DASHBOARD_LINKS.stockLow } });
     }
     if (access.shop && access.products && home.missingCost?.count > 0) {
-        add({ id: 'missingCost', tone: 'warning', icon: 'price', text: ['dash.alert.missingCost', { n: home.missingCost.count }], action: { label: 'dash.do.completePrices', to: '/products' } });
+        add({ id: 'missingCost', tone: 'warning', icon: 'price', text: ['dash.alert.missingCost', { n: home.missingCost.count }], action: { label: 'dash.do.completePrices', to: DASHBOARD_LINKS.productsNoCost } });
     }
     if (features.promotions && access.promotions && home.offersEnding?.length) {
         const offer = home.offersEnding[0];

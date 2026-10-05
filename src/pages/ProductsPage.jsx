@@ -2,7 +2,7 @@ import { t } from '../i18n';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Edit2, Trash2, Package, Grid, List, FileSpreadsheet, QrCode } from 'lucide-react';
+import { Plus, Edit2, Trash2, Package, Grid, List, FileSpreadsheet, QrCode, Tag, X } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { SearchInput } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
@@ -17,6 +17,7 @@ import { ExcelImport } from '../components/ui/ExcelImport';
 
 import { useSettingsStore } from '../stores/settingsStore';
 import { ProductFormModal } from '../components/products/ProductFormModal';
+import { lacksCost, readFilter } from '../lib/listFilters';
 
 export default function ProductsPage() {
     const [products, setProducts] = useState([]);
@@ -31,6 +32,26 @@ export default function ProductsPage() {
     const [initialValues, setInitialValues] = useState(null);
     const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
+    // Articles without a purchase price (?filter=noCost, from the home screen's "complete the prices")
+    const noCostOnly = readFilter(searchParams, 'filter', ['noCost'], '') === 'noCost';
+    const [variantsByProduct, setVariantsByProduct] = useState(null);
+    const setNoCostOnly = (on) => {
+        const next = new URLSearchParams(searchParams);
+        if (on) next.set('filter', 'noCost'); else next.delete('filter');
+        setSearchParams(next, { replace: true });
+    };
+    // The colours/sizes have their own purchase price: loaded only while this filter is on
+    useEffect(() => {
+        if (!noCostOnly) return undefined;
+        let cancelled = false;
+        window.electronAPI.catalog.searchVariants('', 10000).then(rows => {
+            if (cancelled) return;
+            const byProduct = {};
+            for (const v of rows) (byProduct[v.product_id] = byProduct[v.product_id] || []).push(v);
+            setVariantsByProduct(byProduct);
+        }).catch(() => { if (!cancelled) setVariantsByProduct({}); });
+        return () => { cancelled = true; };
+    }, [noCostOnly, products]);
 
     const { loadSettings } = useSettingsStore();
 
@@ -72,7 +93,8 @@ export default function ProductsPage() {
             product.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             product.brand?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             product.barcode?.includes(searchQuery);
-        return matchesCategory && matchesSearch;
+        const matchesCost = !noCostOnly || (variantsByProduct !== null && lacksCost(product, variantsByProduct[product.id] || []));
+        return matchesCategory && matchesSearch && matchesCost;
     });
 
     const formatCurrency = (amount) => {
@@ -189,6 +211,11 @@ export default function ProductsPage() {
                             ]}
                             className="w-48"
                         />
+                        <button type="button" onClick={() => setNoCostOnly(!noCostOnly)} aria-pressed={noCostOnly} data-testid="filter-no-cost"
+                            className={`h-10 px-3 rounded-lg border text-sm inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ${noCostOnly ? 'border-amber-500/50 bg-amber-500/15 text-amber-200' : 'border-dark-border text-zinc-400 hover:text-white'}`}>
+                            <Tag className="w-4 h-4" /> {t('products.filterNoCost')}
+                            {noCostOnly && <X className="w-3.5 h-3.5" aria-label={t('common.clear')} />}
+                        </button>
                         <div className="flex items-center gap-1 bg-dark-tertiary rounded-lg p-1">
                             <button
                                 onClick={() => setViewMode('grid')}

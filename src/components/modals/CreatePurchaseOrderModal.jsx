@@ -11,7 +11,7 @@ import { translateError } from '../../i18n/errors';
 import { variantLabel } from '../../lib/clothing';
 import { useTaxEnabled } from '../../lib/useTaxEnabled';
 
-export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }) {
+export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete, initialItems = null }) {
     const taxOn = useTaxEnabled();
     const [suppliers, setSuppliers] = useState([]);
     const [products, setProducts] = useState([]);
@@ -52,14 +52,15 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                 supplier_id: '',
                 expected_date: '',
                 notes: '',
-                items: [],
+                // Lines prepared by the caller (sold-out colours/sizes from the home screen), empty otherwise
+                items: initialItems ? initialItems.map(item => ({ ...item })) : [],
                 tax_rate: 0,
                 discount_type: 'fixed',
                 discount_value: 0,
                 shipping_cost: 0
             });
         }
-    }, [isOpen]);
+    }, [isOpen, initialItems]);
 
     const loadData = async () => {
         try {

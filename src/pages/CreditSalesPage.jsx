@@ -11,12 +11,22 @@ import ReceiptPreviewModal from '../components/modals/ReceiptPreviewModal';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
 import { paymentLabel } from '../lib/payments';
+import { useSearchParams } from 'react-router-dom';
+import { CREDIT_FILTERS, isLateCredit, readFilter } from '../lib/listFilters';
+import { localDate } from '../lib/dashboard';
 
 export default function CreditSalesPage() {
     const [creditSales, setCreditSales] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState('all');
+    // The status buttons follow the address (?status=overdue from the home screen's late credit alert)
+    const [searchParams, setSearchParams] = useSearchParams();
+    const statusFilter = readFilter(searchParams, 'status', CREDIT_FILTERS);
+    const setStatusFilter = (value) => {
+        const next = new URLSearchParams(searchParams);
+        if (value === 'all') next.delete('status'); else next.set('status', value);
+        setSearchParams(next, { replace: true });
+    };
     const [selectedSale, setSelectedSale] = useState(null);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -33,7 +43,8 @@ export default function CreditSalesPage() {
         setLoading(true);
         try {
             const params = {};
-            if (statusFilter !== 'all') {
+            // "Overdue" is worked out from the due date below, not from the saved status
+            if (statusFilter !== 'all' && statusFilter !== 'overdue') {
                 params.status = statusFilter;
             }
             setCreditSales(await window.electronAPI.creditSales.getAll(params));
@@ -78,7 +89,9 @@ export default function CreditSalesPage() {
         return labels[status] || status;
     };
 
+    const today = localDate(new Date());
     const filteredSales = creditSales.filter(sale => {
+        if (statusFilter === 'overdue' && !isLateCredit(sale, today)) return false;
         if (!searchQuery) return true;
         const search = searchQuery.toLowerCase();
         return sale.customer_name?.toLowerCase().includes(search) ||

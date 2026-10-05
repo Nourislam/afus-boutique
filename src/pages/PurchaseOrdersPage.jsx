@@ -25,6 +25,9 @@ import AddSupplierInvoiceModal from '../components/modals/AddSupplierInvoiceModa
 import SmartReorderModal from '../components/modals/SmartReorderModal';
 import SupplierReportsModal from '../components/modals/SupplierReportsModal';
 import PurchaseOrderDetailsModal from '../components/modals/PurchaseOrderDetailsModal';
+import { useSearchParams } from 'react-router-dom';
+import { soldOutOrderLines } from '../lib/listFilters';
+import { dashboardRanges } from '../lib/dashboard';
 import { RefreshCcw, CreditCard, Trash2, Zap, BarChart3, Eye } from 'lucide-react';
 
 export default function PurchaseOrdersPage() {
@@ -50,6 +53,27 @@ export default function PurchaseOrdersPage() {
         fetchOrders();
         loadSettings();
     }, []);
+
+    // "Order" from the home screen (?order=soldOut): a new order already holding the
+    // colours/sizes sold out that sell. The address is cleared so coming back does not reopen it.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [initialItems, setInitialItems] = useState(null);
+    useEffect(() => {
+        if (searchParams.get('order') !== 'soldOut') return undefined;
+        let cancelled = false;
+        const open = (lines) => {
+            if (cancelled) return;
+            setInitialItems(lines);
+            setShowCreateModal(true);
+            setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('order'); return next; }, { replace: true });
+        };
+        Promise.all([
+            window.electronAPI.dashboard.stock({ since30: dashboardRanges(new Date()).since30 }),
+            window.electronAPI.products.getAll(),
+        ]).then(([stock, products]) => open(soldOutOrderLines(stock?.outOfStock || [], products)))
+            .catch(() => open(null));
+        return () => { cancelled = true; };
+    }, [searchParams, setSearchParams]);
 
     const fetchOrders = async () => {
         setIsLoading(true);
@@ -268,10 +292,12 @@ export default function PurchaseOrdersPage() {
             {/* Create Order Modal */}
             <CreatePurchaseOrderModal
                 isOpen={showCreateModal}
-                onClose={() => setShowCreateModal(false)}
+                initialItems={initialItems}
+                onClose={() => { setShowCreateModal(false); setInitialItems(null); }}
                 onComplete={() => {
                     fetchOrders();
                     setShowCreateModal(false);
+                    setInitialItems(null);
                 }}
             />
 

@@ -9,6 +9,7 @@ import { useT } from '../../i18n';
 import { formatDate, formatMoney } from '../../i18n/format';
 import { colorHex, colorName, sizeLabel } from '../../lib/clothing';
 import { compare, profitState, isFirstDay, daysWithoutSale, MAX_ALERTS } from '../../lib/dashboard';
+import { DASHBOARD_LINKS } from '../../lib/listFilters';
 import { Money, Section, Tile, CompareLine, MiniTabs, Row, Empty, Spinner } from './parts';
 
 const ALERT_ICONS = { printer: Printer, drawer: Wallet, stock: Boxes, credit: CreditCard, backup: Archive, price: Tag, offer: Percent };
@@ -251,7 +252,7 @@ export default function TodayTab({ access, features, user, ranges, home, alerts,
                             {profit === 'approx' ? (
                                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                                     <span className="text-amber-300">{t('dash.profit.noCost', { n: home.soldWithoutCost })}</span>
-                                    {access.products && <button type="button" className="text-indigo-300 hover:underline" onClick={() => navigate('/products')}>{t('dash.do.completePrices')}</button>}
+                                    {access.products && <button type="button" className="text-indigo-300 hover:underline" onClick={() => navigate(DASHBOARD_LINKS.productsNoCost)}>{t('dash.do.completePrices')}</button>}
                                 </span>
                             ) : t('dash.profit.hint')}
                         </Tile>
