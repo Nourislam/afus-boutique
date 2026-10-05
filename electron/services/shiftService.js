@@ -1,5 +1,6 @@
 const { v4: uuid } = require('uuid');
 const { runInsert, getOne, runQuery } = require('../database/init');
+const { countedSale } = require('./saleStatus');
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -71,7 +72,7 @@ class ShiftService {
                 COALESCE(SUM(tax_amount), 0) as total_tax,
                 COALESCE(SUM(discount_amount), 0) as total_discount
             FROM sales 
-            WHERE employee_id = ? AND datetime(created_at) BETWEEN datetime(?) AND datetime(?)
+            WHERE employee_id = ? AND datetime(created_at) BETWEEN datetime(?) AND datetime(?) AND ${countedSale(null)}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         // Calculate cash specifically (if you want to reconcile cash drawer)
@@ -79,7 +80,7 @@ class ShiftService {
             SELECT COALESCE(SUM(amount), 0) as total_cash
             FROM payments p
             JOIN sales s ON p.sale_id = s.id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'cash'
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'cash' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const refunds = getOne(`
@@ -93,28 +94,28 @@ class ShiftService {
             SELECT COALESCE(SUM(amount), 0) as total_card
             FROM payments p
             JOIN sales s ON p.sale_id = s.id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'card'
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'card' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const creditSales = getOne(`
             SELECT COALESCE(SUM(amount), 0) as total_credit
             FROM payments p
             JOIN sales s ON p.sale_id = s.id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'credit'
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'credit' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const transferSales = getOne(`
             SELECT COALESCE(SUM(amount), 0) as total_transfer
             FROM payments p
             JOIN sales s ON p.sale_id = s.id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'transfer'
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'transfer' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const giftCardSales = getOne(`
             SELECT COALESCE(SUM(amount), 0) as total_gift_card
             FROM payments p
             JOIN sales s ON p.sale_id = s.id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'gift_card'
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'gift_card' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         // Refunds handed back in cash (a return on a kridi sale lowers the debt instead)
@@ -136,7 +137,7 @@ class ShiftService {
         const items = getOne(`
             SELECT COALESCE(SUM(si.quantity), 0) AS total
             FROM sale_items si JOIN sales s ON s.id = si.sale_id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const openingCash = Number(shift.opening_cash) || 0;
@@ -203,13 +204,13 @@ class ShiftService {
         const sales = runQuery(`
             SELECT employee_id, COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
             FROM sales
-            WHERE datetime(created_at) BETWEEN datetime(?) AND datetime(?)
+            WHERE datetime(created_at) BETWEEN datetime(?) AND datetime(?) AND ${countedSale(null)}
             GROUP BY employee_id
         `, [startDate, endDate]);
         const items = runQuery(`
             SELECT s.employee_id, COALESCE(SUM(si.quantity), 0) AS qty
             FROM sale_items si JOIN sales s ON s.id = si.sale_id
-            WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+            WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND ${countedSale('s')}
             GROUP BY s.employee_id
         `, [startDate, endDate]);
         const refunds = runQuery(`

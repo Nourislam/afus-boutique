@@ -67,5 +67,5 @@ export default {
     'backup.autoText': ["One copy a day, made when the program opens. The oldest automatic copies are removed; yours are never removed.", "Une copie par jour, à l'ouverture du logiciel. Les plus anciennes copies automatiques sont retirées ; les vôtres jamais.", "نسخة واحدة في اليوم عند فتح البرنامج. تُحذف أقدم النسخ التلقائية، أما نسخك اليدوية فلا تُحذف أبداً."],
     'backup.autoOn': ["Make a copy every day", "Faire une copie chaque jour", "إنشاء نسخة كل يوم"],
     'backup.keep': ["Automatic copies kept", "Copies automatiques gardées", "عدد النسخ التلقائية المحفوظة"],
-    'backup.keepN': ["The last {n} days", "Les {n} derniers jours", "آخر {n} يوماً"],
+    'backup.keepN': ["The last {n} days", "Les {n} derniers jours", "آخر {n:days}"],
 };

@@ -104,11 +104,11 @@ describe('home screen figures', () => {
 
     // Customer returns: what counts is what the customer kept
     let returnNo = 0;
-    const giveBack = (saleItemId, quantity) => {
+    const giveBack = (saleItemId, quantity, productId = 'jean') => {
         const id = `ret-${++returnNo}`;
         api.run("INSERT INTO returns (id, sale_id, return_number, total_refund) VALUES (?, 's1', ?, 0)", [id, `R-${returnNo}`]);
         api.run('INSERT INTO return_items (id, return_id, sale_item_id, product_id, quantity, refund_amount) VALUES (?, ?, ?, ?, ?, 0)',
-            [`${id}-1`, id, saleItemId, 'jean', quantity]);
+            [`${id}-1`, id, saleItemId, productId, quantity]);
     };
     const jeanSold = () => ({
         best: dashboard.bestSellers(api, WEEK).products.find(p => p.product_id === 'jean')?.quantity ?? 0,
@@ -146,6 +146,23 @@ describe('home screen figures', () => {
         const best = dashboard.bestSellers(api, WEEK);
         expect([...best.products, ...best.sizes, ...best.colors].every(r => r.quantity > 0)).toBe(true);
         expect(best.products.map(p => p.product_id)).toEqual(['belt']);
+    });
+
+    it('an article sold then fully given back counts as not sold for the 30-day list', () => {
+        expect(dashboard.slowMovers(api, SINCE30).map(r => r.product_id)).toEqual(['old']);
+        giveBack('s1-0', 1); // partial: the jean still sold
+        expect(dashboard.slowMovers(api, SINCE30).map(r => r.product_id)).toEqual(['old']);
+        giveBack('s1-0', 1); // now fully given back
+        const slow = dashboard.slowMovers(api, SINCE30, 10);
+        expect(slow.map(r => r.product_id)).toEqual(['jean', 'old']); // jean: 6 pieces, never really sold
+        expect(slow.find(r => r.product_id === 'jean').last_sale_at).toBeNull();
+        expect(slow.find(r => r.product_id === 'old').last_sale_at).toBe('2026-08-01 10:00:00');
+    });
+
+    it('a sale without purchase price fully given back no longer makes the profit approximate', () => {
+        expect(dashboard.soldWithoutCost(api, WEEK)).toBe(1); // the belt
+        giveBack('s1-1', 1, 'belt');
+        expect(dashboard.soldWithoutCost(api, WEEK)).toBe(0);
     });
 
     it('still leaves voided sales out', () => {

@@ -11,6 +11,7 @@
 import { create } from 'zustand';
 import { useCallback } from 'react';
 import { MESSAGES } from './messages';
+import { arabicCounted } from './plural';
 
 export const LANGUAGES = [
     { value: 'ar', label: 'العربية', dir: 'rtl', locale: 'ar-DZ-u-nu-latn' },
@@ -66,6 +67,7 @@ export function translate(lang, key, params) {
         text = entry[INDEX[normalizeLanguage(lang)]] || entry[0] || key;
     }
     if (params) {
+        if (normalizeLanguage(lang) === 'ar') text = arabicCounted(text, params);
         text = text.replace(/\{(\w+)\}/g, (m, name) => (params[name] !== undefined && params[name] !== null ? String(params[name]) : m));
     }
     return text;

@@ -207,6 +207,15 @@ const MIGRATIONS = [
             `);
         },
     },
+    {
+        version: '2026_10_purchase_return_status',
+        description: 'Goods sent back to a supplier: fix the misspelt "complated" status',
+        up(db) {
+            // Only the misspelt value is rewritten; amounts, dates and stock are untouched
+            if (!tableExists(db, 'purchase_returns')) return;
+            db.run("UPDATE purchase_returns SET status = 'completed' WHERE status = 'complated'");
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

@@ -25,7 +25,7 @@ describe('translations', () => {
 
     it('placeholders are the same in the three languages', () => {
         const mismatched = Object.entries(MESSAGES).filter(([, v]) => {
-            const names = v.map(s => (s.match(/\{\w+\}/g) || []).sort().join(','));
+            const names = v.map(s => (s.match(/\{\w+(?=[:}])/g) || []).sort().join(','));
             return names[0] !== names[1] || names[0] !== names[2];
         }).map(([k]) => k);
         expect(mismatched).toEqual([]);

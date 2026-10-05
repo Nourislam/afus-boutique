@@ -50,7 +50,7 @@ export default {
     'dash.alert.outOfStock': ["Sold out but selling ({n}): {names}", "Épuisé alors que ça se vend ({n}) : {names}", "نفد وهو يُباع ({n}): {names}"],
     'dash.alert.overdueCredit': ["Customers late with their credit: {n} — they owe {amount}", "Clients en retard sur leur crédit : {n} — ils doivent {amount}", "زبائن متأخرون في الكريدي: {n} — عليهم {amount}"],
     'dash.alert.noBackup': ["No backup copy yet", "Aucune sauvegarde pour l'instant", "لا توجد نسخة احتياطية بعد"],
-    'dash.alert.oldBackup': ["Last backup copy {n} days ago", "Dernière sauvegarde il y a {n} jours", "آخر نسخة احتياطية منذ {n} يوم"],
+    'dash.alert.oldBackup': ["Last backup copy {n} days ago", "Dernière sauvegarde il y a {n} jours", "آخر نسخة احتياطية منذ {n:days}"],
     'dash.alert.lowStock': ["Colours or sizes running low: {n}", "Couleurs ou tailles bientôt épuisées : {n}", "ألوان أو مقاسات قاربت النفاد: {n}"],
     'dash.alert.missingCost': ["Articles without purchase price: {n} — the profit is not exact", "Articles sans prix d'achat : {n} — le bénéfice n'est pas exact", "سلع بدون سعر شراء: {n} · الربح غير دقيق"],
     'dash.alert.offerEndsToday': ["The discount \"{name}\" ends today", "La remise « {name} » se termine aujourd'hui", "التخفيض \"{name}\" ينتهي اليوم"],
@@ -83,7 +83,7 @@ export default {
     // Not moving
     'dash.slow.title': ["Not sold for 30 days", "Pas vendu depuis 30 jours", "لم تُبع منذ 30 يومًا"],
     'dash.slow.pieces': ["in stock: {n}", "en stock : {n}", "في المخزون: {n} قطعة"],
-    'dash.slow.days': ["last sale {n} days ago", "dernière vente il y a {n} jours", "آخر بيع منذ {n} يوم"],
+    'dash.slow.days': ["last sale {n} days ago", "dernière vente il y a {n} jours", "آخر بيع منذ {n:days}"],
     'dash.slow.never': ["never sold", "jamais vendu", "لم تُبع أبدًا"],
     'dash.slow.none': ["✓ Every article sold in the last 30 days", "✓ Chaque article s'est vendu ces 30 derniers jours", "✓ كل السلع بيعت خلال آخر 30 يومًا"],
     'dash.week.total': ["This week:", "Cette semaine :", "هذا الأسبوع:"],
