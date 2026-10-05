@@ -1,17 +1,33 @@
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
+// Dialogs open one above the other (a photo preview over the article form):
+// Escape closes only the one on top
+const openStack = [];
+
 export function Modal({ isOpen, onClose, title, children, size = 'md', showClose = true, closeOnOverlay = true }) {
     // Close on the overlay only when the click both starts and ends on it (a
     // text selection that ends outside the dialog must not close it)
     const downOnOverlay = useRef(false);
+    const id = useRef(Symbol('modal'));
+    const closeRef = useRef(onClose);
+    closeRef.current = onClose;
 
     useEffect(() => {
         if (!isOpen) return undefined;
-        const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+        const me = id.current;
+        openStack.push(me);
+        const onKey = (e) => {
+            if (e.key !== 'Escape' || openStack[openStack.length - 1] !== me) return;
+            closeRef.current?.();
+        };
         window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [isOpen, onClose]);
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            const at = openStack.lastIndexOf(me);
+            if (at !== -1) openStack.splice(at, 1);
+        };
+    }, [isOpen]);
 
     if (!isOpen) return null;
 

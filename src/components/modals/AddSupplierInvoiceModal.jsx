@@ -6,8 +6,10 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { toast } from '../ui/Toast';
 import { CheckCircle, XCircle } from 'lucide-react';
+import { useTaxEnabled } from '../../lib/useTaxEnabled';
 
 export default function AddSupplierInvoiceModal({ isOpen, onClose, onComplete, purchaseOrder }) {
+    const taxOn = useTaxEnabled();
     const [formData, setFormData] = useState({
         invoice_number: '',
         invoice_date: new Date().toISOString().split('T')[0],
@@ -117,6 +119,7 @@ export default function AddSupplierInvoiceModal({ isOpen, onClose, onComplete, p
                                     onChange={e => setFormData({ ...formData, subtotal: parseFloat(e.target.value) || 0 })}
                                 />
                             </div>
+                            {taxOn && (
                             <div>
                                 <label className="block text-xs text-zinc-400 mb-1">{t('pos.tax')}</label>
                                 <Input
@@ -127,6 +130,7 @@ export default function AddSupplierInvoiceModal({ isOpen, onClose, onComplete, p
                                     onChange={e => setFormData({ ...formData, tax_amount: parseFloat(e.target.value) || 0 })}
                                 />
                             </div>
+                            )}
                             <div>
                                 <label className="block text-xs text-zinc-400 mb-1 font-bold text-accent-primary">{t('pos.total')}</label>
                                 <Input

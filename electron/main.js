@@ -1861,7 +1861,7 @@ async function resolvePrinterOptions(options, kind) {
 const RECEIPT_PREVIEW_KEYS = [
   'businessName', 'businessAddress', 'businessCity', 'businessWilaya', 'businessPhone',
   'businessRc', 'businessTaxId', 'businessNis', 'businessAi', 'receiptHeader', 'receiptFooter',
-  'receiptShowBrand', 'receiptPaperWidthMm', 'taxName', 'taxType',
+  'receiptShowBrand', 'receiptPaperWidthMm', 'taxName', 'taxType', 'taxEnabled', 'taxRate',
 ];
 function shopSettingsWith(overrides) {
   const settings = getShopSettingsForPrint();

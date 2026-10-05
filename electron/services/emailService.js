@@ -404,10 +404,10 @@ async function sendPurchaseOrderEmail({ to, po, businessInfo, pdfPath }) {
               <span>Subtotal</span>
               <span class="amount">$${(po.subtotal || 0).toFixed(2)}</span>
             </div>
-            <div class="total-row">
+            ${po.tax_amount > 0 ? `<div class="total-row">
               <span>Tax</span>
               <span class="amount">$${(po.tax_amount || 0).toFixed(2)}</span>
-            </div>
+            </div>` : ''}
             <div class="total-row final">
               <span>Total</span>
               <span>$${(po.total || 0).toFixed(2)}</span>

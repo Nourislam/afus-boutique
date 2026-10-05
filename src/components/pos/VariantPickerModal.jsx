@@ -3,6 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 import { Modal, ModalBody } from '../ui/Modal';
 import { t } from '../../i18n';
 import { colorHex, colorName, sizeLabel } from '../../lib/clothing';
+import { pickerMode } from '../../lib/variantRules';
 
 /**
  * Lets the cashier pick the exact colour, then the size, of a clothing
@@ -35,9 +36,19 @@ export function VariantPickerModal({ product, isOpen, onClose, onSelect, formatC
         return [...list.values()];
     }, [variants]);
 
-    // Products with a single colour (or sizes only) go straight to the sizes
-    const activeColor = color ?? (colors.length === 1 ? colors[0].key : null);
-    const sizes = activeColor === null ? [] : variants.filter(v => (v.color || '') === activeColor);
+    // Colours only: the colour is the piece. Sizes only (or a single colour):
+    // straight to the sizes. Colours and sizes: colour, then size.
+    const mode = pickerMode(product || {}, variants);
+    const activeColor = mode === 'size' || mode === 'none' ? '' : (color ?? (mode === 'both' && colors.length === 1 ? colors[0].key : null));
+    const sizes = activeColor === null ? [] : (mode === 'size' || mode === 'none' ? variants : variants.filter(v => (v.color || '') === activeColor));
+    const chooseColor = (key) => {
+        if (mode === 'color') {
+            const piece = variants.find(v => (v.color || '') === key && (v.stock_quantity ?? 0) > 0) || variants.find(v => (v.color || '') === key);
+            if (piece) onSelect(piece);
+            return;
+        }
+        setColor(key);
+    };
 
     if (!product) return null;
 
@@ -65,7 +76,7 @@ export function VariantPickerModal({ product, isOpen, onClose, onSelect, formatC
                                     key={c.key}
                                     type="button"
                                     disabled={c.stock <= 0}
-                                    onClick={() => setColor(c.key)}
+                                    onClick={() => chooseColor(c.key)}
                                     className={`rounded-xl border-2 p-3 flex flex-col items-center gap-2 transition-colors
                                         ${c.stock <= 0 ? 'border-dark-border opacity-40 cursor-not-allowed' : 'border-dark-border hover:border-accent-primary hover:bg-accent-primary/10'}`}
                                 >
@@ -79,7 +90,7 @@ export function VariantPickerModal({ product, isOpen, onClose, onSelect, formatC
                 ) : (
                     <>
                         <div className="flex items-center gap-3 mb-3">
-                            {colors.length > 1 && (
+                            {mode === 'both' && colors.length > 1 && (
                                 <button type="button" onClick={() => setColor(null)} className="p-1.5 rounded-lg bg-dark-tertiary hover:bg-zinc-700" title={t('common.back')}>
                                     <ChevronLeft className="w-4 h-4 flip-rtl" />
                                 </button>

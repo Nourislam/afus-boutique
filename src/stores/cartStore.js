@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { isTaxEnabled } from '../lib/tax';
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { bestPromotion } from '../lib/promotions';
@@ -72,6 +73,7 @@ export const useCartStore = create((set, get) => ({
             set({
                 taxType: finalTaxType,
                 globalTaxRate: finalTaxRate,
+                taxEnabled: isTaxEnabled(parsed),
                 currency: finalCurrency
             });
         } catch (e) {
@@ -239,8 +241,9 @@ export const useCartStore = create((set, get) => ({
 
     // Tax is computed on what the customer really pays (after discounts)
     getTaxAmount: () => {
-        const { items, taxType, taxExempt, globalTaxRate } = get();
-        if (taxExempt) return 0;
+        const { items, taxType, taxExempt, globalTaxRate, taxEnabled } = get();
+        // TVA turned off in Settings: none is computed
+        if (taxExempt || taxEnabled === false) return 0;
         const subtotal = get().getSubtotal();
         if (subtotal <= 0) return 0;
         const factor = (subtotal - get().getDiscountAmount()) / subtotal;
@@ -341,7 +344,7 @@ export const useCartStore = create((set, get) => ({
         const promo = get().getPromotion();
         const saleItems = items.map(item => ({
             ...item,
-            tax_amount: (taxExempt) ? 0 : (item.total * (item.tax_rate / 100)), // Approximate for record
+            tax_amount: (taxExempt || get().taxEnabled === false) ? 0 : (item.total * (item.tax_rate / 100)), // Approximate for record
         }));
 
         const sale = {

@@ -136,3 +136,28 @@ describe('money formatting', () => {
         expect(incomplete).toEqual([]);
     });
 });
+
+describe('TVA of past sales (Settings › TVA turned off later)', () => {
+    const InvoiceService = require('../electron/services/invoiceService');
+    const OLD_SALE = { ...SALE, tax_amount: 639, total: 4000 };
+    const TVA_OFF = { ...SHOP, taxEnabled: false, taxRate: 0, defaultLanguage: 'fr' };
+
+    it('scenario 1: an old sale saved with TVA keeps its TVA line on every document', () => {
+        const ticket = sp(receiptService.generateThermalReceiptHtml(OLD_SALE, TVA_OFF));
+        expect(ticket).toMatch(/<span>TVA<\/span><span class="ltr">639 DA<\/span>/);
+        const a4 = sp(receiptService.generateHtml(OLD_SALE, { ...TVA_OFF, type: 'invoice' }));
+        expect(a4).toContain('<span>TVA</span>');
+        expect(a4).toContain('639 DA');
+        const credit = InvoiceService.generateInvoiceHtml({ ...OLD_SALE, items: [], amount_due: 4000, amount_paid: 0 }, { store_config: TVA_OFF });
+        expect(credit).toContain('<span>TVA</span>');
+        // The stored amount is shown as saved, with a neutral name (the type and name were not saved)
+        expect(ticket).not.toContain('incl');
+    });
+
+    it('scenario 2: a sale made after TVA was turned off has no TVA and no TVA line', () => {
+        const NEW_SALE = { ...SALE, tax_amount: 0 };
+        expect(receiptService.generateThermalReceiptHtml(NEW_SALE, TVA_OFF)).not.toContain('TVA');
+        expect(receiptService.generateHtml(NEW_SALE, { ...TVA_OFF, type: 'invoice' })).not.toContain('<span>TVA</span>');
+        expect(InvoiceService.generateInvoiceHtml({ ...NEW_SALE, items: [], amount_due: 4000, amount_paid: 0 }, { store_config: TVA_OFF })).not.toContain('<span>TVA</span>');
+    });
+});

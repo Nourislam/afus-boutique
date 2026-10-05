@@ -19,6 +19,7 @@ import { ModulesSettings } from '../components/settings/ModulesSettings';
 import { BackupSettings } from '../components/settings/BackupSettings';
 import { DEFAULT_SHOP, loadShopConfiguration, saveShopConfiguration } from '../lib/shopSettings';
 import { resolveFeatures } from '../lib/features';
+import { isTaxEnabled } from '../lib/tax';
 import { colorName } from '../lib/clothing';
 import { useSettingsStore } from '../stores/settingsStore';
 import { SystemLogs } from '../components/settings/SystemLogs';
@@ -163,6 +164,7 @@ export default function SettingsPage() {
             storeConfig.currency = 'DZD';
             storeConfig.currencySymbol = 'DA';
             storeConfig.taxRate = parseFloat(settings.taxRate) || 0;
+            storeConfig.taxEnabled = isTaxEnabled(settings);
             storeConfig.defaultLanguage = lang;
             storeConfig.poSignatureName = settings.poSignatureName || '';
             storeConfig.poSignatureTitle = settings.poSignatureTitle || '';
@@ -244,13 +246,14 @@ export default function SettingsPage() {
     }
 
     const money = (amount) => formatMoney(amount, { lang });
+    const taxOn = isTaxEnabled(settings);
     // Ticket fields being edited, shown in the preview and used by the test ticket before saving
     const receiptShop = {
         businessName: settings.businessName, businessAddress: settings.businessAddress, businessCity: settings.businessCity,
         businessWilaya: settings.businessWilaya, businessPhone: settings.businessPhone, businessRc: settings.businessRc,
         businessTaxId: settings.businessTaxId, businessNis: settings.businessNis, businessAi: settings.businessAi,
         receiptHeader: settings.receiptHeader, receiptFooter: settings.receiptFooter, receiptShowBrand: settings.receiptShowBrand !== false,
-        taxName: settings.taxName, taxType: settings.taxType,
+        taxName: settings.taxName, taxType: settings.taxType, taxEnabled: isTaxEnabled(settings), taxRate: settings.taxRate,
     };
 
     return (
@@ -323,13 +326,27 @@ export default function SettingsPage() {
                                     </div>
                                 </Card>
                                 <Card className="space-y-6">
-                                    <SectionHeader icon={Percent} color="bg-amber-500/20 text-amber-400" title={t('setup.taxTitle')} text={t('setup.taxText')} />
+                                    <SectionHeader icon={Percent} color="bg-amber-500/20 text-amber-400" title={t('setup.taxTitle')} text={taxOn ? t('setup.taxText') : t('settings.taxCardOff')} />
                                     <div className="rounded-lg bg-dark-tertiary px-4 py-3 text-sm">
                                         <span className="text-zinc-400">{t('settings.currency')} : </span>
                                         <span className="font-semibold">{t('settings.currencyDzd')}</span>
                                         <span className="text-zinc-500 ms-3 ltr inline-block">{money(2500)}</span>
                                     </div>
-                                    <div className="grid grid-cols-3 gap-4">
+                                    {/* TVA on / off: off hides it on every screen, ticket and report */}
+                                    <label className="flex items-center gap-3 cursor-pointer select-none rounded-lg border border-dark-border px-4 py-3 hover:border-zinc-600">
+                                        <span className="flex-1 min-w-0">
+                                            <span className="block text-sm font-medium">{t('settings.taxEnabled')}</span>
+                                            <span className="block text-xs text-zinc-500">{t(taxOn ? 'settings.taxEnabledOn' : 'settings.taxEnabledOff')}</span>
+                                        </span>
+                                        <span className="relative inline-flex flex-none">
+                                            <input type="checkbox" className="peer sr-only" checked={taxOn} onChange={(e) => handleChange('taxEnabled', e.target.checked)} />
+                                            <span className={`w-10 h-6 rounded-full transition-colors ${taxOn ? 'bg-indigo-500' : 'bg-zinc-600'} peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400`} />
+                                            <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${taxOn ? 'start-5' : 'start-1'}`} />
+                                        </span>
+                                    </label>
+                                    {taxOn && (
+                                    <>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                         <Input
                                             label={t('settings.taxName')}
                                             value={settings.taxName}
@@ -364,6 +381,8 @@ export default function SettingsPage() {
                                         ))}
                                         <span className="form-hint">{t('settings.tvaHint')}</span>
                                     </div>
+                                    </>
+                                    )}
                                 </Card>
                             </div>
                         )}

@@ -6,6 +6,10 @@ const { translator, formatMoney, formatDate, variantLabel, paymentLabel } = requ
 const { loadHtml, hiddenWindow, printContents } = require('./printDocument');
 const { BRAND } = require('../brand');
 
+// A sale keeps only its TVA amount (not the rate, the name or "included / added"
+// at the time), so documents name it plainly instead of using today's settings
+const TAX_LABEL = 'TVA';
+
 class ReceiptService {
     constructor() {
         this.printWindow = null;
@@ -632,13 +636,14 @@ class ReceiptService {
                             <span>${T('receipt.subtotal')}</span>
                             <span>${money(data.subtotal)}</span>
                         </div>
+                        ${(parseFloat(data.tax_amount) || 0) > 0 || data.tax_exempt ? `
                         <div class="summary-row">
-                            <span>${esc(settings.taxName || 'TVA')} ${settings.taxType === 'inclusive' ? `(${T('receipt.taxIncluded')})` : ''}</span>
+                            <span>${TAX_LABEL}</span>
                             <div style="text-align:end">
                                 ${data.tax_exempt ? `<span style="font-size:10px;color:#d97706;margin-inline-end:4px">${T('doc.exempt')}</span>` : ''}
                                 <span>${money(data.tax_amount || 0)}</span>
                             </div>
-                        </div>
+                        </div>` : ''}
                          ${(data.service_charge && data.service_charge > 0) ? `
                         <div class="summary-row">
                             <span>${T('receipt.serviceCharge')}</span>
@@ -801,6 +806,8 @@ class ReceiptService {
 
         const cashPaid = (data.payments || []).filter(p => p.method === 'cash').reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
         const change = tendered > 0 ? tendered - cashPaid : 0;
+        // The TVA of this sale as it was saved, whatever the shop's setting is
+        // today: an old ticket keeps its TVA line; a sale made with TVA off has 0
         const showTax = (parseFloat(data.tax_amount) || 0) > 0;
 
         return `<!DOCTYPE html>
@@ -853,7 +860,7 @@ class ReceiptService {
     <div class="row"><span>${T('receipt.subtotal')} (${T('receipt.items', { n: itemCount })})</span><span class="ltr">${money(data.subtotal)}</span></div>
     ${data.discount_amount > 0 ? `<div class="row"><span>${T('receipt.discount')}</span><span class="ltr">-${money(data.discount_amount)}</span></div>` : ''}
     ${(data.service_charge && data.service_charge > 0) ? `<div class="row"><span>${T('receipt.serviceCharge')}</span><span class="ltr">${money(data.service_charge)}</span></div>` : ''}
-    ${showTax ? `<div class="row"><span>${esc(storeSettings.taxName || 'TVA')}${storeSettings.taxType === 'inclusive' ? ` (${T('receipt.taxIncluded')})` : ''}</span><span class="ltr">${money(data.tax_amount)}</span></div>` : ''}
+    ${showTax ? `<div class="row"><span>${TAX_LABEL}</span><span class="ltr">${money(data.tax_amount)}</span></div>` : ''}
     <div class="row grand"><span>${T('receipt.total')}</span><span class="ltr">${money(data.total)}</span></div>
     <div class="sep"></div>
     ${paymentsHtml}

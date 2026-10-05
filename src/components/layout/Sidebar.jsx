@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import {
     LayoutDashboard, ShoppingCart, Package, Boxes, UserCog, BarChart3, Settings, LogOut, Percent, QrCode,
-    History, CreditCard, FileText, LibraryBig, PanelLeftClose, PanelLeftOpen, LayoutGrid, Rows3,
+    History, CreditCard, FileText, LibraryBig, Users, Truck, PanelLeftClose, PanelLeftOpen, LayoutGrid, Rows3,
 } from 'lucide-react';
 import { useAuthStore, PERMISSIONS } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -34,6 +34,8 @@ const NAV_GROUPS = [
             { path: '/inventory', icon: Boxes, label: 'nav.inventory', permission: PERMISSIONS.INVENTORY_VIEW },
             { path: '/labels', icon: QrCode, label: 'nav.labels', permission: PERMISSIONS.PRODUCTS_VIEW },
             { path: '/catalog', icon: LibraryBig, label: 'nav.catalog', permission: PERMISSIONS.PRODUCTS_VIEW },
+            { path: '/customers', icon: Users, label: 'nav.customers', permission: PERMISSIONS.CUSTOMERS_VIEW, feature: 'customers' },
+            { path: '/suppliers', icon: Truck, label: 'nav.suppliers', permission: PERMISSIONS.INVENTORY_VIEW, feature: 'suppliers' },
             { path: '/purchase-orders', icon: FileText, label: 'nav.purchases', permission: PERMISSIONS.INVENTORY_VIEW, feature: 'purchaseOrders' },
         ],
     },

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolveFeatures, effectiveFeatures, offersEnabled, DEFAULT_FEATURES } from '../src/lib/features';
-import { offerTabs, catalogModuleTabs } from '../src/lib/modules';
+import { offerTabs } from '../src/lib/modules';
 
 describe('modules', () => {
     it('keeps the saved choices and drops removed modules', () => {
@@ -23,6 +23,5 @@ describe('modules', () => {
     it('shows a tab only with the module on and the permission', () => {
         const all = effectiveFeatures({ giftCards: true });
         expect(offerTabs(all, (p) => p === 'gift_cards.view')).toEqual(['giftCards']);
-        expect(catalogModuleTabs(effectiveFeatures({ customers: false }))).toEqual(['suppliers']);
     });
 });

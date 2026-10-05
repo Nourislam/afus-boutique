@@ -246,9 +246,9 @@ class InvoiceService {
                     <span>Subtotal</span>
                     <span>${this.formatCurrency(subtotal)}</span>
                 </div>
-                ${taxAmount ? `
+                ${taxAmount > 0 ? `
                 <div class="totals-row">
-                    <span>Tax</span>
+                    <span>TVA</span>
                     <span>${this.formatCurrency(taxAmount)}</span>
                 </div>
                 ` : ''}

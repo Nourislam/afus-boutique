@@ -49,7 +49,29 @@ function newRow(color, size, lang) {
  * `variants` rows: { key, id?, color, color_code, size, sku, qr_code, barcode,
  *   price, cost, stock_quantity, min_stock_level, is_active, isNew }
  */
-export function VariantEditor({ product, variants, onChange, suggestedSizeSet }) {
+/** Small on / off switch in the header of the colours and sizes blocks. */
+function DimensionSwitch({ checked, onChange, label }) {
+    return (
+        <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+            <span className={checked ? 'text-indigo-300' : 'text-zinc-500'}>{t(checked ? 'common.on' : 'common.off')}</span>
+            <span className="relative inline-flex flex-none">
+                <input type="checkbox" className="peer sr-only" checked={checked} onChange={(e) => onChange(e.target.checked)} aria-label={label} />
+                <span className={`w-9 h-5 rounded-full transition-colors ${checked ? 'bg-indigo-500' : 'bg-zinc-600'} peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-400`} />
+                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${checked ? 'start-[18px]' : 'start-0.5'}`} />
+            </span>
+        </label>
+    );
+}
+
+/*
+ * colorsOn / sizesOn: the article uses colours, sizes, both or neither. A block
+ * turned off is left out of the grid; pieces already saved with it are kept
+ * (inactive) and come back when it is turned on again.
+ */
+export function VariantEditor({
+    product, variants, onChange, suggestedSizeSet, hideEmptyHint = false,
+    colorsOn = true, sizesOn = true, onColorsOnChange, onSizesOnChange,
+}) {
     const lang = currentLanguage();
     const [colors, setColors] = useState(() => {
         const list = [];
@@ -82,9 +104,11 @@ export function VariantEditor({ product, variants, onChange, suggestedSizeSet })
             if (variantsRef.current.length > 0) return;
         }
         const current = variantsRef.current;
-        const colorList = colors.length ? colors : [null];
-        const sizeList = sizes.length ? sizes : [''];
-        if (!colors.length && !sizes.length) {
+        const usedColors = colorsOn ? colors : [];
+        const usedSizes = sizesOn ? sizes : [];
+        const colorList = usedColors.length ? usedColors : [null];
+        const sizeList = usedSizes.length ? usedSizes : [''];
+        if (!usedColors.length && !usedSizes.length) {
             const next = current.filter(v => !v.isNew).map(v => ({ ...v, is_active: false }));
             if (next.length !== current.length || next.some((v, i) => v.is_active !== current[i]?.is_active)) onChange(next);
             return;
@@ -106,7 +130,7 @@ export function VariantEditor({ product, variants, onChange, suggestedSizeSet })
         }
         const changed = next.length !== current.length || next.some((v, i) => v !== current[i]);
         if (changed) onChange(next);
-    }, [colors, sizes]);
+    }, [colors, sizes, colorsOn, sizesOn]);
 
     // New rows get their SKU automatically
     useEffect(() => {
@@ -186,8 +210,11 @@ export function VariantEditor({ product, variants, onChange, suggestedSizeSet })
     const active = variants.filter(v => v.is_active);
     const inactive = variants.filter(v => !v.is_active && !v.isNew);
     const totalStock = active.reduce((sum, v) => sum + (parseInt(v.stock_quantity, 10) || 0), 0);
-    const gridColors = colors.length ? colors : [null];
-    const gridSizes = sizes.length ? sizes : [''];
+    const gridColors = colorsOn && colors.length ? colors : [null];
+    const gridSizes = sizesOn && sizes.length ? sizes : [''];
+    // Pieces kept from a block that was turned off (they return when it is on again)
+    const keptColors = !colorsOn && variants.some(v => !v.isNew && String(v.color || '').trim());
+    const keptSizes = !sizesOn && variants.some(v => !v.isNew && String(v.size || '').trim());
     const cell = (c, size) => active.find(v => rowKey(v) === `${c ? colorKey(c) : 'none'}|${String(size).toLowerCase()}`);
 
     const codeCounts = useMemo(() => {
@@ -223,11 +250,14 @@ export function VariantEditor({ product, variants, onChange, suggestedSizeSet })
     return (
         <div className="space-y-5">
             {/* Colours */}
-            <div>
-                <div className="flex items-center justify-between mb-2">
-                    <label className="form-label">{t('variants.colors')}</label>
-                    <span className="form-hint">{t('variants.colorsHint')}</span>
+            <div className={colorsOn ? '' : 'rounded-lg border border-dashed border-dark-border px-3 py-2'}>
+                <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${colorsOn ? 'mb-2' : ''}`}>
+                    <span className="form-label mb-0">{t('variants.colors')}</span>
+                    {colorsOn && <span className="form-hint flex-1 min-w-[10rem]">{t('variants.colorsHint')}</span>}
+                    {!colorsOn && <span className="text-xs text-zinc-500 flex-1 min-w-[10rem]">{t(keptColors ? 'variants.colorsOffKept' : 'variants.colorsOff')}</span>}
+                    {onColorsOnChange && <DimensionSwitch checked={colorsOn} onChange={onColorsOnChange} label={t('variants.colors')} />}
                 </div>
+                {colorsOn && (
                 <div className="flex flex-wrap gap-1.5">
                     {palette.map(c => {
                         const selected = colors.some(x => x.code === c.code);
@@ -259,14 +289,19 @@ export function VariantEditor({ product, variants, onChange, suggestedSizeSet })
                         <Button type="button" variant="ghost" size="icon" onClick={addCustomColor} aria-label="add"><Plus className="w-4 h-4" /></Button>
                     </div>
                 </div>
+                )}
             </div>
 
             {/* Sizes */}
-            <div>
-                <div className="flex items-center justify-between mb-2">
-                    <label className="form-label">{t('variants.sizes')}</label>
-                    <span className="form-hint">{t('variants.sizesHint')}</span>
+            <div className={sizesOn ? '' : 'rounded-lg border border-dashed border-dark-border px-3 py-2'}>
+                <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${sizesOn ? 'mb-2' : ''}`}>
+                    <span className="form-label mb-0">{t('variants.sizes')}</span>
+                    {sizesOn && <span className="form-hint flex-1 min-w-[10rem]">{t('variants.sizesHint')}</span>}
+                    {!sizesOn && <span className="text-xs text-zinc-500 flex-1 min-w-[10rem]">{t(keptSizes ? 'variants.sizesOffKept' : 'variants.sizesOff')}</span>}
+                    {onSizesOnChange && <DimensionSwitch checked={sizesOn} onChange={onSizesOnChange} label={t('variants.sizes')} />}
                 </div>
+                {sizesOn && (
+                <>
                 <div className="flex flex-wrap gap-1.5 mb-2">
                     {orderedSets.map(set => (
                         <button key={set.code} type="button" onClick={() => addSizes(set.sizes)}
@@ -291,11 +326,13 @@ export function VariantEditor({ product, variants, onChange, suggestedSizeSet })
                         placeholder={t('variants.typeSize')}
                         className="flex-1 min-w-[140px] bg-transparent outline-none text-sm px-1" />
                 </div>
+                </>
+                )}
             </div>
 
             {/* Quantity grid */}
             {active.length === 0 ? (
-                <p className="text-sm text-zinc-500 p-4 rounded-lg border border-dashed border-dark-border text-center">{t('variants.emptyHint')}</p>
+                hideEmptyHint ? null : <p className="text-sm text-zinc-500 p-4 rounded-lg border border-dashed border-dark-border text-center">{t('variants.emptyHint')}</p>
             ) : (
                 <div className="space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -313,8 +350,10 @@ export function VariantEditor({ product, variants, onChange, suggestedSizeSet })
                         <table className="text-sm">
                             <thead>
                                 <tr className="bg-dark-tertiary/60">
-                                    <th className="px-3 py-2 text-start text-xs text-zinc-500 font-medium min-w-[120px]">{t('variants.color')} \ {t('variants.size')}</th>
-                                    {gridSizes.map(s => <th key={s} className="px-2 py-2 text-center font-semibold min-w-[72px]">{s ? sizeLabel(s, lang) : '—'}</th>)}
+                                    <th className="px-3 py-2 text-start text-xs text-zinc-500 font-medium min-w-[120px]">
+                                        {gridColors[0] && gridSizes[0] ? `${t('variants.color')} / ${t('variants.size')}` : gridColors[0] ? t('variants.color') : t('variants.size')}
+                                    </th>
+                                    {gridSizes.map(s => <th key={s} className="px-2 py-2 text-center font-semibold min-w-[72px]">{s ? sizeLabel(s, lang) : t('variants.qty')}</th>)}
                                     <th className="px-3 py-2 text-center text-xs text-zinc-500 font-medium">{t('pos.total')}</th>
                                 </tr>
                             </thead>
@@ -326,7 +365,7 @@ export function VariantEditor({ product, variants, onChange, suggestedSizeSet })
                                             <td className="px-3 py-1.5">
                                                 <span className="flex items-center gap-2 whitespace-nowrap">
                                                     <Swatch hex={c?.code ? colorHex(c.code) : null} />
-                                                    {c ? (c.code ? colorName(c.code, lang) : c.name) : '—'}
+                                                    {c ? (c.code ? colorName(c.code, lang) : c.name) : t('variants.qty')}
                                                 </span>
                                             </td>
                                             {gridSizes.map(s => {

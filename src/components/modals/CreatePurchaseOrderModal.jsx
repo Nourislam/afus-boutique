@@ -9,8 +9,10 @@ import { Search, Trash2 } from 'lucide-react';
 import { toast } from '../ui/Toast';
 import { translateError } from '../../i18n/errors';
 import { variantLabel } from '../../lib/clothing';
+import { useTaxEnabled } from '../../lib/useTaxEnabled';
 
 export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }) {
+    const taxOn = useTaxEnabled();
     const [suppliers, setSuppliers] = useState([]);
     const [products, setProducts] = useState([]);
     // Every field starts with a value so the inputs stay controlled
@@ -379,6 +381,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                 </div>
                             </div>
 
+                            {taxOn && (
                             <div className="flex justify-between items-center text-sm">
                                 <span className="text-zinc-400">{t('po.taxRate')}</span>
                                 <Input
@@ -389,6 +392,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                                     onChange={e => setFormData({ ...formData, tax_rate: parseFloat(e.target.value) || 0 })}
                                 />
                             </div>
+                            )}
 
                             <div className="flex justify-between items-center text-sm">
                                 <span className="text-zinc-400">{t('po.shipping')}</span>

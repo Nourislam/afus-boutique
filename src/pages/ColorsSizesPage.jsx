@@ -144,64 +144,91 @@ export function SizesPage() {
 
     const remove = (code) => save({ ...custom, customSizeSets: custom.customSizeSets.filter(s => s.code !== code) });
 
-    const card = (set, { builtIn }) => {
+    const preview = [...new Set(sizes.split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean))];
+
+    // One set per row: name and count, the sizes in order, shown or hidden
+    const row = (set, { builtIn }) => {
         const off = builtIn && hidden.has(set.code);
+        const label = builtIn ? sizeSetLabel(set, lang) : (set[lang] || set.en);
         return (
-            <div key={set.code} className={`card p-4 ${off ? 'opacity-50 border-dashed' : ''}`}>
-                <div className="flex items-center gap-2 mb-3">
+            <li key={set.code} className={`flex flex-col md:flex-row md:items-center gap-3 px-4 py-3 ${off ? 'opacity-55' : ''}`}>
+                <div className="md:w-56 flex-none flex items-center gap-2.5 min-w-0">
                     <Ruler className="w-4 h-4 text-indigo-300 flex-none" />
-                    <h4 className="font-semibold flex-1 min-w-0 truncate">{builtIn ? sizeSetLabel(set, lang) : (set[lang] || set.en)}</h4>
-                    <PermissionGate permission={PERMISSIONS.PRODUCTS_EDIT}>
-                        {builtIn ? (
-                            <button type="button" onClick={() => toggle(set.code)} className="p-1.5 rounded hover:bg-dark-tertiary text-zinc-400 hover:text-white"
-                                title={off ? t('catalogCustom.show') : t('catalogCustom.hide')} aria-label={off ? t('catalogCustom.show') : t('catalogCustom.hide')}>
-                                {off ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                        ) : (
-                            <button type="button" onClick={() => remove(set.code)} className="p-1.5 rounded hover:bg-red-500/15 text-red-300" aria-label={t('common.delete')}>
-                                <Trash2 className="w-4 h-4" />
-                            </button>
-                        )}
-                    </PermissionGate>
+                    <span className="font-medium truncate">{label}</span>
+                    <span className="badge bg-dark-tertiary text-zinc-400 flex-none tabular">{set.sizes.length}</span>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex-1 min-w-0 flex flex-wrap gap-1.5">
                     {set.sizes.map(size => (
-                        <span key={size} className="min-w-[2.25rem] h-8 px-2 inline-flex items-center justify-center rounded-md bg-dark-tertiary text-sm font-medium whitespace-nowrap"><bdi>{sizeLabel(size, lang)}</bdi></span>
+                        <span key={size} className="min-w-[2.5rem] h-8 px-2.5 inline-flex items-center justify-center rounded-md border border-dark-border bg-dark-primary text-sm font-semibold tabular whitespace-nowrap"><bdi>{sizeLabel(size, lang)}</bdi></span>
                     ))}
                 </div>
-            </div>
+                <PermissionGate permission={PERMISSIONS.PRODUCTS_EDIT}>
+                    <div className="flex-none flex items-center gap-2 md:justify-end md:w-40">
+                        {builtIn ? (
+                            <button type="button" onClick={() => toggle(set.code)} aria-pressed={!off}
+                                className={`h-8 px-3 inline-flex items-center gap-1.5 rounded-lg border text-sm ${off ? 'border-dashed border-dark-border text-zinc-500 hover:text-white' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'}`}>
+                                {off ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                {off ? t('catalogCustom.hiddenState') : t('catalogCustom.shownState')}
+                            </button>
+                        ) : (
+                            <button type="button" onClick={() => remove(set.code)} className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 text-sm text-red-300 hover:bg-red-500/10">
+                                <Trash2 className="w-4 h-4" /> {t('common.delete')}
+                            </button>
+                        )}
+                    </div>
+                </PermissionGate>
+            </li>
         );
     };
 
+    const shown = SIZE_SETS.filter(set => !hidden.has(set.code)).length;
+
     return (
         <div className="page">
-            <PageHeader icon={Ruler} title={t('catalogCustom.sizesTitle')} subtitle={t('catalogCustom.sizesSubtitle')}
-                actions={(
-                    <PermissionGate permission={PERMISSIONS.PRODUCTS_EDIT}>
-                        <form onSubmit={add} className="flex flex-wrap items-center gap-2">
-                            <input className="input w-44" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('catalogCustom.setPlaceholder')} />
-                            <input className="input w-52 ltr" value={sizes} onChange={(e) => setSizes(e.target.value)} placeholder="44, 46, 48, 50" />
+            <PageHeader icon={Ruler} title={t('catalogCustom.sizesTitle')} subtitle={t('catalogCustom.sizesSubtitle')} />
+            <div className="page-body space-y-5 max-w-5xl">
+                {/* Add the shop's own set */}
+                <PermissionGate permission={PERMISSIONS.PRODUCTS_EDIT}>
+                    <form onSubmit={add} className="card space-y-3">
+                        <h3 className="font-semibold flex items-center gap-2"><Plus className="w-4 h-4 text-indigo-300" /> {t('catalogCustom.addSet')}</h3>
+                        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-end">
+                            <label className="form-group">
+                                <span className="form-label">{t('catalogCustom.setName')}</span>
+                                <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('catalogCustom.setPlaceholder')} />
+                            </label>
+                            <label className="form-group">
+                                <span className="form-label">{t('catalogCustom.setSizes')}</span>
+                                <input className="input ltr" value={sizes} onChange={(e) => setSizes(e.target.value)} placeholder="44, 46, 48, 50" />
+                            </label>
                             <Button type="submit"><Plus className="w-4 h-4" /> {t('common.add')}</Button>
-                        </form>
-                    </PermissionGate>
-                )}
-            />
-            <div className="page-body space-y-6">
-                {custom.customSizeSets.length > 0 && (
-                    <section>
-                        <h3 className="text-sm font-semibold text-zinc-400 mb-2">{t('catalogCustom.yourSizes')}</h3>
-                        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-                            {custom.customSizeSets.map(set => card(set, { builtIn: false }))}
                         </div>
+                        {preview.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
+                                {t('catalogCustom.preview')}
+                                {preview.map(size => <span key={size} className="h-7 px-2 inline-flex items-center rounded-md bg-indigo-500/15 text-indigo-100 text-sm font-semibold"><bdi>{size}</bdi></span>)}
+                            </div>
+                        )}
+                    </form>
+                </PermissionGate>
+
+                {custom.customSizeSets.length > 0 && (
+                    <section className="card !p-0 overflow-hidden">
+                        <h3 className="px-4 py-3 border-b border-dark-border text-sm font-semibold flex items-center justify-between">
+                            {t('catalogCustom.yourSizes')}
+                            <span className="text-xs font-normal text-zinc-500 tabular">{custom.customSizeSets.length}</span>
+                        </h3>
+                        <ul className="divide-y divide-dark-border">{custom.customSizeSets.map(set => row(set, { builtIn: false }))}</ul>
                     </section>
                 )}
-                <section>
-                    <h3 className="text-sm font-semibold text-zinc-400 mb-2">{t('catalogCustom.builtInSizes')}</h3>
-                    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-                        {SIZE_SETS.map(set => card(set, { builtIn: true }))}
-                    </div>
-                    <p className="form-hint mt-3">{t('catalogCustom.sizesHint')}</p>
+
+                <section className="card !p-0 overflow-hidden">
+                    <h3 className="px-4 py-3 border-b border-dark-border text-sm font-semibold flex items-center justify-between">
+                        {t('catalogCustom.builtInSizes')}
+                        <span className="text-xs font-normal text-zinc-500">{t('catalogCustom.shownCount', { n: shown, total: SIZE_SETS.length })}</span>
+                    </h3>
+                    <ul className="divide-y divide-dark-border">{SIZE_SETS.map(set => row(set, { builtIn: true }))}</ul>
                 </section>
+                <p className="form-hint">{t('catalogCustom.sizesHint')}</p>
             </div>
         </div>
     );

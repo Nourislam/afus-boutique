@@ -16,6 +16,8 @@ import TransactionsPage from './pages/TransactionsPage';
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
 import CreditSalesPage from './pages/CreditSalesPage';
 import CatalogPage from './pages/CatalogPage';
+import CustomersPage from './pages/CustomersPage';
+import SuppliersPage from './pages/SuppliersPage';
 import OffersPage from './pages/OffersPage';
 import LabelsPage from './pages/LabelsPage';
 import { TitleBar } from './components/layout/TitleBar';
@@ -141,8 +143,17 @@ function App() {
                             <InventoryPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/customers" element={<Navigate to="/catalog?tab=customers" replace />} />
-                    <Route path="/suppliers" element={<Navigate to="/catalog?tab=suppliers" replace />} />
+                    {/* Customers and suppliers are screens of their own (modules in Settings) */}
+                    <Route path="/customers" element={
+                        <ProtectedRoute permission={PERMISSIONS.CUSTOMERS_VIEW}>
+                            <ModuleGate module="customers"><CustomersPage /></ModuleGate>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/suppliers" element={
+                        <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
+                            <ModuleGate module="suppliers"><SuppliersPage /></ModuleGate>
+                        </ProtectedRoute>
+                    } />
                     <Route path="/purchase-orders" element={
                         <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
                             <ModuleGate module="purchaseOrders"><PurchaseOrdersPage /></ModuleGate>

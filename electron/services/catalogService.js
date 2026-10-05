@@ -512,6 +512,36 @@ function validateVariants(api, productId, variants) {
     return errors;
 }
 
+// An article has up to 3 photos: the first in image_path (shown everywhere),
+// the next two in gallery (JSON list of image file names)
+const MAX_PRODUCT_IMAGES = 3;
+function galleryValue(product) {
+    const list = Array.isArray(product.gallery) ? product.gallery : [];
+    const names = list.map(n => String(n || '').trim()).filter(Boolean).filter(n => n !== product.image_path).slice(0, MAX_PRODUCT_IMAGES - 1);
+    return names.length ? JSON.stringify(names) : null;
+}
+
+/**
+ * Colours on / sizes on, saved separately (products.has_colors / has_sizes).
+ * The form sends the two switches; without them (import, older callers) they
+ * follow what the active colours/sizes use. A simple article has neither.
+ */
+function dimensionFlag(sent, hasVariants, variants, field) {
+    if (!hasVariants) return 0;
+    if (sent === undefined || sent === null) {
+        return variants.some(v => v.is_active && String(v[field] || '').trim()) ? 1 : 0;
+    }
+    return sent === true || sent === 1 ? 1 : 0;
+}
+
+/** Photos of a product row, first one first: [fileName, …] (at most 3). */
+function productImages(row) {
+    if (!row) return [];
+    let extra = [];
+    try { extra = row.gallery ? JSON.parse(row.gallery) : []; } catch { extra = []; }
+    return [row.image_path, ...(Array.isArray(extra) ? extra : [])].filter(Boolean).slice(0, MAX_PRODUCT_IMAGES);
+}
+
 /**
  * Create or update a product together with its variants, atomically.
  *
@@ -569,6 +599,9 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
             product.is_active === false || product.is_active === 0 ? 0 : 1,
             product.image_path || null, product.brand ? String(product.brand).trim() : null, product.gender || null,
             product.season || null, product.collection ? String(product.collection).trim() : null, hasVariants ? 1 : 0,
+            galleryValue(product),
+            dimensionFlag(product.has_colors, hasVariants, prepared, 'color'),
+            dimensionFlag(product.has_sizes, hasVariants, prepared, 'size'),
         ];
 
         if (existing && !isNew) {
@@ -576,7 +609,8 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
                 UPDATE products SET
                     sku = ?, barcode = ?, name = ?, description = ?, category_id = ?, supplier_id = ?,
                     price = ?, cost = ?, min_stock_level = ?, tax_rate = ?, is_active = ?, image_path = ?,
-                    brand = ?, gender = ?, season = ?, collection = ?, has_variants = ?,
+                    brand = ?, gender = ?, season = ?, collection = ?, has_variants = ?, gallery = ?,
+                    has_colors = ?, has_sizes = ?,
                     updated_at = CURRENT_TIMESTAMP, is_synced = 0
                 WHERE id = ?
             `, [...fields, product.id]);
@@ -586,8 +620,8 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
                 INSERT INTO products (
                     sku, barcode, name, description, category_id, supplier_id,
                     price, cost, min_stock_level, tax_rate, is_active, image_path,
-                    brand, gender, season, collection, has_variants, id, stock_quantity, is_synced
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+                    brand, gender, season, collection, has_variants, gallery, has_colors, has_sizes, id, stock_quantity, is_synced
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
             `, [...fields, product.id]);
         }
 
@@ -799,6 +833,8 @@ module.exports = {
     ean13CheckDigit,
     generateInternalBarcodes,
     ensureLabelCodes,
+    productImages,
+    MAX_PRODUCT_IMAGES,
     findMissingCodes,
     pickVariantForArticle,
     gs1CheckDigit,

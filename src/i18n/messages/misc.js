@@ -1,6 +1,5 @@
 // [English, French, Arabic]
 export default {
-    'products.activeHint': ["Active (can be sold)", "Actif (en vente)", "نشط (قابل للبيع)"],
     'ecommerce.connectedStatus': ["Connected", "Connecté", "متصل"],
     'ecommerce.disconnected': ["Disconnected", "Déconnecté", "غير متصل"],
     'ecommerce.mappings': ["Mappings", "Liaisons", "الربط"],

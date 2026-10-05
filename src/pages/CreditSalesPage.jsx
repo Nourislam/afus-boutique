@@ -756,6 +756,7 @@ function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
                             <span className="text-zinc-400">{t('pos.subtotal')}</span>
                             <span>{formatCurrency(creditSale.subtotal)}</span>
                         </div>
+                        {/* The TVA saved with this sale, whatever the setting is today */}
                         {creditSale.tax_amount > 0 && (
                             <div className="flex justify-between">
                                 <span className="text-zinc-400">{t('pos.tax')}</span>

@@ -126,6 +126,7 @@ export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrd
                                         <td colSpan="3" className="p-3 text-end font-normal text-zinc-400">{t('pos.subtotal')}</td>
                                         <td className="p-3 text-end">{formatCurrency(details.subtotal)}</td>
                                     </tr>
+                                    {/* The TVA saved with this order, whatever the setting is today */}
                                     {details.tax_amount > 0 && (
                                         <tr>
                                             <td colSpan="3" className="p-3 text-end font-normal text-zinc-400">{t('pos.tax')}</td>

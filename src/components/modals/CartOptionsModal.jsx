@@ -5,8 +5,10 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Tabs } from '../ui/Tabs';
 import { useCartStore } from '../../stores/cartStore';
+import { useTaxEnabled } from '../../lib/useTaxEnabled';
 
 export default function CartOptionsModal({ isOpen, onClose }) {
+    const taxOn = useTaxEnabled();
     const cart = useCartStore();
     const [activeTab, setActiveTab] = useState('discount');
 
@@ -39,7 +41,8 @@ export default function CartOptionsModal({ isOpen, onClose }) {
     const tabs = [
         { id: 'discount', label: t('pos.discount') },
         { id: 'fees', label: t('cartOptions.fees') },
-        { id: 'tax', label: t('pos.tax') },
+        // No TVA tab while TVA is turned off in Settings
+        ...(taxOn ? [{ id: 'tax', label: t('pos.tax') }] : []),
     ];
 
     return (
@@ -120,7 +123,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                         </div>
                     )}
 
-                    {activeTab === 'tax' && (
+                    {taxOn && activeTab === 'tax' && (
                         <div className="space-y-4 py-2">
                             <label className="flex items-center gap-3 p-4 bg-dark-tertiary rounded-lg cursor-pointer border border-transparent hover:border-zinc-700">
                                 <input

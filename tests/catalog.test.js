@@ -346,3 +346,125 @@ describe('label codes for articles without barcode', () => {
         expect(catalog.ensureLabelCodes(api, variants.map(v => ({ variantId: v.id, quantity: 1 })), { scope: 'variant', codeType: 'ean13' }).created).toBe(0);
     });
 });
+
+describe('articles: photos, colours and sizes in every combination', () => {
+    let api;
+    beforeEach(async () => {
+        const db = await createLegacyDb();
+        applyMigrations(db);
+        api = createApi(db);
+    });
+    const save = (id, variants, extra = {}) => {
+        const skus = variants.length ? catalog.generateSkus(api, { name: `Art ${id}` }, variants) : [];
+        variants.forEach((v, i) => { v.sku = skus[i]; });
+        return catalog.saveProduct(api, { id, name: `Art ${id}`, price: 1000, stock_quantity: 4, ...extra }, variants, { isNew: true });
+    };
+
+    it('saves an article with no photo, no colour and no size (stock on the article)', () => {
+        const r = save('none', []);
+        expect(r.product).toMatchObject({ has_variants: 0, stock_quantity: 4, image_path: null, gallery: null });
+        expect(catalog.productImages(r.product)).toEqual([]);
+    });
+
+    it('saves colours without sizes', () => {
+        const r = save('colors', [{ color: 'Black', stock_quantity: 3 }, { color: 'White', stock_quantity: 2 }]);
+        expect(r.product.has_variants).toBe(1);
+        expect(r.variants.map(v => [v.color, v.size || ''])).toEqual([['Black', ''], ['White', '']]);
+        expect(api.get('SELECT stock_quantity FROM products WHERE id = ?', ['colors']).stock_quantity).toBe(5);
+    });
+
+    it('saves sizes without colours', () => {
+        const r = save('sizes', [{ size: 'S', stock_quantity: 1 }, { size: 'M', stock_quantity: 6 }]);
+        expect(r.variants.map(v => [v.color || '', v.size])).toEqual([['', 'S'], ['', 'M']]);
+        expect(api.get('SELECT stock_quantity FROM products WHERE id = ?', ['sizes']).stock_quantity).toBe(7);
+    });
+
+    it('saves colours with sizes', () => {
+        const r = save('both', makeVariants(['Black', 'White'], ['S', 'M'], 2));
+        expect(r.variants).toHaveLength(4);
+        expect(api.get('SELECT stock_quantity FROM products WHERE id = ?', ['both']).stock_quantity).toBe(8);
+    });
+
+    it('keeps up to 3 photos, the first one as the main photo', () => {
+        const r = save('photos', [], { image_path: 'a.jpg', gallery: ['b.jpg', 'c.jpg', 'd.jpg'] });
+        expect(r.product.image_path).toBe('a.jpg');
+        expect(catalog.productImages(r.product)).toEqual(['a.jpg', 'b.jpg', 'c.jpg']);
+        // Removing photos clears the gallery
+        const again = catalog.saveProduct(api, { ...r.product, gallery: [] }, [], { isNew: false });
+        expect(catalog.productImages(again.product)).toEqual(['a.jpg']);
+    });
+});
+
+describe('colours and sizes switched on or off separately', () => {
+    let db;
+    let api;
+    beforeEach(async () => {
+        db = await createLegacyDb();
+        applyMigrations(db);
+        api = createApi(db);
+    });
+    const save = (id, variants, flags, isNew = true) => {
+        const missing = variants.filter(v => !v.sku);
+        const skus = missing.length ? catalog.generateSkus(api, { name: `Art ${id}` }, missing) : [];
+        missing.forEach((v, i) => { v.sku = skus[i]; });
+        return catalog.saveProduct(api, { id, name: `Art ${id}`, price: 1000, stock_quantity: 4, ...flags }, variants, { isNew });
+    };
+    const row = (id) => api.get('SELECT has_variants, has_colors, has_sizes, stock_quantity FROM products WHERE id = ?', [id]);
+    const active = (id) => catalog.getVariants(api, id).map(v => `${v.color || '-'}/${v.size || '-'}`);
+    const i18n = require('../electron/i18n');
+
+    it('A: colours only — saved, reopened, stock and label without a size', () => {
+        save('a', [{ color: 'Black', stock_quantity: 2 }, { color: 'White', stock_quantity: 1 }], { has_colors: true, has_sizes: false });
+        expect(row('a')).toMatchObject({ has_variants: 1, has_colors: 1, has_sizes: 0, stock_quantity: 3 });
+        expect(active('a')).toEqual(['Black/-', 'White/-']);
+        expect(i18n.variantLabel({ color: 'Black', color_code: 'black' }, 'fr')).toBe('Noir');
+    });
+
+    it('B: sizes only — saved, reopened, stock and label without a colour', () => {
+        save('b', [{ size: 'S', stock_quantity: 1 }, { size: 'M', stock_quantity: 5 }], { has_colors: false, has_sizes: true });
+        expect(row('b')).toMatchObject({ has_variants: 1, has_colors: 0, has_sizes: 1, stock_quantity: 6 });
+        expect(active('b')).toEqual(['-/S', '-/M']);
+        expect(i18n.variantLabel({ size: 'M' }, 'fr')).toBe('M');
+    });
+
+    it('C: colours and sizes', () => {
+        save('c', makeVariants(['Black'], ['S', 'M'], 2), { has_colors: true, has_sizes: true });
+        expect(row('c')).toMatchObject({ has_variants: 1, has_colors: 1, has_sizes: 1, stock_quantity: 4 });
+        expect(active('c')).toEqual(['Black/S', 'Black/M']);
+    });
+
+    it('D: neither — a simple article', () => {
+        save('d', [], { has_colors: false, has_sizes: false });
+        expect(row('d')).toMatchObject({ has_variants: 0, has_colors: 0, has_sizes: 0, stock_quantity: 4 });
+        expect(active('d')).toEqual([]);
+    });
+
+    it('turning colours off keeps the saved colour pieces (inactive) and they come back', () => {
+        const first = save('e', makeVariants(['Black'], ['S'], 3), { has_colors: true, has_sizes: true });
+        const old = first.variants[0];
+        // Colours off: the colour piece is kept inactive, a size-only piece is used
+        save('e', [{ ...old, is_active: false }, { size: 'S', stock_quantity: 1 }], { has_colors: false, has_sizes: true }, false);
+        expect(row('e')).toMatchObject({ has_colors: 0, has_sizes: 1 });
+        expect(active('e')).toEqual(['-/S']);
+        const kept = api.get('SELECT color, size, stock_quantity, is_active FROM product_variants WHERE id = ?', [old.id]);
+        expect(kept).toMatchObject({ color: 'Black', size: 'S', stock_quantity: 3, is_active: 0 });
+        // Colours on again: the same piece returns with its stock
+        save('e', [{ ...old, is_active: true }], { has_colors: true, has_sizes: true }, false);
+        expect(active('e')).toEqual(['Black/S']);
+        expect(row('e').stock_quantity).toBe(3);
+    });
+
+    it('the migration sets the switches from what each existing article uses', () => {
+        save('m1', [{ color: 'Black', stock_quantity: 1 }], {});
+        save('m2', [{ size: 'L', stock_quantity: 1 }], {});
+        save('m3', [], {});
+        db.run('UPDATE products SET has_colors = NULL, has_sizes = NULL');
+        db.run("DELETE FROM schema_migrations WHERE version = '2026_06_colors_sizes_switches'");
+        applyMigrations(db);
+        expect(row('m1')).toMatchObject({ has_colors: 1, has_sizes: 0 });
+        expect(row('m2')).toMatchObject({ has_colors: 0, has_sizes: 1 });
+        expect(row('m3')).toMatchObject({ has_colors: 0, has_sizes: 0 });
+        // Nothing else was changed
+        expect(active('m1')).toEqual(['Black/-']);
+    });
+});

@@ -25,9 +25,9 @@ export default {
     'modules.offersHidden': ["All offers are hidden: the Offers screen is removed from the menu.", "Toutes les offres sont masquées : l'écran Offres quitte le menu.", "كل العروض مخفية: تختفي شاشة العروض من القائمة."],
     'modules.appliedNow': ["Applied at once for everyone in the shop, no need to save.", "Appliqué tout de suite pour toute la boutique, sans enregistrer.", "يُطبَّق فوراً على كل من في المحل، دون حفظ."],
     'settings.feature.customers': ["Customers", "Clients", "الزبائن"],
-    'settings.feature.customersHint': ["Customer list in the Catalogue (names, phones).", "Liste des clients dans le Catalogue (noms, téléphones).", "قائمة الزبائن في الكتالوج (الأسماء والهواتف)."],
+    'settings.feature.customersHint': ["Customers screen: names, phones, history.", "Écran Clients : noms, téléphones, historique.", "شاشة الزبائن: الأسماء والهواتف والسجل."],
     'settings.feature.suppliers': ["Suppliers", "Fournisseurs", "الموردون"],
-    'settings.feature.suppliersHint': ["Supplier list in the Catalogue and on the article form.", "Liste des fournisseurs dans le Catalogue et la fiche article.", "قائمة الموردين في الكتالوج وفي بطاقة السلعة."],
+    'settings.feature.suppliersHint': ["Suppliers screen, and the supplier on the article form.", "Écran Fournisseurs, et le fournisseur sur la fiche article.", "شاشة الموردين، والمورد في بطاقة السلعة."],
     'settings.feature.purchaseOrders': ["Purchase orders", "Bons de commande", "طلبات الشراء"],
     'settings.feature.purchaseOrdersHint': ["Order from suppliers and receive the stock.", "Commander aux fournisseurs et recevoir le stock.", "الطلب من الموردين واستلام السلع."],
 

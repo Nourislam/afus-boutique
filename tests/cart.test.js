@@ -99,3 +99,23 @@ describe('promotions', () => {
         expect(bestPromotion([coupon], items, { coupon: 'aid2025', now })).toMatchObject({ amount: 1000 });
     });
 });
+
+describe('TVA turned off in Settings', () => {
+    beforeEach(() => {
+        useCartStore.setState({ promotions: [], coupon: '', taxType: 'exclusive', globalTaxRate: 19, taxExempt: false, serviceCharge: 0, taxEnabled: true });
+        cart().clearCart();
+    });
+
+    it('computes TVA while it is on', () => {
+        cart().addItem(jean);
+        expect(cart().getTaxAmount()).toBe(760);
+        expect(cart().getTotal()).toBe(4760);
+    });
+
+    it('a new sale has no TVA once it is turned off, even with a rate saved', () => {
+        useCartStore.setState({ taxEnabled: false });
+        cart().addItem({ ...jean, tax_rate: 9 });
+        expect(cart().getTaxAmount()).toBe(0);
+        expect(cart().getTotal()).toBe(4000);
+    });
+});

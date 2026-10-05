@@ -177,6 +177,36 @@ const MIGRATIONS = [
             }
         },
     },
+    {
+        version: '2026_05_product_gallery',
+        description: 'Up to two more photos per article (the first photo stays in image_path)',
+        up(db) {
+            // JSON list of image file names; NULL = no extra photo
+            addColumnIfMissing(db, 'products', 'gallery', 'TEXT');
+        },
+    },
+    {
+        version: '2026_06_colors_sizes_switches',
+        description: 'Colours and sizes switched on or off separately for each article',
+        up(db) {
+            // Only the two new columns are written, from what each article
+            // already uses: no colour, size or stock is changed
+            addColumnIfMissing(db, 'products', 'has_colors', 'INTEGER DEFAULT 0');
+            addColumnIfMissing(db, 'products', 'has_sizes', 'INTEGER DEFAULT 0');
+            if (!tableExists(db, 'product_variants')) return;
+            db.run(`
+                UPDATE products SET
+                    has_colors = CASE WHEN EXISTS (
+                        SELECT 1 FROM product_variants v
+                        WHERE v.product_id = products.id AND v.is_active = 1 AND TRIM(COALESCE(v.color, '')) <> ''
+                    ) THEN 1 ELSE 0 END,
+                    has_sizes = CASE WHEN EXISTS (
+                        SELECT 1 FROM product_variants v
+                        WHERE v.product_id = products.id AND v.is_active = 1 AND TRIM(COALESCE(v.size, '')) <> ''
+                    ) THEN 1 ELSE 0 END
+            `);
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {
