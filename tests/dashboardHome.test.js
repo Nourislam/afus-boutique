@@ -102,6 +102,59 @@ describe('home screen figures', () => {
         expect(dashboard.salesSeries(api, day, 'day', 60).map(r => [r.bucket, r.count])).toEqual([['2026-10-05', 1], ['2026-10-06', 1]]);
     });
 
+    // Customer returns: what counts is what the customer kept
+    let returnNo = 0;
+    const giveBack = (saleItemId, quantity) => {
+        const id = `ret-${++returnNo}`;
+        api.run("INSERT INTO returns (id, sale_id, return_number, total_refund) VALUES (?, 's1', ?, 0)", [id, `R-${returnNo}`]);
+        api.run('INSERT INTO return_items (id, return_id, sale_item_id, product_id, quantity, refund_amount) VALUES (?, ?, ?, ?, ?, 0)',
+            [`${id}-1`, id, saleItemId, 'jean', quantity]);
+    };
+    const jeanSold = () => ({
+        best: dashboard.bestSellers(api, WEEK).products.find(p => p.product_id === 'jean')?.quantity ?? 0,
+        size38: dashboard.topSizes(api, WEEK).find(r => r.size === '38')?.quantity ?? 0,
+        colour: dashboard.topColors(api, WEEK).find(r => r.color === 'Noir')?.quantity ?? 0,
+        outOfStock: dashboard.outOfStockSelling(api, SINCE30).find(r => r.sku === 'J-38')?.sold ?? 0,
+    });
+
+    it('counts all the pieces when nothing was returned', () => {
+        expect(jeanSold()).toEqual({ best: 2, size38: 2, colour: 2, outOfStock: 2 });
+    });
+
+    it('takes a partial return off the pieces sold', () => {
+        giveBack('s1-0', 1);
+        expect(jeanSold()).toEqual({ best: 1, size38: 1, colour: 1, outOfStock: 1 });
+        expect(dashboard.missingSizes(api, SINCE30).map(r => r.product_id)).toEqual(['jean']);
+    });
+
+    it('drops an article sold then fully returned from every ranking', () => {
+        giveBack('s1-0', 2);
+        expect(jeanSold()).toEqual({ best: 0, size38: 0, colour: 0, outOfStock: 0 });
+        const best = dashboard.bestSellers(api, WEEK);
+        expect(best.products.map(p => p.product_id)).toEqual(['belt']); // the belt was kept
+        expect(best.sizes).toEqual([]);
+        expect(best.colors).toEqual([]);
+        expect(dashboard.outOfStockSelling(api, SINCE30)).toEqual([]);
+        expect(dashboard.missingSizes(api, SINCE30)).toEqual([]); // nothing of the jean sells any more
+    });
+
+    it('adds up several returns of the same sale line and never goes below zero', () => {
+        giveBack('s1-0', 1);
+        giveBack('s1-0', 1);
+        expect(jeanSold()).toEqual({ best: 0, size38: 0, colour: 0, outOfStock: 0 });
+        giveBack('s1-0', 1); // more given back than sold (bad data): still 0, never negative
+        const best = dashboard.bestSellers(api, WEEK);
+        expect([...best.products, ...best.sizes, ...best.colors].every(r => r.quantity > 0)).toBe(true);
+        expect(best.products.map(p => p.product_id)).toEqual(['belt']);
+    });
+
+    it('still leaves voided sales out', () => {
+        sell(api, 'sv', '2026-10-05 12:00:00', [{ product_id: 'jean', variant_id: jean['40'], name: 'Jean', qty: 5, total: 15000 }]);
+        api.run("UPDATE sales SET status = 'voided' WHERE id = 'sv'");
+        expect(jeanSold().best).toBe(2);
+        expect(dashboard.topSizes(api, WEEK).find(r => r.size === '40')).toBeUndefined();
+    });
+
     it('knows a brand-new shop', async () => {
         const db = await createLegacyDb();
         applyMigrations(db);
