@@ -100,6 +100,7 @@ const MESSAGES = {
     'dialog.saveGiftCard': ['Save the gift card as PDF', 'Enregistrer la carte cadeau en PDF', 'حفظ بطاقة الهدية PDF'],
     'dialog.pdfFiles': ['PDF documents', 'Documents PDF', 'ملفات PDF'],
     'dialog.backupFiles': ['Backup (SQLite)', 'Sauvegarde (SQLite)', 'نسخة احتياطية (SQLite)'],
+    'backup.invalidFile': ['This file is not an Afus Boutique backup.', "Ce fichier n'est pas une sauvegarde Afus Boutique.", 'هذا الملف ليس نسخة احتياطية من Afus Boutique.'],
     'dialog.imageFiles': ['Images', 'Images', 'الصور'],
     'dialog.dataFolder': ['Data folder', 'Dossier des données', 'مجلد البيانات'],
     // Product name: the same in every language (electron/shared/brand.json)

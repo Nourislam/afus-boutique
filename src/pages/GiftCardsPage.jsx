@@ -2,7 +2,7 @@ import { t } from '../i18n';
 import { translateError } from '../i18n/errors';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { Gift, Plus, Search, CreditCard, RefreshCw, History, Trash2, Calendar, User, Banknote, Printer as PrinterIcon } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -14,8 +14,10 @@ import { v4 as uuid } from 'uuid';
 import { PermissionGate } from '../components/auth/PermissionGate';
 import GiftCardPrintModal from '../components/modals/GiftCardPrintModal';
 import { useSettingsStore } from '../stores/settingsStore';
+import { EmbeddedPageContext } from '../components/ui/PageHeader';
 
 export default function GiftCardsPage() {
+    const embedded = useContext(EmbeddedPageContext);
     const [giftCards, setGiftCards] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -179,14 +181,17 @@ export default function GiftCardsPage() {
     return (
         <div className="h-full flex flex-col p-6 gap-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold flex items-center gap-3">
-                        <Gift className="w-7 h-7 text-indigo-500" />
-                        {t('gift.title')}
-                    </h1>
-                    <p className="text-zinc-400 mt-1">{t('gift.subtitle')}</p>
-                </div>
+            <div className={`flex items-center ${embedded ? 'justify-end' : 'justify-between'}`}>
+                {/* Inside Offers the tab already names the screen */}
+                {!embedded && (
+                    <div>
+                        <h1 className="text-2xl font-bold flex items-center gap-3">
+                            <Gift className="w-7 h-7 text-indigo-500" />
+                            {t('gift.title')}
+                        </h1>
+                        <p className="text-zinc-400 mt-1">{t('gift.subtitle')}</p>
+                    </div>
+                )}
                 <PermissionGate permission={PERMISSIONS.GIFT_CARDS_CREATE}>
                     <Button onClick={() => setShowCreateModal(true)}>
                         <Plus className="w-4 h-4" />

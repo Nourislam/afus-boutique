@@ -10,9 +10,7 @@ import InventoryPage from './pages/InventoryPage';
 import EmployeesPage from './pages/EmployeesPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
-import AIChatPage from './pages/AIChatPage';
 import DashboardPage from './pages/DashboardPage';
-import GiftCardsPage from './pages/GiftCardsPage';
 import TransactionsPage from './pages/TransactionsPage';
 
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
@@ -24,6 +22,7 @@ import { TitleBar } from './components/layout/TitleBar';
 import { useAuthStore, PERMISSIONS } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import { ModuleGate } from './components/auth/ModuleGate';
 import { Toaster, toast } from './components/ui/Toast';
 import { useT, t as translate } from './i18n';
 
@@ -146,14 +145,11 @@ function App() {
                     <Route path="/suppliers" element={<Navigate to="/catalog?tab=suppliers" replace />} />
                     <Route path="/purchase-orders" element={
                         <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
-                            <PurchaseOrdersPage />
+                            <ModuleGate module="purchaseOrders"><PurchaseOrdersPage /></ModuleGate>
                         </ProtectedRoute>
                     } />
-                    <Route path="/gift-cards" element={
-                        <ProtectedRoute permission={PERMISSIONS.GIFT_CARDS_VIEW}>
-                            <GiftCardsPage />
-                        </ProtectedRoute>
-                    } />
+                    {/* Gift cards are a tab of Offers */}
+                    <Route path="/gift-cards" element={<Navigate to="/offers?tab=giftCards" replace />} />
                     <Route path="/bundles" element={<Navigate to="/offers?tab=packs" replace />} />
                     <Route path="/transactions" element={
                         <ProtectedRoute permission={PERMISSIONS.POS_VIEW}>
@@ -162,7 +158,7 @@ function App() {
                     } />
                     <Route path="/credit-sales" element={
                         <ProtectedRoute permission={PERMISSIONS.CUSTOMERS_VIEW}>
-                            <CreditSalesPage />
+                            <ModuleGate module="credit"><CreditSalesPage /></ModuleGate>
                         </ProtectedRoute>
                     } />
                     <Route path="/promotions" element={<Navigate to="/offers?tab=promotions" replace />} />
@@ -176,7 +172,6 @@ function App() {
                             <ReportsPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/ai-chat" element={<AIChatPage />} />
                     <Route path="/settings" element={
                         <ProtectedRoute permission={PERMISSIONS.SETTINGS_VIEW}>
                             <SettingsPage />
@@ -189,11 +184,8 @@ function App() {
                             <CatalogPage />
                         </ProtectedRoute>
                     } />
-                    <Route path="/offers" element={
-                        <ProtectedRoute permission={PERMISSIONS.PROMOTIONS_VIEW}>
-                            <OffersPage />
-                        </ProtectedRoute>
-                    } />
+                    {/* Each tab checks its own permission and module */}
+                    <Route path="/offers" element={<OffersPage />} />
                     <Route path="/labels" element={
                         <ProtectedRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
                             <LabelsPage />

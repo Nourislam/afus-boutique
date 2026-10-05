@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { translateError } from '../i18n/errors';
 import {
-    Building, Receipt, Percent, Database, Save, Download, Upload, Mail, Lock, CheckCircle, Printer, ScanLine, Hash,
-    Languages, Tags, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor, Eye, FlaskConical, Rows3, LayoutGrid,
+    Building, Receipt, Percent, Database, Save, Upload, Mail, CheckCircle, Printer, ScanLine, Hash,
+    Languages, Tags, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor, Eye, FlaskConical,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, TextArea } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Card } from '../components/ui/Card';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
@@ -17,10 +15,11 @@ import { ShopInfoForm } from '../components/settings/ShopInfoForm';
 import { ReceiptPrinterForm, LabelPrinterForm, ReceiptPreview, PrintTestPanel, Panel } from '../components/settings/PrinterSettingsForm';
 import BRAND from '../config/brand';
 import { ScannerSettingsForm } from '../components/settings/ScannerSettingsForm';
+import { ModulesSettings } from '../components/settings/ModulesSettings';
+import { BackupSettings } from '../components/settings/BackupSettings';
 import { DEFAULT_SHOP, loadShopConfiguration, saveShopConfiguration } from '../lib/shopSettings';
-import { DEFAULT_FEATURES, resolveFeatures } from '../lib/features';
+import { resolveFeatures } from '../lib/features';
 import { colorName } from '../lib/clothing';
-import { saveUiMode } from '../lib/uiMode';
 import { useSettingsStore } from '../stores/settingsStore';
 import { SystemLogs } from '../components/settings/SystemLogs';
 import { EcommerceSettings } from '../components/settings/EcommerceSettings';
@@ -28,21 +27,25 @@ import { LANGUAGES, setLanguage, useT } from '../i18n';
 import { formatMoney } from '../i18n/format';
 import { getThemePreference, setThemePreference } from '../lib/theme';
 
-const BASE_TABS = ['business', 'language', 'appearance', 'receipt', 'labelPrinter', 'scanner', 'sku', 'features', 'backup'];
-
-// Settings sections, grouped like the shop thinks about them
+// Settings sections, grouped like the shop thinks about them. Each device
+// has its own section, even when one printer does both jobs. E-mail and the
+// online store appear only while their module is on.
 const SECTION_GROUPS = [
     { id: 'shop', ids: ['business', 'language', 'appearance'] },
-    // Each device has its own tab, even when one printer does both jobs
     { id: 'devices', ids: ['receipt', 'labelPrinter', 'scanner'] },
     { id: 'catalog', ids: ['sku'] },
-    { id: 'app', ids: ['features', 'mail', 'ecommerce', 'backup', 'logs'] },
+    { id: 'modules', ids: ['modules'] },
+    { id: 'online', ids: ['mail', 'ecommerce'] },
+    { id: 'system', ids: ['backup', 'logs'] },
 ];
 
 const SECTION_ICONS = {
     business: Building, language: Languages, appearance: Palette, receipt: Receipt, labelPrinter: Tags, scanner: ScanLine,
-    sku: Hash, features: ToggleRight, mail: Mail, ecommerce: Globe, backup: Database, logs: ScrollText,
+    sku: Hash, modules: ToggleRight, mail: Mail, ecommerce: Globe, backup: Database, logs: ScrollText,
 };
+
+// Old links (?tab=features, ?tab=printers) still open the right section
+const TAB_ALIASES = { printers: 'labelPrinter', features: 'modules' };
 
 function SectionHeader({ icon: Icon, color, title, text }) {
     return (
@@ -62,11 +65,11 @@ export default function SettingsPage() {
     const { t, lang } = useT();
     const [searchParams] = useSearchParams();
     // Opened from another screen on a given section (e.g. ?tab=labelPrinter)
-    const [activeTab, setActiveTab] = useState(() => ({ printers: 'labelPrinter' })[searchParams.get('tab')] || searchParams.get('tab') || 'business');
+    const [activeTab, setActiveTab] = useState(() => TAB_ALIASES[searchParams.get('tab')] || searchParams.get('tab') || 'business');
     // Also when the page is already open (link from the labels page)
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab) setActiveTab(({ printers: 'labelPrinter' })[tab] || tab);
+        if (tab) setActiveTab(TAB_ALIASES[tab] || tab);
     }, [searchParams]);
     const [settings, setSettings] = useState({
         ...DEFAULT_SHOP,
@@ -78,7 +81,6 @@ export default function SettingsPage() {
     const [theme, setTheme] = useState(getThemePreference);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     // Printer, label, scanner and SKU configuration (separate settings keys)
     const [printers, setPrinters] = useState(null);
@@ -87,25 +89,17 @@ export default function SettingsPage() {
     const [sku, setSku] = useState(null);
     const [appInfo, setAppInfo] = useState(null);
     const reloadStoreSettings = useSettingsStore(state => state.loadSettings);
-    const uiMode = useSettingsStore(state => state.settings.uiMode);
-    const chooseUiMode = async (mode) => {
-        if (mode === uiMode) return;
-        try {
-            await saveUiMode(mode);
-            toast.success(t(mode === 'simple' ? 'nav.mode.nowSimple' : 'nav.mode.nowFull'));
-        } catch (error) {
-            toast.error(translateError(error));
-        }
-    };
 
     const { isAdmin } = useAuthStore();
     const tabIds = [
-        ...BASE_TABS.slice(0, -1),
+        'business', 'language', 'appearance', 'receipt', 'labelPrinter', 'scanner', 'sku', 'modules',
         ...(features.email ? ['mail'] : []),
         ...(features.ecommerce ? ['ecommerce'] : []),
         'backup',
         ...(isAdmin() ? ['logs'] : []),
     ];
+    // A section that is not available (module turned off, old link) opens the shop section
+    const currentTab = tabIds.includes(activeTab) ? activeTab : 'business';
 
     useEffect(() => {
         loadSettings();
@@ -222,44 +216,6 @@ export default function SettingsPage() {
         }
     };
 
-    const handleExport = async () => {
-        try {
-            const result = await window.electronAPI.backup.create();
-            if (result.success) toast.success(t('settings.backup.exported'));
-            else if (!result.canceled) toast.error(t('settings.backup.exportFailed', { error: result.error }));
-        } catch (error) {
-            toast.error(t('settings.backup.exportFailed', { error: translateError(error) }));
-        }
-    };
-
-    const handleImport = async () => {
-        try {
-            const result = await window.electronAPI.backup.restore();
-            if (result.success) {
-                toast.success(t('settings.backup.restored'));
-                setTimeout(() => window.location.reload(), 2000);
-            } else if (!result.canceled) {
-                toast.error(t('settings.backup.restoreFailed', { error: result.error }));
-            }
-        } catch (error) {
-            toast.error(t('settings.backup.restoreFailed', { error: translateError(error) }));
-        }
-    };
-
-    const handleReset = async () => {
-        try {
-            const result = await window.electronAPI.backup.reset();
-            if (result.success) {
-                toast.success(t('settings.backup.resetDone'));
-                setTimeout(() => window.location.reload(), 2000);
-            } else {
-                toast.error(t('settings.backup.resetFailed', { error: result.error }));
-            }
-        } catch (error) {
-            toast.error(t('settings.backup.resetFailed', { error: translateError(error) }));
-        }
-    };
-
     const selectSignature = async () => {
         try {
             const result = await window.electronAPI.dialog.selectImage();
@@ -312,20 +268,25 @@ export default function SettingsPage() {
 
             <div className="flex-1 min-h-0 flex flex-col md:flex-row">
                 {/* Sections */}
-                <nav className="md:w-56 flex-none border-b md:border-b-0 md:border-e border-dark-border p-2 md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto no-scrollbar">
+                <nav className="md:w-56 lg:w-64 flex-none border-b md:border-b-0 md:border-e border-dark-border p-2 md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto no-scrollbar" aria-label={t('nav.settings')}>
                     {SECTION_GROUPS.map(group => {
                         const ids = group.ids.filter(id => tabIds.includes(id));
                         if (!ids.length) return null;
                         return (
-                            <div key={group.id} className="flex md:flex-col gap-1 md:mb-3">
-                                <p className="hidden md:block px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t(`settings.group.${group.id}`)}</p>
+                            <div key={group.id} className="flex md:flex-col gap-1 md:mb-2">
+                                <p className="hidden md:block px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t(`settings.group.${group.id}`)}</p>
                                 {ids.map(id => {
                                     const Icon = SECTION_ICONS[id] || ToggleRight;
+                                    const active = currentTab === id;
                                     return (
-                                        <button key={id} type="button" onClick={() => setActiveTab(id)}
-                                            title={t(`settings.tab.${id}`)} className={`sidebar-item whitespace-nowrap ${activeTab === id ? 'active' : ''}`}>
-                                            <Icon className="w-4 h-4 flex-none" />
-                                            <span className="truncate">{t(`settings.tab.${id}`)}</span>
+                                        <button key={id} type="button" onClick={() => setActiveTab(id)} aria-current={active ? 'page' : undefined}
+                                            title={t(`settings.tab.${id}`)}
+                                            className={`flex items-center md:items-start gap-2.5 px-3 py-2 rounded-lg text-start whitespace-nowrap md:whitespace-normal transition-colors ${active ? 'bg-indigo-500/15 text-white' : 'text-zinc-400 hover:text-white hover:bg-dark-tertiary/60'}`}>
+                                            <Icon className={`w-4 h-4 flex-none md:mt-0.5 ${active ? 'text-indigo-400' : ''}`} />
+                                            <span className="min-w-0">
+                                                <span className="block text-sm font-medium md:truncate">{t(`settings.tab.${id}`)}</span>
+                                                <span className="hidden md:block text-[11px] leading-snug text-zinc-500">{t(`settings.tabHint.${id}`)}</span>
+                                            </span>
                                         </button>
                                     );
                                 })}
@@ -335,15 +296,15 @@ export default function SettingsPage() {
                 </nav>
 
                 <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6">
-                    <div className={['receipt', 'labelPrinter'].includes(activeTab) ? 'max-w-7xl' : 'max-w-5xl'}>
-                        {activeTab === 'business' && (
+                    <div className={['receipt', 'labelPrinter'].includes(currentTab) ? 'max-w-7xl' : 'max-w-5xl'}>
+                        {currentTab === 'business' && (
                             <Card className="space-y-6">
                                 <SectionHeader icon={Building} color="bg-accent-primary/20 text-accent-primary" title={t('settings.shopTitle')} text={t('setup.shopText')} />
                                 <ShopInfoForm value={settings} onChange={(next) => setSettings(next)} />
                             </Card>
                         )}
 
-                        {activeTab === 'language' && (
+                        {currentTab === 'language' && (
                             <div className="space-y-4">
                                 <Card className="space-y-6">
                                     <SectionHeader icon={Languages} color="bg-sky-500/20 text-sky-400" title={t('settings.language')} text={t('settings.languageText')} />
@@ -407,7 +368,7 @@ export default function SettingsPage() {
                             </div>
                         )}
 
-                        {activeTab === 'appearance' && (
+                        {currentTab === 'appearance' && (
                             <Card className="space-y-6">
                                 <SectionHeader icon={Palette} color="bg-indigo-500/20 text-indigo-400" title={t('settings.tab.appearance')} text={t('settings.themeText')} />
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -445,7 +406,7 @@ export default function SettingsPage() {
                             </Card>
                         )}
 
-                        {activeTab === 'receipt' && printers && (
+                        {currentTab === 'receipt' && printers && (
                             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] gap-4 items-start">
                                 <div className="space-y-4 min-w-0">
                                     <Panel icon={Printer} title={t('printers.receipt')} hint={t('printing.receiptPrinterHint')}>
@@ -538,7 +499,7 @@ export default function SettingsPage() {
                             </div>
                         )}
 
-                        {activeTab === 'labelPrinter' && printers && (
+                        {currentTab === 'labelPrinter' && printers && (
                             <LabelPrinterForm
                                 printers={printers}
                                 onPrintersChange={setPrinters}
@@ -548,14 +509,14 @@ export default function SettingsPage() {
                             />
                         )}
 
-                        {activeTab === 'scanner' && scanner && (
+                        {currentTab === 'scanner' && scanner && (
                             <Card className="space-y-6">
                                 <SectionHeader icon={ScanLine} color="bg-emerald-500/20 text-emerald-400" title={t('settings.tab.scanner')} text={t('settings.scannerText')} />
                                 <ScannerSettingsForm value={scanner} onChange={setScanner} />
                             </Card>
                         )}
 
-                        {activeTab === 'sku' && sku && (
+                        {currentTab === 'sku' && sku && (
                             <Card className="space-y-6">
                                 <SectionHeader icon={Hash} color="bg-amber-500/20 text-amber-400" title={t('settings.tab.sku')} text={t('settings.skuText')} />
                                 <div className="grid grid-cols-3 gap-4">
@@ -589,44 +550,11 @@ export default function SettingsPage() {
                             </Card>
                         )}
 
-                        {activeTab === 'features' && (
-                            <div className="space-y-4">
-                            {/* Simple or full menu: applied at once, for the whole shop */}
-                            <Card className="space-y-4">
-                                <SectionHeader icon={Rows3} color="bg-emerald-500/20 text-emerald-400" title={t('nav.mode.title')} text={t('nav.mode.text')} />
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    {[{ id: 'simple', icon: Rows3 }, { id: 'full', icon: LayoutGrid }].map(({ id, icon: Icon }) => (
-                                        <button key={id} type="button" onClick={() => chooseUiMode(id)} aria-pressed={uiMode === id}
-                                            className={`p-4 rounded-lg border text-start transition-colors ${uiMode === id ? 'border-indigo-500 bg-indigo-500/10' : 'border-dark-border hover:border-zinc-600'}`}>
-                                            <p className="text-sm font-semibold flex items-center gap-2"><Icon className="w-4 h-4 flex-none" /> {t(`nav.mode.${id}`)}</p>
-                                            <p className="text-xs text-zinc-500 mt-1">{t(`nav.mode.${id}Hint`)}</p>
-                                        </button>
-                                    ))}
-                                </div>
-                                <p className="text-xs text-zinc-500">{t('nav.mode.appliedNow')}</p>
-                            </Card>
-                            <Card className="space-y-4">
-                                <SectionHeader icon={ToggleRight} color="bg-indigo-500/20 text-indigo-400" title={t('settings.tab.features')} text={t('settings.featuresText')} />
-                                {Object.keys(DEFAULT_FEATURES).map(key => (
-                                    <label key={key} className="flex items-start gap-3 cursor-pointer select-none p-3 rounded-lg bg-dark-tertiary">
-                                        <input
-                                            type="checkbox"
-                                            checked={!!features[key]}
-                                            onChange={(e) => setFeatures(prev => ({ ...prev, [key]: e.target.checked }))}
-                                            className="mt-1 w-4 h-4 rounded bg-dark-tertiary border-dark-border"
-                                        />
-                                        <span>
-                                            <span className="text-sm font-medium">{t(`settings.feature.${key}`)}</span>
-                                            <span className="block text-xs text-zinc-500">{t(`settings.feature.${key}Hint`)}</span>
-                                        </span>
-                                    </label>
-                                ))}
-                                <p className="text-xs text-zinc-500">{t('settings.featuresSaveHint')}</p>
-                            </Card>
-                            </div>
+                        {currentTab === 'modules' && (
+                            <ModulesSettings features={features} onFeaturesChange={setFeatures} />
                         )}
 
-                        {activeTab === 'mail' && (
+                        {currentTab === 'mail' && (
                             <Card className="space-y-6">
                                 <SectionHeader icon={Mail} color="bg-indigo-500/20 text-indigo-400" title={t('settings.tab.mail')} text={t('settings.email.text')} />
                                 <div className="grid gap-4">
@@ -654,68 +582,15 @@ export default function SettingsPage() {
                             </Card>
                         )}
 
-                        {activeTab === 'ecommerce' && (
+                        {currentTab === 'ecommerce' && (
                             <Card className="p-6">
                                 <EcommerceSettings />
                             </Card>
                         )}
 
-                        {activeTab === 'backup' && (
-                            <div className="space-y-4">
-                                <Card className="space-y-6">
-                                    <SectionHeader icon={Database} color="bg-blue-500/20 text-blue-400" title={t('settings.backup.title')} text={t('settings.backup.text')} />
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="p-4 rounded-lg bg-dark-tertiary">
-                                            <h4 className="font-medium mb-2">{t('settings.backup.export')}</h4>
-                                            <p className="text-sm text-zinc-400 mb-4">{t('settings.backup.exportText')}</p>
-                                            <Button variant="secondary" onClick={handleExport}>
-                                                <Download className="w-4 h-4" /> {t('settings.backup.export')}
-                                            </Button>
-                                        </div>
-                                        <div className="p-4 rounded-lg bg-dark-tertiary">
-                                            <h4 className="font-medium mb-2">{t('settings.backup.restore')}</h4>
-                                            <p className="text-sm text-zinc-400 mb-4">{t('settings.backup.restoreText')}</p>
-                                            <Button variant="secondary" onClick={handleImport}>
-                                                <Upload className="w-4 h-4" /> {t('settings.backup.restore')}
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </Card>
+                        {currentTab === 'backup' && <BackupSettings appInfo={appInfo} />}
 
-                                <Card className="space-y-3">
-                                    <div className="flex items-center gap-3">
-                                        <Lock className="w-5 h-5 text-zinc-300" />
-                                        <span className="font-semibold">{t('settings.db.local')}</span>
-                                        <CheckCircle className="w-5 h-5 text-accent-primary ms-auto" />
-                                    </div>
-                                    <p className="text-sm text-zinc-400">{t('settings.db.localText')}</p>
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
-                                        <div className="p-3 rounded-lg bg-dark-tertiary">
-                                            <p className="text-zinc-400">{t('settings.db.version')}</p>
-                                            <p className="font-medium ltr">{appInfo?.version || '-'}</p>
-                                        </div>
-                                        <div className="p-3 rounded-lg bg-dark-tertiary">
-                                            <p className="text-zinc-400">{t('settings.db.file')}</p>
-                                            <p className="font-medium font-mono text-xs break-all ltr">{appInfo?.databasePath || 'SQLite'}</p>
-                                        </div>
-                                    </div>
-                                </Card>
-
-                                <Card>
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div>
-                                            <h4 className="font-medium">{t('settings.backup.reset')}</h4>
-                                            <p className="text-sm text-zinc-400">{t('settings.backup.resetText')}</p>
-                                        </div>
-                                        <Button variant="danger" onClick={() => setShowResetConfirm(true)}>
-                                            {t('settings.backup.resetButton')}
-                                        </Button>
-                                    </div>
-                                </Card>
-                            </div>
-                        )}
-
-                        {activeTab === 'logs' && (
+                        {currentTab === 'logs' && (
                             <div className="space-y-6">
                                 <h2 className="text-xl font-bold">{t('settings.tab.logs')}</h2>
                                 <SystemLogs />
@@ -725,15 +600,6 @@ export default function SettingsPage() {
                 </div>
             </div>
 
-            <ConfirmDialog
-                isOpen={showResetConfirm}
-                onClose={() => setShowResetConfirm(false)}
-                onConfirm={handleReset}
-                title={t('settings.backup.reset')}
-                message={t('settings.backup.resetConfirm')}
-                confirmText={t('settings.backup.resetButton')}
-                variant="danger"
-            />
         </div>
     );
 }

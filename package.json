@@ -27,8 +27,6 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@langchain/core": "^1.1.11",
-    "@langchain/google-genai": "^2.1.6",
     "bwip-js": "^4.8.0",
     "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.11",

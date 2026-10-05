@@ -6,10 +6,13 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { toast } from '../ui/Toast';
 import { Printer, Mail, Download } from 'lucide-react';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
     const [html, setHtml] = useState('');
     const [loading, setLoading] = useState(true);
+    // Sending by e-mail only when the E-mail module is on
+    const emailOn = useSettingsStore(state => !!state.settings.features?.email);
     const [email, setEmail] = useState('');
     const [sendingEmail, setSendingEmail] = useState(false);
     const [printing, setPrinting] = useState(false);
@@ -130,6 +133,7 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
                             </Button>
                         </div>
 
+                        {emailOn && (
                         <div className="p-4 rounded-lg bg-dark-tertiary flex-1">
                             <h3 className="font-semibold mb-2">{t('receipt.email')}</h3>
                             <div className="space-y-3">
@@ -152,6 +156,7 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
                                 </Button>
                             </div>
                         </div>
+                        )}
 
                         <Button variant="ghost" onClick={onClose} className="mt-auto">
                             {t('common.close')}

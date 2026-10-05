@@ -28,8 +28,8 @@ Afus Boutique is an offline desktop application:
 
 - **No account, no server, no telemetry.** The shop's data stays on its computer, in
   `%APPDATA%\AfusBoutique` (macOS: `~/Library/Application Support/AfusBoutique`). Nothing is
-  sent over the internet unless the shop configures an optional service itself (e-mail, AI
-  assistant with its own key, online store connection).
+  sent over the internet unless the shop configures an optional service itself (e-mail,
+  online store connection).
 - **No auto-update** and no download at run time; the installed application does not point to
   any repository.
 - **Isolated interface.** The interface runs with `contextIsolation`, without Node.js
@@ -46,6 +46,6 @@ Afus Boutique is an offline desktop application:
   can read it: protect the computer with a password and keep backups in a safe place.
 - Employee **PIN codes are stored without hashing** in the local database. They protect the
   screens from other employees, not the database file itself.
-- Optional service credentials (e-mail password, store API keys, AI key) are stored in the
+- Optional service credentials (e-mail password, store API keys) are stored in the
   local database, not in the operating system's keychain.
 - The installer is not yet code-signed, so Windows SmartScreen shows a warning on install.

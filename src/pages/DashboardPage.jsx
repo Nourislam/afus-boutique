@@ -6,12 +6,10 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Button } from '../components/ui/Button';
 import { StatCard } from '../components/ui/Card';
 import { useAuthStore } from '../stores/authStore';
-import { useSettingsStore } from '../stores/settingsStore';
 import { formatDate as formatLocalDate, formatMoney } from '../i18n/format';
 import { useT } from '../i18n';
 import { colorHex, colorName, sizeLabel, variantLabel } from '../lib/clothing';
 import { paymentLabel } from '../lib/payments';
-import AIInsightsWidget from '../components/dashboard/AIInsightsWidget';
 
 const toDbDate = (date) => date.toISOString().replace('T', ' ').slice(0, 19);
 
@@ -45,7 +43,6 @@ function RankList({ rows, empty, render }) {
 export default function DashboardPage() {
     const { t, lang } = useT();
     const navigate = useNavigate();
-    const aiEnabled = useSettingsStore(state => state.settings.features?.ai);
     const [stats, setStats] = useState({ todaySales: 0, todayTransactions: 0, todayProfit: 0, monthSales: 0 });
     const [clothing, setClothing] = useState({ topSizes: [], topColors: [], stockValue: { cost: 0, retail: 0, units: 0 }, lowStock: [] });
     const [salesTrend, setSalesTrend] = useState([]);
@@ -150,8 +147,6 @@ export default function DashboardPage() {
                         </button>
                     </div>
                 </div>
-
-                {aiEnabled && <AIInsightsWidget salesData={{ stats, recentSales, topProducts }} />}
 
                 {/* Key figures */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

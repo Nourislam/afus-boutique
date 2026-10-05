@@ -44,6 +44,7 @@ export default function PurchaseOrdersPage() {
     const [emailPO, setEmailPO] = useState(null);
     const [emailAddress, setEmailAddress] = useState('');
     const { loadSettings } = useSettingsStore();
+    const emailOn = useSettingsStore(state => !!state.settings.features?.email);
 
     useEffect(() => {
         fetchOrders();
@@ -220,9 +221,11 @@ export default function PurchaseOrdersPage() {
                                     <Button size="sm" variant="ghost" onClick={() => handleSavePdf(po)} title={t('gift.savePdf')}>
                                         <FileText className="w-4 h-4" />
                                     </Button>
-                                    <Button size="sm" variant="ghost" onClick={() => handleEmailClick(po)} title={t('po.email')}>
-                                        <Mail className="w-4 h-4" />
-                                    </Button>
+                                    {emailOn && (
+                                        <Button size="sm" variant="ghost" onClick={() => handleEmailClick(po)} title={t('po.email')}>
+                                            <Mail className="w-4 h-4" />
+                                        </Button>
+                                    )}
                                     <Button size="sm" variant="ghost" onClick={() => handleViewDetails(po)} title={t('credit.view')}>
                                         <Eye className="w-4 h-4" />
                                     </Button>

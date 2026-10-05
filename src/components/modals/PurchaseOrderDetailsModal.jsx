@@ -5,12 +5,14 @@ import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { FileText, Mail } from 'lucide-react';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { toast } from '../ui/Toast';
 
 export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrder }) {
     const [details, setDetails] = useState(null);
     const [loading, setLoading] = useState(false);
     const [sending, setSending] = useState(false);
+    const emailOn = useSettingsStore(state => !!state.settings.features?.email);
 
     useEffect(() => {
         if (purchaseOrder && isOpen) {
@@ -153,7 +155,7 @@ export default function PurchaseOrderDetailsModal({ isOpen, onClose, purchaseOrd
 
                         {/* Actions */}
                         <div className="flex justify-end gap-3 mt-4">
-                            {details.supplier_email && (
+                            {emailOn && details.supplier_email && (
                                 <Button size="sm" variant="outline" onClick={handleSendEmail} loading={sending}>
                                     <Mail className="w-4 h-4 me-2" />
                                     {t('po.emailSupplier')}

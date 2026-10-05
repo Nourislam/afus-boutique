@@ -1,8 +1,8 @@
 import { NavLink } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import {
-    LayoutDashboard, ShoppingCart, Package, Boxes, UserCog, BarChart3, Settings, LogOut, Gift, Percent, QrCode,
-    History, CreditCard, FileText, Sparkles, LibraryBig, PanelLeftClose, PanelLeftOpen, LayoutGrid, Rows3,
+    LayoutDashboard, ShoppingCart, Package, Boxes, UserCog, BarChart3, Settings, LogOut, Percent, QrCode,
+    History, CreditCard, FileText, LibraryBig, PanelLeftClose, PanelLeftOpen, LayoutGrid, Rows3,
 } from 'lucide-react';
 import { useAuthStore, PERMISSIONS } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -13,6 +13,7 @@ import ShiftSummaryDialog from '../shifts/ShiftSummaryDialog';
 import { ShopLogo } from '../shop/ShopLogo';
 import { toast } from '../ui/Toast';
 import { SIMPLE_PATHS, saveUiMode } from '../../lib/uiMode';
+import { offerTabs } from '../../lib/modules';
 
 // Grouped menu. Brands, categories, suppliers and customers live together in
 // "Catalogue"; promotions and packs together in "Offers".
@@ -33,15 +34,14 @@ const NAV_GROUPS = [
             { path: '/inventory', icon: Boxes, label: 'nav.inventory', permission: PERMISSIONS.INVENTORY_VIEW },
             { path: '/labels', icon: QrCode, label: 'nav.labels', permission: PERMISSIONS.PRODUCTS_VIEW },
             { path: '/catalog', icon: LibraryBig, label: 'nav.catalog', permission: PERMISSIONS.PRODUCTS_VIEW },
-            { path: '/purchase-orders', icon: FileText, label: 'nav.purchases', permission: PERMISSIONS.INVENTORY_VIEW },
+            { path: '/purchase-orders', icon: FileText, label: 'nav.purchases', permission: PERMISSIONS.INVENTORY_VIEW, feature: 'purchaseOrders' },
         ],
     },
     {
         id: 'grow',
         items: [
-            { path: '/offers', icon: Percent, label: 'nav.offers', permission: PERMISSIONS.PROMOTIONS_VIEW, anyFeature: ['promotions', 'bundles'] },
-            { path: '/gift-cards', icon: Gift, label: 'nav.giftCards', permission: PERMISSIONS.GIFT_CARDS_VIEW, feature: 'giftCards' },
-            { path: '/ai-chat', icon: Sparkles, label: 'nav.ai', permission: PERMISSIONS.DASHBOARD_VIEW, feature: 'ai' },
+            // Promotions, packs and gift cards: shown while one of them is on and allowed
+            { path: '/offers', icon: Percent, label: 'nav.offers', show: (features, can) => offerTabs(features, can).length > 0 },
         ],
     },
     {
@@ -113,9 +113,9 @@ export function Sidebar() {
         return () => { cancelled = true; window.removeEventListener('pos:shift-changed', check); };
     }, [currentEmployee]);
 
-    const visible = (item) => hasPermission(item.permission)
+    const visible = (item) => (!item.permission || hasPermission(item.permission))
         && (!item.feature || features?.[item.feature])
-        && (!item.anyFeature || item.anyFeature.some(f => features?.[f] !== false))
+        && (!item.show || item.show(features || {}, hasPermission))
         && (!simple || SIMPLE_PATHS.includes(item.path));
 
     const toggleCollapsed = () => setCollapsed(value => {

@@ -11,6 +11,7 @@ import { CategoryManagerModal } from './CategoryManagerModal';
 import { Combobox } from '../ui/Combobox';
 import { QrPreview } from './QrPreview';
 import { useAuthStore } from '../../stores/authStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { t } from '../../i18n';
 import { translateErrorLines } from '../../i18n/errors';
 import { GENDERS, SEASONS, genderLabel, seasonLabel, sizeSetForCategory } from '../../lib/clothing';
@@ -68,6 +69,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
     const [hasVariants, setHasVariants] = useState(false);
     const [variants, setVariants] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
+    const suppliersOn = useSettingsStore(state => state.settings.features?.suppliers !== false);
     const [brands, setBrands] = useState([]);
     const [loading, setLoading] = useState(false);
     // Print the labels right after saving (remembered on this computer)
@@ -405,8 +407,10 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                             <div className="border-t border-dark-border p-4 grid grid-cols-3 gap-4">
                                 <Input label={t('products.cost')} type="number" min="0" value={formData.cost}
                                     onChange={(e) => set('cost', e.target.value)} placeholder="0" />
-                                <Select label={t('products.supplier')} value={formData.supplier_id} onChange={(v) => set('supplier_id', v)}
-                                    options={[{ value: '', label: t('products.noSupplier') }, ...suppliers.map(sp => ({ value: sp.id, label: sp.name }))]} />
+                                {suppliersOn && (
+                                    <Select label={t('products.supplier')} value={formData.supplier_id} onChange={(v) => set('supplier_id', v)}
+                                        options={[{ value: '', label: t('products.noSupplier') }, ...suppliers.map(sp => ({ value: sp.id, label: sp.name }))]} />
+                                )}
                                 <Input label={t('products.taxRate')} type="number" min="0" step="0.1" value={formData.tax_rate}
                                     onChange={(e) => set('tax_rate', e.target.value)} />
                                 <Select label={t('products.gender')} value={formData.gender} onChange={(v) => set('gender', v)}

@@ -135,8 +135,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Backup
     backup: {
+        list: () => ipcRenderer.invoke('backup:list'),
         create: () => ipcRenderer.invoke('backup:create'),
-        restore: () => ipcRenderer.invoke('backup:restore'),
+        inspect: (name) => ipcRenderer.invoke('backup:inspect', name),
+        restore: (name) => ipcRenderer.invoke('backup:restore', name),
+        delete: (name) => ipcRenderer.invoke('backup:delete', name),
+        export: (name) => ipcRenderer.invoke('backup:export', name),
+        import: () => ipcRenderer.invoke('backup:import'),
+        openFolder: () => ipcRenderer.invoke('backup:openFolder'),
         reset: () => ipcRenderer.invoke('backup:reset'),
     },
 
@@ -381,30 +387,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ack: (table, localId, remoteId) => ipcRenderer.invoke('sync:ack', { table, localId, remoteId }),
         // Batch Acknowledge: Renderer -> Main (optimized)
         batchAck: (data) => ipcRenderer.invoke('sync:batch-ack', data),
-    },
-
-    // AI / Gemini Features
-    ai: {
-        getInsights: (salesData) => ipcRenderer.invoke('ai:get-insights', salesData),
-        updateConfig: (config) => ipcRenderer.invoke('ai:update-config', config),
-        
-        // Streaming Chat
-        chatStream: (history, message, model, images) => ipcRenderer.send('ai:chat-stream', { history, message, model, images }),
-        onChatChunk: (callback) => {
-            const subscription = (_event, chunk) => callback(chunk);
-            ipcRenderer.on('ai:chat-chunk', subscription);
-            return () => ipcRenderer.removeListener('ai:chat-chunk', subscription);
-        },
-        onChatComplete: (callback) => {
-            const subscription = () => callback();
-            ipcRenderer.on('ai:chat-complete', subscription);
-            return () => ipcRenderer.removeListener('ai:chat-complete', subscription);
-        },
-        onChatError: (callback) => {
-            const subscription = (_event, error) => callback(error);
-            ipcRenderer.on('ai:chat-error', subscription);
-            return () => ipcRenderer.removeListener('ai:chat-error', subscription);
-        }
     },
 
     // Shell (for opening external links)

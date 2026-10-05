@@ -15,7 +15,6 @@ const ShiftService = require('./services/shiftService');
 const printDocument = require('./services/printDocument');
 const SyncManager = require('./sync/SyncManager');
 const EcommerceSyncManager = require('./ecommerce/EcommerceSyncManager');
-const GeminiManager = require('./ai/GeminiManager');
 
 const receiptService = new ReceiptService();
 const shiftService = new ShiftService();
@@ -174,14 +173,15 @@ if (!gotTheLock) {
       return;
     }
 
+    // Daily backup copy (only when turned on in Settings › Backup)
+    runDailyBackup();
+
     // Initialize the (optional, currently disabled) sync boundary
     await SyncManager.init();
 
     // Initialize E-commerce Sync Manager
     EcommerceSyncManager.init(null, null); // Will set mainWindow after createWindow()
-    
-    // Initialize AI Manager
-    await GeminiManager.init();
+
 
   // Register app protocol for serving images
   protocol.registerFileProtocol('app', (request, callback) => {
@@ -285,31 +285,6 @@ ipcMain.handle('sync:force-push', async () => {
   return true;
 });
 
-// ==========================================
-// AI / Gemini IPC
-// ==========================================
-
-ipcMain.handle('ai:get-insights', async (_, salesData) => {
-  return await GeminiManager.generateInsights(salesData);
-});
-
-ipcMain.handle('ai:update-config', async (_, config) => {
-  await GeminiManager.updateConfig(config);
-  return true;
-});
-
-ipcMain.on('ai:chat-stream', async (event, { history, message, model, images }) => {
-  try {
-    await GeminiManager.chatStream(history, message, (chunk) => {
-      event.sender.send('ai:chat-chunk', chunk);
-    }, { model, images });
-    event.sender.send('ai:chat-complete');
-  } catch (error) {
-    console.error('AI Chat Error:', error);
-    event.sender.send('ai:chat-error', error.message);
-  }
-});
-
 // Supabase API Proxy
 
 
@@ -400,50 +375,124 @@ ipcMain.handle('db:categories:getAll', () => {
 // ==========================================
 // BACKUP & RESTORE
 // ==========================================
+const backupService = require('./services/backupService');
+const backupFolder = () => backupService.backupDir(app.getPath('userData'));
+let sqlModule = null;
+async function sqlJs() {
+  if (!sqlModule) sqlModule = await require('sql.js')();
+  return sqlModule;
+}
+function getBackupSettings() {
+  return { ...backupService.DEFAULT_BACKUP_SETTINGS, ...(getSettingValue('backup_settings') || {}) };
+}
+
+// Backups kept in the data folder, newest first
+ipcMain.handle('backup:list', () => ({
+  folder: backupFolder(),
+  backups: backupService.listBackups(backupFolder()),
+  settings: getBackupSettings(),
+}));
+
 ipcMain.handle('backup:create', async () => {
-  const dbPath = databasePath(app.getPath('userData'));
-
-  const { filePath } = await dialog.showSaveDialog({
-    title: shopT('dialog.exportBackup'),
-    defaultPath: `${BRAND.fileSlug}-backup-${new Date().toISOString().split('T')[0]}.db`,
-    filters: [{ name: shopT('dialog.backupFiles'), extensions: ['db'] }]
-  });
-
-  if (filePath) {
-    try {
-      fs.copyFileSync(dbPath, filePath);
-      return { success: true, path: filePath };
-    } catch (error) {
-      console.error('Backup failed:', error);
-      return { success: false, error: error.message };
-    }
+  try {
+    return { success: true, backup: backupService.createBackup(backupFolder(), databasePath(app.getPath('userData'))) };
+  } catch (error) {
+    console.error('Backup failed:', error);
+    return { success: false, error: error.message };
   }
-  return { success: false, canceled: true };
 });
 
-ipcMain.handle('backup:restore', async () => {
+// What a backup holds, next to the current data, shown before restoring it
+ipcMain.handle('backup:inspect', async (_, name) => {
+  const SQL = await sqlJs();
+  const file = backupService.backupPath(backupFolder(), name);
+  return {
+    backup: backupService.summarizeDatabase(SQL, fs.readFileSync(file)),
+    current: backupService.summarizeDatabase(SQL, fs.readFileSync(databasePath(app.getPath('userData')))),
+  };
+});
+
+ipcMain.handle('backup:restore', async (_, name) => {
+  const dir = backupFolder();
+  const dbPath = databasePath(app.getPath('userData'));
+  try {
+    const file = backupService.backupPath(dir, name);
+    const summary = backupService.summarizeDatabase(await sqlJs(), fs.readFileSync(file));
+    if (!summary.valid) return { success: false, error: shopT('backup.invalidFile') };
+    // The data of today is kept first: a restore can always be undone
+    const safety = backupService.createBackup(dir, dbPath, { kind: 'before-restore' });
+    try {
+      fs.copyFileSync(file, `${dbPath}.restore.tmp`);
+      fs.renameSync(`${dbPath}.restore.tmp`, dbPath);
+      await initDatabase();
+    } catch (error) {
+      fs.copyFileSync(path.join(dir, safety.name), dbPath);
+      await initDatabase();
+      throw error;
+    }
+    return { success: true, safety: safety.name };
+  } catch (error) {
+    console.error('Restore failed:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('backup:delete', (_, name) => backupService.deleteBackup(backupFolder(), name));
+
+// A copy of a backup on a USB key or another disk
+ipcMain.handle('backup:export', async (_, name) => {
+  const file = backupService.backupPath(backupFolder(), name);
+  const { filePath } = await dialog.showSaveDialog({
+    title: shopT('dialog.exportBackup'),
+    defaultPath: name,
+    filters: [{ name: shopT('dialog.backupFiles'), extensions: ['db'] }],
+  });
+  if (!filePath) return { success: false, canceled: true };
+  fs.copyFileSync(file, filePath);
+  return { success: true, path: filePath };
+});
+
+// A backup brought from elsewhere: checked, then added to the list (restored only after its preview)
+ipcMain.handle('backup:import', async () => {
   const { filePaths } = await dialog.showOpenDialog({
     title: shopT('dialog.importBackup'),
     // .sqlite: backups saved by earlier versions of this application
     filters: [{ name: shopT('dialog.backupFiles'), extensions: ['db', 'sqlite'] }],
-    properties: ['openFile']
+    properties: ['openFile'],
   });
-
-  if (filePaths && filePaths.length > 0) {
-    const backupPath = filePaths[0];
-    const dbPath = databasePath(app.getPath('userData'));
-
-    try {
-      fs.copyFileSync(backupPath, dbPath);
-      await initDatabase();
-      return { success: true };
-    } catch (error) {
-      console.error('Restore failed:', error);
-      return { success: false, error: error.message };
-    }
-  }
-  return { success: false, canceled: true };
+  if (!filePaths || !filePaths.length) return { success: false, canceled: true };
+  const summary = backupService.summarizeDatabase(await sqlJs(), fs.readFileSync(filePaths[0]));
+  if (!summary.valid) return { success: false, error: shopT('backup.invalidFile') };
+  const backup = backupService.createBackup(backupFolder(), filePaths[0], { kind: 'imported' });
+  return { success: true, backup };
 });
+
+ipcMain.handle('backup:openFolder', async () => {
+  fs.mkdirSync(backupFolder(), { recursive: true });
+  const error = await shell.openPath(backupFolder());
+  return { success: !error, error };
+});
+
+/**
+ * Daily automatic backup, when the shop turned it on: one copy per day, made
+ * when the program starts, the oldest automatic copies beyond `keepAuto` are
+ * removed. Copies made by the shop are never removed.
+ */
+function runDailyBackup() {
+  try {
+    const settings = getBackupSettings();
+    if (!settings.autoDaily) return;
+    const dir = backupFolder();
+    if (backupService.autoBackupDue(backupService.listBackups(dir))) {
+      backupService.createBackup(dir, databasePath(app.getPath('userData')), { kind: 'auto' });
+    }
+    for (const old of backupService.autoBackupsToPrune(backupService.listBackups(dir), settings.keepAuto)) {
+      backupService.deleteBackup(dir, old.name);
+    }
+  } catch (error) {
+    console.error('Daily backup failed:', error);
+  }
+}
 
 ipcMain.handle('backup:reset', async () => {
   const dbPath = databasePath(app.getPath('userData'));
@@ -1154,7 +1203,12 @@ ipcMain.handle('db:held:delete', (_, id) => {
 });
 
 // Settings
+// Settings rows of removed features (the old AI assistant key) stay in the
+// file untouched but are never sent to the interface
+const RETIRED_SETTINGS = ['ai_settings'];
+
 ipcMain.handle('db:settings:get', (_, key) => {
+  if (RETIRED_SETTINGS.includes(key)) return null;
   const row = getOne('SELECT value FROM settings WHERE key = ?', [key]);
   return row ? JSON.parse(row.value) : null;
 });
@@ -1176,7 +1230,7 @@ ipcMain.handle('db:settings:delete', (_, key) => {
 });
 
 ipcMain.handle('db:settings:getAll', () => {
-  const rows = runQuery('SELECT key, value FROM settings');
+  const rows = runQuery('SELECT key, value FROM settings').filter(row => !RETIRED_SETTINGS.includes(row.key));
   const settings = {};
   rows.forEach(row => {
     settings[row.key] = JSON.parse(row.value);

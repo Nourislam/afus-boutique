@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { resolveFeatures } from '../lib/features';
+import { resolveFeatures, effectiveFeatures } from '../lib/features';
 import { resolveUiMode } from '../lib/uiMode';
 import { useLanguageStore, normalizeLanguage } from '../i18n';
 import { formatMoney } from '../i18n/format';
@@ -45,7 +45,8 @@ export const useSettingsStore = create((set, get) => ({
                 }
             }
 
-            parsedSettings.features = resolveFeatures(data.features);
+            // What the menus and screens show (a module needing a hidden one is hidden)
+            parsedSettings.features = effectiveFeatures(data.features);
             parsedSettings.uiMode = resolveUiMode(data.ui_mode);
 
             // The language saved with the shop settings wins over the local cache

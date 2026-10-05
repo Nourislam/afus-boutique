@@ -13,7 +13,6 @@ export default {
     'nav.mode.switchToSimple': ["Show the simple menu", "Afficher le menu simple", "عرض القائمة البسيطة"],
     'nav.mode.nowSimple': ["Simple menu", "Menu simple", "القائمة البسيطة"],
     'nav.mode.nowFull': ["Full menu", "Menu complet", "القائمة الكاملة"],
-    'nav.mode.appliedNow': ["Applied at once, no need to save. Settings stays in the menu in both modes.", "Appliqué tout de suite, sans enregistrer. Les paramètres restent dans le menu dans les deux cas.", "يُطبَّق فوراً دون حفظ. تبقى الإعدادات في القائمة في الوضعين."],
     'shop.unnamed': ["My shop", "Ma boutique", "محلي"],
     'titlebar.program': ["The program used by the shop", "Le logiciel du magasin", "البرنامج الذي يستعمله المحل"],
 };

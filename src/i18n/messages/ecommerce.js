@@ -41,12 +41,4 @@ export default {
     'ecommerce.allMapped': ["All products with SKUs are mapped!", "Tous les articles avec SKU sont reliés.", "كل السلع ذات SKU مرتبطة."],
     'ecommerce.notFound': ["Not found on platform", "Introuvable en ligne", "غير موجودة في المتجر"],
     'ecommerce.needsSku': ["Needs SKU", "SKU requis", "يتطلب SKU"],
-    'ai.imagesOnly': ["Unsupported file: {name}. Only images are accepted.", "Fichier non pris en charge : {name}. Images uniquement.", "ملف غير مدعوم: {name}. الصور فقط."],
-    'ai.max3': ["Maximum 3 items allowed", "3 fichiers maximum", "3 ملفات كحد أقصى"],
-    'ai.ready': ["Online & Ready", "En ligne", "متصل"],
-    'ai.you': ["You", "Vous", "أنت"],
-    'ai.short': ["AI", "IA", "الذكاء"],
-    'ai.upload': ["Upload Image", "Ajouter une image", "رفع صورة"],
-    'ai.askAnything': ["Ask the assistant anything...", "Posez votre question à l'assistant…", "اسأل المساعد…"],
-    'ai.disclaimer': ["The AI assistant can make mistakes. Consider checking important information.", "L'assistant peut se tromper. Vérifiez les informations importantes.", "قد يخطئ المساعد. تحقق من المعلومات المهمة."],
 };

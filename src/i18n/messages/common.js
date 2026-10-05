@@ -25,7 +25,6 @@ export default {
     'nav.labels': ['Labels & barcodes', 'Étiquettes & codes-barres', 'الملصقات والباركود'],
     'nav.employees': ['Employees', 'Employés', 'العمال'],
     'nav.reports': ['Reports', 'Rapports', 'التقارير'],
-    'nav.ai': ['AI assistant', 'Assistant IA', 'المساعد الذكي'],
     'nav.settings': ['Settings', 'Paramètres', 'الإعدادات'],
     'nav.closeShift': ['Close shift', 'Clôturer la caisse', 'غلق الصندوق'],
     'nav.logout': ['Log out', 'Déconnexion', 'خروج'],
