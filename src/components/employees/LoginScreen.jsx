@@ -6,6 +6,7 @@ import { toast } from '../ui/Toast';
 import { TitleBar } from '../layout/TitleBar';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { ShopLogo } from '../shop/ShopLogo';
+import { AfusLogo } from '../brand/AfusLogo';
 import OpeningCashDialog from '../shifts/OpeningCashDialog';
 
 export default function LoginScreen() {
@@ -86,47 +87,60 @@ export default function LoginScreen() {
         await performLogin(selectedEmployee.id, pin);
     };
 
+    // The program, small and apart from the shop's identity
+    const poweredBy = (
+        <div className="flex-none flex items-center justify-center gap-2 py-4 text-xs text-zinc-500">
+            <AfusLogo size={16} />
+            <span>{t('login.poweredBy', { app: t('app.name') })}</span>
+        </div>
+    );
+
     if (selectedEmployee) {
         return (
             <div className="h-screen w-screen flex flex-col bg-dark-primary">
                 <TitleBar />
-                <div className="flex-1 flex flex-col items-center justify-center p-8">
-                    <div className="w-full max-w-md">
-                        {/* Back button */}
+                <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6">
+                    <div className="w-full max-w-3xl">
                         <button
                             onClick={() => {
                                 setSelectedEmployee(null);
                                 setPin('');
                             }}
-                            className="mb-8 text-zinc-400 hover:text-white transition-colors flex items-center gap-2"
+                            className="mb-4 text-zinc-400 hover:text-white transition-colors flex items-center gap-2"
                         >
                             <span className="flip-rtl">←</span> {t('login.back')}
                         </button>
 
-                        {/* Selected employee */}
-                        <div className="text-center mb-8">
-                            <div className="w-20 h-20 rounded-full gradient-primary mx-auto mb-4 flex items-center justify-center">
-                                <span className="text-3xl font-bold text-white">
-                                    {selectedEmployee.name.charAt(0)}
-                                </span>
+                        <div className="card !p-0 overflow-hidden grid md:grid-cols-[1fr_1.15fr]">
+                            {/* Who is logging in, in which shop */}
+                            <div className="flex flex-col items-center justify-center text-center gap-3 p-8 bg-dark-tertiary/40 md:border-e border-b md:border-b-0 border-dark-border">
+                                <div className="w-20 h-20 rounded-full gradient-primary flex items-center justify-center">
+                                    <span className="text-3xl font-bold text-white">{selectedEmployee.name.charAt(0)}</span>
+                                </div>
+                                <div className="min-w-0 max-w-full">
+                                    <h2 className="text-xl font-semibold truncate">{selectedEmployee.name}</h2>
+                                    <p className="text-zinc-500">{t(`role.${selectedEmployee.role}`)}</p>
+                                </div>
+                                <div className="flex items-center gap-2 mt-2 text-sm text-zinc-400 min-w-0 max-w-full">
+                                    <ShopLogo fileName={settings.shopLogo} name={settings.businessName} size={24} rounded="rounded-md" />
+                                    <span className="truncate">{settings.businessName || t('app.name')}</span>
+                                </div>
                             </div>
-                            <h2 className="text-xl font-semibold">{selectedEmployee.name}</h2>
-                            <p className="text-zinc-500">{t(`role.${selectedEmployee.role}`)}</p>
-                        </div>
 
-                        {/* PIN Entry */}
-                        <div className="card p-6">
-                            <p className="text-center text-zinc-400 mb-6">{t('login.enterPin')}</p>
-                            <PinPad
-                                value={pin}
-                                onChange={setPin}
-                                onEnter={handleLogin}
-                                pinLength={4}
-                            />
+                            <div className="p-6 md:p-8">
+                                <p className="text-center text-zinc-400 mb-6">{t('login.enterPin')}</p>
+                                <PinPad
+                                    value={pin}
+                                    onChange={setPin}
+                                    onEnter={handleLogin}
+                                    pinLength={4}
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
-                
+                {poweredBy}
+
                 {showOpeningCash && (
                     <OpeningCashDialog 
                         employee={selectedEmployee}
@@ -144,17 +158,18 @@ export default function LoginScreen() {
     return (
         <div className="h-screen w-screen flex flex-col bg-dark-primary">
             <TitleBar />
-            <div className="flex-1 flex flex-col items-center justify-center p-8">
-                <div className="mb-12 text-center">
+            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center p-6 lg:p-8">
+                {/* The shop: its logo (or initials) and name */}
+                <div className="mb-8 lg:mb-10 text-center max-w-full">
                     <div className="mx-auto mb-4 w-fit">
-                        <ShopLogo fileName={settings.shopLogo} size={80} rounded="rounded-2xl" />
+                        <ShopLogo fileName={settings.shopLogo} name={settings.businessName} size={84} rounded="rounded-2xl" />
                     </div>
-                    <h1 className="text-3xl font-bold mb-2">{settings.businessName || t('app.name')}</h1>
+                    <h1 className="text-3xl font-bold mb-2 break-words">{settings.businessName || t('app.name')}</h1>
                     <p className="text-zinc-500">{t('login.selectProfile')}</p>
                 </div>
 
                 {/* Employee Grid */}
-                <div className="w-full max-w-2xl">
+                <div className="w-full max-w-4xl">
                     {employees.length === 0 ? (
                         <div className="text-center py-12">
                             <p className="text-zinc-400 mb-2">{t('login.noEmployees')}</p>
@@ -163,12 +178,12 @@ export default function LoginScreen() {
                             </p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div className="flex flex-wrap justify-center gap-4">
                             {employees.map(employee => (
                                 <button
                                     key={employee.id}
                                     onClick={() => setSelectedEmployee(employee)}
-                                    className="card p-6 text-center hover:border-accent-primary hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 group"
+                                    className="card w-[11.5rem] p-6 text-center hover:border-accent-primary hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 group"
                                 >
                                     <div className="w-16 h-16 rounded-full bg-dark-tertiary mx-auto mb-3 flex items-center justify-center group-hover:bg-accent-primary transition-colors">
                                         <span className="text-2xl font-semibold text-zinc-400 group-hover:text-white transition-colors">
@@ -183,7 +198,7 @@ export default function LoginScreen() {
                     )}
                 </div>
             </div>
+            {poweredBy}
         </div>
     );
 }
-

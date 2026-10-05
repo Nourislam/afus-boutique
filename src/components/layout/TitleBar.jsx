@@ -46,7 +46,7 @@ export function TitleBar({ bare = false }) {
             onDoubleClick={() => window.electronAPI?.maximize()}
         >
             <div className="flex items-center gap-2.5 min-w-0">
-                <ShopLogo fileName={settings.shopLogo} size={22} />
+                <ShopLogo fileName={settings.shopLogo} name={settings.businessName} size={22} />
                 <span className="font-semibold text-sm text-white truncate max-w-[260px]">{settings.businessName || t('app.name')}</span>
                 <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] text-zinc-500 whitespace-nowrap">
                     <span className="text-zinc-600">·</span>

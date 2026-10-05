@@ -4,6 +4,7 @@ export default {
     'login.failed': ["Login failed", "Échec de la connexion", "فشل تسجيل الدخول"],
     'login.back': ["Back to employees", "Retour aux employés", "رجوع إلى العمال"],
     'login.enterPin': ["Enter your PIN", "Saisissez votre code PIN", "أدخل رمز PIN"],
+    'login.poweredBy': ["Powered by {app}", "Avec {app}", "يعمل بـ {app}"],
     'login.selectProfile': ["Select your profile to login", "Choisissez votre profil", "اختر حسابك للدخول"],
     'login.noEmployees': ["No employees found", "Aucun employé", "لا يوجد عمال"],
     'login.noEmployeesHint': ["Restore a backup or reset the shop setup to create an administrator.", "Restaurez une sauvegarde ou réinitialisez la boutique pour créer un administrateur.", "استرجع نسخة احتياطية أو أعد إعداد المحل لإنشاء مدير."],

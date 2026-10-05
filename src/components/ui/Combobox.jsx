@@ -22,15 +22,29 @@ export function Combobox({
     const selected = options.find(o => o.value === value);
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
-        return q ? options.filter(o => o.label.toLowerCase().includes(q)) : options;
+        // The hint is searched too (e.g. the French name of a wilaya in Arabic)
+        return q ? options.filter(o => `${o.label} ${o.hint || ''}`.toLowerCase().includes(q)) : options;
     }, [options, query]);
     const canCreate = !!onCreate && query.trim() && !options.some(o => o.label.toLowerCase() === query.trim().toLowerCase());
     const items = canCreate ? [...filtered, { create: true, value: query.trim(), label: query.trim() }] : filtered;
 
-    // The menu is drawn in a portal so it is never cut by a scrolling dialog
+    // The menu is drawn in a portal so it is never cut by a scrolling dialog.
+    // It opens on the side with more room and is never taller than that room.
     const place = () => {
         const r = inputRef.current?.getBoundingClientRect();
-        if (r) setRect({ left: r.left, top: r.bottom + 4, width: r.width, above: window.innerHeight - r.bottom < 260, bottom: window.innerHeight - r.top + 4 });
+        if (!r) return;
+        const below = window.innerHeight - r.bottom - 12;
+        const aboveRoom = r.top - 12;
+        const above = below < 240 && aboveRoom > below;
+        // At least 280 px wide so long names stay readable, lined up with the
+        // field's start edge (right in Arabic) and kept inside the window
+        const width = Math.min(Math.max(r.width, 280), window.innerWidth - 16);
+        const rtl = document.documentElement.dir === 'rtl';
+        const left = Math.min(Math.max(8, rtl ? r.right - width : r.left), window.innerWidth - width - 8);
+        setRect({
+            left, top: r.bottom + 4, width, above, bottom: window.innerHeight - r.top + 4,
+            maxHeight: Math.max(120, Math.min(320, above ? aboveRoom : below)),
+        });
     };
     useLayoutEffect(() => { if (open) place(); }, [open]);
     useEffect(() => {
@@ -104,8 +118,8 @@ export function Combobox({
             {open && rect && createPortal(
                 <div
                     ref={menuRef}
-                    className="fixed z-[100] max-h-60 overflow-y-auto rounded-lg border border-dark-border bg-dark-secondary shadow-2xl shadow-black/60 py-1"
-                    style={rect.above ? { left: rect.left, bottom: rect.bottom, width: rect.width } : { left: rect.left, top: rect.top, width: rect.width }}
+                    className="fixed z-[100] overflow-y-auto overscroll-contain touch-pan-y rounded-lg border border-dark-border bg-dark-secondary shadow-2xl shadow-black/60 py-1"
+                    style={{ ...(rect.above ? { bottom: rect.bottom } : { top: rect.top }), left: rect.left, width: rect.width, maxHeight: rect.maxHeight }}
                     dir={document.documentElement.dir}
                     role="listbox"
                 >

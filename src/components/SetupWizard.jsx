@@ -65,10 +65,6 @@ export default function SetupWizard({ onComplete }) {
                     toast.error(t('setup.shopNameRequired'));
                     return false;
                 }
-                if (!shop.shopLogo) {
-                    toast.error(t('setup.logoRequired'));
-                    return false;
-                }
                 return true;
             case 'admin':
                 if (!admin.name.trim()) {
@@ -159,13 +155,13 @@ export default function SetupWizard({ onComplete }) {
         switch (STEPS[currentStep].id) {
             case 'welcome':
                 return (
-                    <div className="text-center py-6">
-                        <AfusLogo size={96} className="mx-auto mb-6" title={t('app.name')} />
+                    <div className="grid gap-8 lg:grid-cols-[1.3fr_1fr] items-center">
+                        <div>
                         <h2 className="text-3xl font-bold mb-2">{t('setup.welcome', { app: t('app.name') })}</h2>
-                        <p className="text-zinc-400 text-lg max-w-md mx-auto">{t('setup.welcomeText')}</p>
+                        <p className="text-zinc-400 text-lg">{t('setup.welcomeText')}</p>
 
                         <p className="form-label mt-8 mb-3">{t('setup.chooseLanguage')}</p>
-                        <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto">
+                        <div className="grid grid-cols-3 gap-3">
                             {LANGUAGES.map(l => (
                                 <button
                                     key={l.value}
@@ -178,27 +174,27 @@ export default function SetupWizard({ onComplete }) {
                                 </button>
                             ))}
                         </div>
-
-                        <div className="mt-8 space-y-3 text-start max-w-sm mx-auto">
-                            {['setup.check.shop', 'setup.check.admin', 'setup.check.printing'].map(key => (
-                                <div key={key} className="flex items-center gap-3 text-zinc-300">
-                                    <Check className="w-5 h-5 text-green-500 shrink-0" /><span>{t(key)}</span>
-                                </div>
-                            ))}
                         </div>
-                        <div className="mt-8 inline-flex items-center gap-2 text-sm text-zinc-500">
-                            <WifiOff className="w-4 h-4" />
-                            {t('setup.offline')}
+
+                        <div className="rounded-2xl bg-dark-tertiary/60 border border-dark-border p-5">
+                            <p className="text-sm font-semibold text-zinc-300 mb-4">{t('setup.whatWeSet')}</p>
+                            <div className="space-y-3">
+                                {['setup.check.shop', 'setup.check.admin', 'setup.check.printing'].map(key => (
+                                    <div key={key} className="flex items-start gap-3 text-zinc-300">
+                                        <Check className="w-5 h-5 text-green-500 shrink-0 mt-0.5" /><span>{t(key)}</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 );
 
             case 'shop':
                 return (
-                    <div className="space-y-4">
-                        <h2 className="text-2xl font-bold mb-2">{t('setup.shopTitle')}</h2>
+                    <div>
+                        <h2 className="text-2xl font-bold mb-1">{t('setup.shopTitle')}</h2>
                         <p className="text-sm text-zinc-400 mb-4">{t('setup.shopText')}</p>
-                        <ShopInfoForm value={shop} onChange={setShop} requireLogo />
+                        <ShopInfoForm value={shop} onChange={setShop} />
                     </div>
                 );
 
@@ -207,13 +203,14 @@ export default function SetupWizard({ onComplete }) {
                     <div className="space-y-4">
                         <h2 className="text-2xl font-bold mb-2">{t('setup.adminTitle')}</h2>
                         <p className="text-sm text-zinc-400 mb-4">{t('setup.adminText')}</p>
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <Input
                             label={t('setup.adminName')}
                             value={admin.name}
                             onChange={(e) => setAdmin(prev => ({ ...prev, name: e.target.value }))}
                             placeholder={t('setup.adminNamePlaceholder')}
+                            containerClassName="sm:col-span-2 lg:col-span-1"
                         />
-                        <div className="grid grid-cols-2 gap-4">
                             <Input
                                 label={t('setup.pin')}
                                 type="password"
@@ -302,13 +299,13 @@ export default function SetupWizard({ onComplete }) {
 
             case 'complete':
                 return (
-                    <div className="text-center py-8">
-                        <div className="mx-auto mb-6 w-fit">
-                            <ShopLogo fileName={shop.shopLogo} size={96} rounded="rounded-2xl" />
+                    <div className="text-center">
+                        <div className="mx-auto mb-5 w-fit">
+                            <ShopLogo fileName={shop.shopLogo} name={shop.businessName} size={96} rounded="rounded-2xl" />
                         </div>
-                        <h2 className="text-3xl font-bold mb-4">{t('setup.ready', { shop: shop.businessName })}</h2>
-                        <p className="text-zinc-400 text-lg max-w-md mx-auto mb-8">{t('setup.readyText')}</p>
-                        <div className="bg-zinc-800/50 rounded-lg p-6 max-w-sm mx-auto">
+                        <h2 className="text-3xl font-bold mb-3">{t('setup.ready', { shop: shop.businessName })}</h2>
+                        <p className="text-zinc-400 text-lg max-w-md mx-auto mb-6">{t('setup.readyText')}</p>
+                        <div className="bg-zinc-800/50 rounded-xl p-6 max-w-md mx-auto">
                             <div className="space-y-2 text-sm text-start">
                                 <div className="flex justify-between gap-4"><span className="text-zinc-400">{t('setup.step.admin')}</span><span>{admin.name}</span></div>
                                 <div className="flex justify-between gap-4"><span className="text-zinc-400">{t('settings.language')}</span><span>{LANGUAGES.find(l => l.value === shop.defaultLanguage)?.label}</span></div>
@@ -330,59 +327,80 @@ export default function SetupWizard({ onComplete }) {
     return (
         <div className="h-screen flex flex-col bg-dark-primary">
             <TitleBar bare />
-            <div className="flex-1 overflow-y-auto flex items-start justify-center p-6">
-            <div className="w-full max-w-3xl my-auto">
-                {/* Progress Steps */}
-                <div className="flex items-center justify-between mb-8">
-                    {STEPS.map((step, index) => {
-                        const Icon = step.icon;
-                        const isActive = index === currentStep;
-                        const isCompleted = index < currentStep;
-                        return (
-                            <div key={step.id} className="flex items-center">
-                                <div
-                                    title={t(step.title)}
-                                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all
-                                    ${isCompleted ? 'bg-green-500 text-white' : ''}
-                                    ${isActive ? 'bg-indigo-500 text-white ring-4 ring-indigo-500/30' : ''}
-                                    ${!isActive && !isCompleted ? 'bg-zinc-800 text-zinc-500' : ''}`}
-                                >
-                                    {isCompleted ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
-                                </div>
-                                {index < STEPS.length - 1 && (
-                                    <div className={`w-10 md:w-20 h-1 mx-1 ${isCompleted ? 'bg-green-500' : 'bg-zinc-800'}`} />
+            <div className="flex-1 min-h-0 flex justify-center p-4 lg:p-6">
+                <div className="w-full max-w-6xl min-h-0 lg:h-[min(46rem,100%)] lg:my-auto flex flex-col lg:flex-row gap-4 lg:gap-6">
+                    {/* The program: Afus Boutique identity and the steps */}
+                    <aside className="lg:w-60 flex-none flex lg:flex-col gap-4 lg:gap-6 rounded-2xl border border-dark-border bg-dark-secondary/60 p-4 lg:p-5">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <AfusLogo size={40} title={t('app.name')} />
+                            <div className="min-w-0 hidden sm:block">
+                                <p className="font-bold leading-tight truncate">{t('app.name')}</p>
+                                <p className="text-xs text-zinc-500 leading-snug">{t('app.tagline')}</p>
+                            </div>
+                        </div>
+
+                        <ol className="flex-1 flex lg:flex-col items-center lg:items-stretch justify-end lg:justify-start gap-1.5 lg:gap-1 min-w-0">
+                            {STEPS.map((step, index) => {
+                                const Icon = step.icon;
+                                const isActive = index === currentStep;
+                                const isCompleted = index < currentStep;
+                                return (
+                                    <li key={step.id} title={t(step.title)}
+                                        className={`flex items-center gap-3 rounded-xl lg:px-3 lg:py-2 ${isActive ? 'lg:bg-indigo-500/10' : ''}`}
+                                        aria-current={isActive ? 'step' : undefined}>
+                                        <span className={`w-8 h-8 rounded-full flex-none flex items-center justify-center transition-all
+                                            ${isCompleted ? 'bg-green-500 text-white' : ''}
+                                            ${isActive ? 'bg-indigo-500 text-white ring-4 ring-indigo-500/25' : ''}
+                                            ${!isActive && !isCompleted ? 'bg-zinc-800 text-zinc-500' : ''}`}>
+                                            {isCompleted ? <Check className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+                                        </span>
+                                        <span className={`hidden lg:block text-sm truncate ${isActive ? 'text-white font-semibold' : isCompleted ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                                            {t(step.title)}
+                                        </span>
+                                    </li>
+                                );
+                            })}
+                        </ol>
+
+                        <p className="hidden lg:flex items-start gap-2 text-xs text-zinc-500 leading-relaxed">
+                            <WifiOff className="w-4 h-4 flex-none mt-0.5" />
+                            {t('setup.offline')}
+                        </p>
+                    </aside>
+
+                    {/* The step: scrolls inside the card only if the window is small; the buttons stay visible */}
+                    <section className="card !p-0 flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+                        <div className={`flex-1 min-h-0 overflow-y-auto p-5 xl:p-8 ${['welcome', 'complete'].includes(STEPS[currentStep].id) ? 'flex flex-col justify-center' : ''}`}>
+                            <p className="text-xs font-medium text-indigo-300 mb-2 lg:hidden">
+                                {t('setup.stepOf', { n: currentStep + 1, total: STEPS.length })} · {t(STEPS[currentStep].title)}
+                            </p>
+                            {renderStepContent()}
+                        </div>
+
+                        <div className="flex-none flex items-center justify-between gap-3 px-5 xl:px-8 py-3 xl:py-4 border-t border-dark-border bg-dark-secondary/40">
+                            <div>
+                                {currentStep > 0 && !isLast && (
+                                    <Button variant="secondary" size="lg" onClick={() => setCurrentStep(prev => prev - 1)}>
+                                        <ChevronLeft className="w-5 h-5 flip-rtl" />
+                                        {t('common.back')}
+                                    </Button>
                                 )}
                             </div>
-                        );
-                    })}
-                </div>
-
-                <div className="card p-8">
-                    {renderStepContent()}
-
-                    <div className="flex items-center justify-between mt-8 pt-6 border-t border-dark-border">
-                        <div>
-                            {currentStep > 0 && !isLast && (
-                                <Button variant="secondary" onClick={() => setCurrentStep(prev => prev - 1)}>
-                                    <ChevronLeft className="w-4 h-4 me-1 flip-rtl" />
-                                    {t('common.back')}
+                            <span className="hidden sm:block text-xs text-zinc-500">{t('setup.stepOf', { n: currentStep + 1, total: STEPS.length })}</span>
+                            {!isLast ? (
+                                <Button size="lg" onClick={handleNext} loading={loading} className="min-w-[10rem] justify-center">
+                                    {currentStep === STEPS.length - 2 ? t('setup.finish') : t('common.next')}
+                                    <ChevronRight className="w-5 h-5 flip-rtl" />
+                                </Button>
+                            ) : (
+                                <Button size="lg" onClick={() => onComplete?.(createdAdmin)} className="min-w-[10rem] justify-center">
+                                    {t('setup.start')}
+                                    <ChevronRight className="w-5 h-5 flip-rtl" />
                                 </Button>
                             )}
                         </div>
-                        {!isLast ? (
-                            <Button onClick={handleNext} loading={loading}>
-                                {currentStep === STEPS.length - 2 ? t('setup.finish') : t('common.next')}
-                                <ChevronRight className="w-4 h-4 ms-1 flip-rtl" />
-                            </Button>
-                        ) : (
-                            <Button onClick={() => onComplete?.(createdAdmin)}>
-                                {t('setup.start')}
-                                <ChevronRight className="w-4 h-4 ms-1 flip-rtl" />
-                            </Button>
-                        )}
-                    </div>
+                    </section>
                 </div>
-            </div>
             </div>
         </div>
     );
