@@ -59,6 +59,8 @@ export default {
     'errors.ECOM_AUTH': ["The store refused the key — copy the access key again from your store", "La boutique a refusé la clé — copiez à nouveau la clé d'accès depuis votre boutique", "رفض المتجر المفتاح — انسخ مفتاح الوصول من متجرك من جديد"],
     'errors.ECOM_FAILED': ["The store did not answer as expected — try again in a moment", "La boutique n'a pas répondu comme prévu — réessayez dans un instant", "لم يستجب المتجر كما يجب — أعد المحاولة بعد قليل"],
     'errors.TRAINING_ACTIVE': ["Not possible in training mode — leave training first", "Impossible en mode formation — quittez d'abord la formation", "غير ممكن في وضع التدريب — اخرج من التدريب أولًا"],
+    'errors.DEMO_ACTIVE': ["Not possible in the demo shop — this only concerns your real shop. Use \"Start the demo again\" or \"Start my real shop\"", "Impossible dans la boutique de démo — cela concerne seulement votre vraie boutique. Utilisez « Recommencer la démo » ou « Démarrer ma vraie boutique »", "غير ممكن في المحل التجريبي — هذا يخص محلك الحقيقي فقط. استعمل «إعادة العرض للبداية» أو «ابدأ محلك الحقيقي»"],
+    'errors.DEMO_NOT_ACTIVE': ["The demo shop is not open", "La boutique de démo n'est pas ouverte", "المحل التجريبي غير مفتوح"],
     'errors.TRAINING_NEEDS_MANAGER': ["A manager must agree to start training mode", "Un responsable doit accepter pour lancer la formation", "يلزم موافقة المدير لبدء وضع التدريب"],
     'errors.RETURN_TOO_MANY': ["\"{product}\": only {left} piece(s) can still be returned", "« {product} » : il ne reste que {left} pièce(s) à retourner", "«{product}»: يمكن إرجاع {left} قطعة فقط"],
     'errors.GIFT_CARD_BALANCE': ["Not enough balance on gift card {code}", "Solde insuffisant sur la carte {code}", "رصيد غير كافٍ في البطاقة {code}"],

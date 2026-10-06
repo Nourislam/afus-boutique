@@ -15,9 +15,49 @@ const changeListeners = [];
 // open, writes are not flushed to disk and failures throw instead of being
 // swallowed, so the whole unit of work can be rolled back.
 let transactionDepth = 0;
+// Which shop is open: 'real' (the shop's own data) or 'demo' (the demo shop,
+// a separate file in its own folder). The program always starts on 'real'.
+let profile = 'real';
+const DEMO_FOLDER = 'demo';
+const DEMO_FILE = 'afus-boutique-demo.db';
+
+/** Folder of the open shop's data: the data folder, or its demo/ subfolder. */
+function getDataRoot() {
+    const userData = app.getPath('userData');
+    return profile === 'demo' ? path.join(userData, DEMO_FOLDER) : userData;
+}
+
+function realDbPath() {
+    return databasePath(app.getPath('userData'));
+}
 
 function getDbPath() {
-    return databasePath(app.getPath('userData'));
+    if (profile !== 'demo') return realDbPath();
+    const demoPath = path.join(getDataRoot(), DEMO_FILE);
+    // Never the shop's own file, whatever the brand file says
+    if (path.resolve(demoPath) === path.resolve(realDbPath())) throw new Error('Demo database path is the real database');
+    return demoPath;
+}
+
+/**
+ * Switch the open shop ('real' or 'demo'). Only changes which file the next
+ * initDatabase() opens; ends a training copy first.
+ */
+function setProfile(next) {
+    if (next !== 'real' && next !== 'demo') throw new Error(`Unknown profile ${next}`);
+    if (realDb) stopSandbox();
+    profile = next;
+    if (profile === 'demo') fs.mkdirSync(getDataRoot(), { recursive: true });
+}
+
+const getProfile = () => profile;
+const isDemo = () => profile === 'demo';
+
+/** Close the open database without saving (used before the demo file is rebuilt). */
+function closeDatabase() {
+    if (realDb) stopSandbox();
+    if (db) { try { db.close(); } catch { /* already closed */ } }
+    db = null;
 }
 
 /**
@@ -615,6 +655,8 @@ function saveDatabase() {
         // file, so a crash or power loss mid-write cannot leave a truncated
         // database behind.
         const dbPath = getDbPath();
+        // Last safety: the demo shop never writes the shop's own file
+        if (profile === 'demo' && path.resolve(dbPath) === path.resolve(realDbPath())) throw new Error('Refused: demo data cannot be written to the real database');
         const tmpPath = `${dbPath}.tmp`;
         fs.writeFileSync(tmpPath, buffer);
         try {
@@ -800,4 +842,5 @@ function getOne(sql, params = []) {
 module.exports = {
     initDatabase, getDatabase, saveDatabase, startSandbox, stopSandbox, isSandbox, runQuery, runInsert, runStatement, runTransaction,
     getOne, getTableColumns, addDatabaseChangeListener, getDbPath, bindable,
+    setProfile, getProfile, isDemo, getDataRoot, realDbPath, closeDatabase, DEMO_FOLDER, DEMO_FILE,
 };

@@ -619,6 +619,7 @@ class ReceiptService {
                     <div class="doc-info">
                         <div class="doc-title">${docTitle}</div>
                         ${storeSettings.training ? `<div style="margin-top:6px;padding:4px 10px;border:2px solid #dc2626;color:#dc2626;font-weight:bold;display:inline-block">${esc(T('receipt.training'))}</div>` : ''}
+                        ${storeSettings.demo && !storeSettings.training ? `<div style="margin-top:6px;padding:4px 10px;border:2px solid #ea580c;color:#ea580c;font-weight:bold;display:inline-block">${esc(T('receipt.demo'))}</div>` : ''}
                         <div class="doc-meta">
                             <div class="doc-meta-row">
                                 <span class="doc-meta-label">${T('doc.number')}:</span>
@@ -882,6 +883,7 @@ class ReceiptService {
         ${shop.phone ? `<div class="muted ltr">${esc(shop.phone)}</div>` : ''}
         ${legal.length ? `<div class="muted small">${legal.join(' · ')}</div>` : ''}
         ${storeSettings.training ? `<div class="training-mark">${esc(T('receipt.training'))}</div>` : ''}
+        ${storeSettings.demo && !storeSettings.training ? `<div class="training-mark">${esc(T('receipt.demo'))}</div>` : ''}
         ${shop.header ? `<div class="header" style="margin-top:1.5mm;white-space:pre-line">${esc(shop.header)}</div>` : ''}
     </div>
     <div class="sep"></div>

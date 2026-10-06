@@ -52,6 +52,16 @@ class EcommerceSyncManager {
         return this.deps.ipcMain || require('electron').ipcMain;
     }
 
+    /**
+     * Why the online store must not be used now: training (a copy of the
+     * stock) or the demo shop (not the shop's stock). null when it may.
+     */
+    blockedReason() {
+        if (this.deps.isTraining?.()) return 'TRAINING_ACTIVE';
+        if (this.deps.isDemo?.()) return 'DEMO_ACTIVE';
+        return null;
+    }
+
     /** Is the online store module turned on in Settings › Modules? */
     isEnabled() {
         return this.deps.isEnabled ? !!this.deps.isEnabled() : true;
@@ -61,10 +71,11 @@ class EcommerceSyncManager {
      * Start the manager. Must be called once the database is open (it reads
      * the saved connections). The window comes later through setWindow().
      */
-    init({ mainWindow = null, isEnabled, isTraining } = {}) {
+    init({ mainWindow = null, isEnabled, isTraining, isDemo } = {}) {
         this.mainWindow = mainWindow;
         if (isEnabled) this.deps = { ...this.deps, isEnabled };
         if (isTraining) this.deps = { ...this.deps, isTraining };
+        if (isDemo) this.deps = { ...this.deps, isDemo };
         this.ready = true;
         this.registerIpcHandlers();
         this.startWebhookListener();
@@ -150,25 +161,31 @@ class EcommerceSyncManager {
         if (this.ipcRegistered) return;
         this.ipcRegistered = true;
         const ipcMain = this.ipc();
+        // Nothing that reaches the online store or changes the link to it during training or in the demo shop
+        const guarded = (fn) => async (...args) => {
+            const reason = this.blockedReason();
+            if (reason) return { success: false, message: `${reason}|{}`, error: `${reason}|{}` };
+            return fn(...args);
+        };
         // Get all connections
         ipcMain.handle('ecommerce:getConnections', async () => {
             return this.getConnections();
         });
 
         // Add new connection
-        ipcMain.handle('ecommerce:addConnection', async (_, connection) => {
+        ipcMain.handle('ecommerce:addConnection', guarded(async (_, connection) => {
             return this.addConnection(connection);
-        });
+        }));
 
         // Test connection
-        ipcMain.handle('ecommerce:testConnection', async (_, connectionId) => {
+        ipcMain.handle('ecommerce:testConnection', guarded(async (_, connectionId) => {
             return this.testConnection(connectionId);
-        });
+        }));
 
         // Remove connection
-        ipcMain.handle('ecommerce:removeConnection', async (_, connectionId) => {
+        ipcMain.handle('ecommerce:removeConnection', guarded(async (_, connectionId) => {
             return this.removeConnection(connectionId);
-        });
+        }));
 
         // Trigger manual sync
         ipcMain.handle('ecommerce:sync', async (_, connectionId) => {
@@ -186,19 +203,19 @@ class EcommerceSyncManager {
         });
 
         // Auto-map products by SKU
-        ipcMain.handle('ecommerce:autoMapProducts', async (_, connectionId) => {
+        ipcMain.handle('ecommerce:autoMapProducts', guarded(async (_, connectionId) => {
             return this.autoMapProducts(connectionId);
-        });
+        }));
 
         // Create manual mapping
-        ipcMain.handle('ecommerce:createMapping', async (_, mapping) => {
+        ipcMain.handle('ecommerce:createMapping', guarded(async (_, mapping) => {
             return this.createMapping(mapping);
-        });
+        }));
 
         // Delete mapping
-        ipcMain.handle('ecommerce:deleteMapping', async (_, mappingId) => {
+        ipcMain.handle('ecommerce:deleteMapping', guarded(async (_, mappingId) => {
             return this.deleteMapping(mappingId);
-        });
+        }));
 
         // Get sync logs
         ipcMain.handle('ecommerce:getSyncLogs', async (_, connectionId, limit = 50) => {
@@ -211,17 +228,17 @@ class EcommerceSyncManager {
         });
 
         // Start OAuth flow for Etsy
-        ipcMain.handle('ecommerce:oauth:start', async (_, platform, apiKey) => {
+        ipcMain.handle('ecommerce:oauth:start', guarded(async (_, platform, apiKey) => {
             if (platform === 'etsy') {
                 return this.startEtsyOAuth(apiKey);
             }
             throw new Error('OAuth not required for this platform');
-        });
+        }));
 
         // Complete OAuth flow
-        ipcMain.handle('ecommerce:oauth:complete', async (_, code, state, codeVerifier) => {
+        ipcMain.handle('ecommerce:oauth:complete', guarded(async (_, code, state, codeVerifier) => {
             return this.completeEtsyOAuth(code, state, codeVerifier);
-        });
+        }));
 
         console.log('[ECOMMERCE] IPC handlers registered');
     }
@@ -464,8 +481,8 @@ class EcommerceSyncManager {
      * Sync a specific connection
      */
     async syncConnection(connectionId) {
-        // Training works on a copy of the stock: never sent to the online store
-        if (this.deps.isTraining?.()) return { success: false, message: 'TRAINING_ACTIVE|{}' };
+        // Training (a copy of the stock) and the demo shop are never sent to the online store
+        if (this.blockedReason()) return { success: false, message: `${this.blockedReason()}|{}` };
         if (this.isSyncing) {
             return { success: false, message: 'Sync already in progress' };
         }
@@ -594,7 +611,7 @@ class EcommerceSyncManager {
      * Sync all active connections
      */
     async syncAll() {
-        if (this.deps.isTraining?.()) return { success: false, message: 'TRAINING_ACTIVE|{}' };
+        if (this.blockedReason()) return { success: false, message: `${this.blockedReason()}|{}` };
         const connections = this.getConnections().filter(c => c.sync_enabled);
         const results = [];
 
@@ -815,6 +832,9 @@ class EcommerceSyncManager {
         if (this.webhookRegistered) return;
         this.webhookRegistered = true;
         this.ipc().handle('ecommerce:webhookEvent', async (_, event) => {
+            // The demo shop's stock is not the shop's: an event from the real store is not applied to it
+            const reason = this.blockedReason();
+            if (reason) return { success: false, message: `${reason}|{}` };
             return this.processWebhookEvent(event);
         });
 

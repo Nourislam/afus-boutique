@@ -1,10 +1,14 @@
-import { t } from '../../i18n';
+import { t, useT } from '../../i18n';
 import { useState, useEffect } from 'react';
 import { PinPad } from '../ui/NumPad';
 import { useAuthStore } from '../../stores/authStore';
 import { toast } from '../ui/Toast';
 import { TitleBar } from '../layout/TitleBar';
 import TrainingBanner from '../training/TrainingBanner';
+import DemoBanner from '../demo/DemoBanner';
+import { useDemoStore } from '../../stores/demoStore';
+import { translateError } from '../../i18n/errors';
+import { Store } from 'lucide-react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { ShopLogo } from '../shop/ShopLogo';
 import { AfusLogo } from '../brand/AfusLogo';
@@ -18,6 +22,21 @@ export default function LoginScreen() {
     const [showOpeningCash, setShowOpeningCash] = useState(false);
     const { login } = useAuthStore();
     const { settings } = useSettingsStore();
+    // Re-render when the language changes (t comes from the module)
+    const { lang } = useT();
+    const demo = useDemoStore();
+    const [openingDemo, setOpeningDemo] = useState(false);
+    const demoPin = (employee) => demo.staff.find(s => s.id === employee.id)?.pin;
+
+    const tryDemo = async () => {
+        setOpeningDemo(true);
+        try {
+            await demo.enter(lang);
+        } catch (error) {
+            toast.error(`${t('demo.failed')} — ${translateError(error)}`);
+            setOpeningDemo(false);
+        }
+    };
 
     useEffect(() => {
         loadEmployees();
@@ -100,8 +119,11 @@ export default function LoginScreen() {
         return (
             <div className="h-screen w-screen flex flex-col bg-dark-primary">
                 <TitleBar />
+            <DemoBanner />
             <TrainingBanner compact />
-                <TrainingBanner compact />
+                <DemoBanner />
+                <DemoBanner />
+            <TrainingBanner compact />
                 <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6">
                     <div className="w-full max-w-3xl">
                         <button
@@ -161,6 +183,7 @@ export default function LoginScreen() {
     return (
         <div className="h-screen w-screen flex flex-col bg-dark-primary">
             <TitleBar />
+            <DemoBanner />
             <TrainingBanner compact />
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center p-6 lg:p-8">
                 {/* The shop: its logo (or initials) and name */}
@@ -174,6 +197,9 @@ export default function LoginScreen() {
 
                 {/* Employee Grid */}
                 <div className="w-full max-w-4xl">
+                    {demo.active && (
+                        <p className="text-center text-sm text-orange-300 mb-4" data-testid="demo-login-title">{t('demo.loginTitle')}</p>
+                    )}
                     {employees.length === 0 ? (
                         <div className="text-center py-12">
                             <p className="text-zinc-400 mb-2">{t('login.noEmployees')}</p>
@@ -196,8 +222,20 @@ export default function LoginScreen() {
                                     </div>
                                     <p className="font-medium truncate">{employee.name}</p>
                                     <p className="text-xs text-zinc-500">{t(`role.${employee.role}`)}</p>
+                                    {demo.active && demoPin(employee) && (
+                                        <p className="mt-2 text-sm font-semibold text-orange-300 tabular" data-testid="demo-pin">{t('demo.loginPin', { pin: demoPin(employee) })}</p>
+                                    )}
                                 </button>
                             ))}
+                        </div>
+                    )}
+                    {/* The demo shop, kept apart from this shop */}
+                    {!demo.active && (
+                        <div className="mt-10 text-center">
+                            <button type="button" onClick={tryDemo} disabled={openingDemo} data-testid="login-try-demo"
+                                className="inline-flex items-center gap-2 rounded-lg border border-orange-500/40 px-4 py-2 text-sm text-orange-300 hover:bg-orange-500/10 disabled:opacity-60">
+                                <Store className="w-4 h-4" /> {openingDemo ? t('demo.opening') : t('demo.try')}
+                            </button>
                         </div>
                     )}
                 </div>

@@ -3,7 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme } = re
 const path = require('path');
 const fs = require('fs');
 const { BRAND, dataDirectory, databasePath } = require('./brand');
-const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener, startSandbox, stopSandbox, isSandbox } = require('./database/init');
+const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener, startSandbox, stopSandbox, isSandbox, isDemo, getDbPath } = require('./database/init');
 const dbApi = require('./database/api');
 const catalog = require('./services/catalogService');
 const dashboard = require('./services/dashboardService');
@@ -190,7 +190,8 @@ if (!gotTheLock) {
     // Online store connections (optional module): started once the database is
     // open so the saved connections are loaded; the window is given by createWindow()
     // Never synchronised with the online store while training (the stock seen is a copy)
-    EcommerceSyncManager.init({ isEnabled: () => !isSandbox() && (getSettingValue('features') || {}).ecommerce === true, isTraining: isSandbox });
+    // Never with the demo shop either (its stock is not the shop's)
+    EcommerceSyncManager.init({ isEnabled: () => !isSandbox() && !isDemo() && (getSettingValue('features') || {}).ecommerce === true, isTraining: isSandbox, isDemo });
 
 
   // Register app protocol for serving images
@@ -401,12 +402,18 @@ function getBackupSettings() {
   return { ...backupService.DEFAULT_BACKUP_SETTINGS, ...(getSettingValue('backup_settings') || {}) };
 }
 
+// The demo shop never touches the shop's backups (made, restored, deleted,
+// imported or exported): it has its own "start again" instead.
+const demoBlocked = () => (isDemo() ? { success: false, error: catalog.coded('DEMO_ACTIVE', {}) } : null);
+
 // Backups kept in the data folder, newest first
-ipcMain.handle('backup:list', () => ({
-  folder: backupFolder(),
-  backups: backupService.listBackups(backupFolder()),
-  settings: getBackupSettings(),
-}));
+ipcMain.handle('backup:list', () => (isDemo()
+  ? { folder: null, backups: [], settings: getBackupSettings(), demo: true }
+  : {
+    folder: backupFolder(),
+    backups: backupService.listBackups(backupFolder()),
+    settings: getBackupSettings(),
+  }));
 
 // A backup that failed: what happened and what to do, in the shop's words
 function backupError(error, action = 'BACKUP_FAILED') {
@@ -418,6 +425,7 @@ function backupError(error, action = 'BACKUP_FAILED') {
 }
 
 ipcMain.handle('backup:create', async () => {
+  if (isDemo()) return demoBlocked();
   try {
     return { success: true, backup: backupService.createBackup(backupFolder(), databasePath(app.getPath('userData'))) };
   } catch (error) {
@@ -428,6 +436,7 @@ ipcMain.handle('backup:create', async () => {
 
 // What a backup holds, next to the current data, shown before restoring it
 ipcMain.handle('backup:inspect', async (_, name) => {
+  if (isDemo()) throw catalog.codedError('DEMO_ACTIVE', {});
   const SQL = await sqlJs();
   const file = backupService.backupPath(backupFolder(), name);
   return {
@@ -438,6 +447,7 @@ ipcMain.handle('backup:inspect', async (_, name) => {
 
 ipcMain.handle('backup:restore', async (_, name) => {
   // Training works on a copy: the shop's data cannot be replaced from it
+  if (isDemo()) return demoBlocked();
   if (isSandbox()) return { success: false, error: catalog.coded('TRAINING_ACTIVE', {}) };
   const dir = backupFolder();
   const dbPath = databasePath(app.getPath('userData'));
@@ -465,10 +475,11 @@ ipcMain.handle('backup:restore', async (_, name) => {
   }
 });
 
-ipcMain.handle('backup:delete', (_, name) => backupService.deleteBackup(backupFolder(), name));
+ipcMain.handle('backup:delete', (_, name) => demoBlocked() || backupService.deleteBackup(backupFolder(), name));
 
 // A copy of a backup on a USB key or another disk
 ipcMain.handle('backup:export', async (_, name) => {
+  if (isDemo()) return demoBlocked();
   const file = backupService.backupPath(backupFolder(), name);
   const { filePath } = await dialog.showSaveDialog({
     title: shopT('dialog.exportBackup'),
@@ -482,6 +493,7 @@ ipcMain.handle('backup:export', async (_, name) => {
 
 // A backup brought from elsewhere: checked, then added to the list (restored only after its preview)
 ipcMain.handle('backup:import', async () => {
+  if (isDemo()) return demoBlocked();
   const { filePaths } = await dialog.showOpenDialog({
     title: shopT('dialog.importBackup'),
     // .sqlite: backups saved by earlier versions of this application
@@ -496,6 +508,7 @@ ipcMain.handle('backup:import', async () => {
 });
 
 ipcMain.handle('backup:openFolder', async () => {
+  if (isDemo()) return demoBlocked();
   fs.mkdirSync(backupFolder(), { recursive: true });
   const error = await shell.openPath(backupFolder());
   return { success: !error, error };
@@ -524,6 +537,7 @@ function runDailyBackup() {
 
 ipcMain.handle('backup:reset', async () => {
   // Training works on a copy: the shop's data cannot be replaced from it
+  if (isDemo()) return demoBlocked();
   if (isSandbox()) return { success: false, error: catalog.coded('TRAINING_ACTIVE', {}) };
   const dbPath = databasePath(app.getPath('userData'));
   try {
@@ -561,7 +575,8 @@ ipcMain.handle('app:setTheme', (_, { theme, preference } = {}) => {
 ipcMain.handle('app:getInfo', () => ({
   version: app.getVersion(),
   dataPath: app.getPath('userData'),
-  databasePath: databasePath(app.getPath('userData')),
+  databasePath: getDbPath(),
+  demo: isDemo(),
   platform: process.platform,
   electron: process.versions.electron,
 }));
@@ -906,6 +921,40 @@ ipcMain.handle('security:getRules', () => guard.readRules(dbApi));
 // or a cashier with a manager's PIN. Everything happens in a copy in memory.
 const trainingService = require('./services/trainingService');
 ipcMain.handle('training:status', () => ({ active: isSandbox() }));
+
+// ------------------------------------------------------------------
+// Demo shop (services/demoService.js): its own folder and database file.
+// Entering, starting again and leaving end the session (log in again) and a
+// training copy; the online store only ever sees the shop's own data.
+// ------------------------------------------------------------------
+const demoService = require('./services/demoService');
+const { demoStaff } = require('./services/demoData');
+function afterShopSwitch() {
+  session.clear();
+  EcommerceSyncManager.loadConnections();
+  EcommerceSyncManager.refreshSchedule();
+}
+ipcMain.handle('demo:status', () => {
+  const lang = (getSettingValue('store_config') || {}).defaultLanguage || 'ar';
+  return { active: isDemo(), training: isSandbox(), staff: isDemo() ? demoStaff(lang) : [] };
+});
+ipcMain.handle('demo:enter', async (_, { lang } = {}) => {
+  const result = await demoService.enter({ lang: ['ar', 'fr', 'en'].includes(lang) ? lang : 'ar' });
+  afterShopSwitch();
+  return { success: true, created: result.created };
+});
+ipcMain.handle('demo:reset', async (_, { lang } = {}) => {
+  if (!isDemo()) throw catalog.codedError('DEMO_NOT_ACTIVE', {});
+  const current = (getSettingValue('store_config') || {}).defaultLanguage;
+  await demoService.reset({ lang: ['ar', 'fr', 'en'].includes(lang) ? lang : current || 'ar' });
+  afterShopSwitch();
+  return { success: true };
+});
+ipcMain.handle('demo:exit', async () => {
+  const result = await demoService.exit();
+  afterShopSwitch();
+  return { success: true, exited: result.exited };
+});
 ipcMain.handle('training:start', (_, { approval } = {}) => {
   const actor = session.getEmployee();
   if (!actor) throw catalog.codedError('LOGIN_REQUIRED', {});
@@ -1860,6 +1909,7 @@ function getShopSettingsForPrint() {
   settings.receiptPaperWidthMm = getPrinterSettings().receipt.paperWidthMm;
   // Tickets and invoices printed in training say so in large letters
   settings.training = isSandbox();
+  settings.demo = isDemo();
   return settings;
 }
 

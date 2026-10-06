@@ -24,6 +24,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         stop: () => ipcRenderer.invoke('training:stop'),
         progress: () => ipcRenderer.invoke('training:progress'),
     },
+    demo: {
+        status: () => ipcRenderer.invoke('demo:status'),
+        enter: (data) => ipcRenderer.invoke('demo:enter', data),
+        reset: (data) => ipcRenderer.invoke('demo:reset', data),
+        exit: () => ipcRenderer.invoke('demo:exit'),
+    },
 
     // Shifts
     shifts: {

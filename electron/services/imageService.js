@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { app, nativeImage } = require('electron');
+const { nativeImage } = require('electron');
 
 /*
  * Images are resized with Electron's nativeImage: no native library to ship
@@ -37,8 +37,8 @@ function logFallback(what, error) {
 
 // Get the images directory path
 function getImagesDir() {
-    const userDataPath = app.getPath('userData');
-    const imagesDir = path.join(userDataPath, 'images');
+    // The open shop's folder: the demo shop keeps its pictures apart
+    const imagesDir = path.join(require('../database/init').getDataRoot(), 'images');
 
     // Create directory if it doesn't exist
     if (!fs.existsSync(imagesDir)) {

@@ -187,6 +187,15 @@ export function BackupSettings({ appInfo }) {
     const backups = data?.backups || [];
     const auto = data?.settings || {};
 
+    // The demo shop never touches the shop's backups (checked again in the main process)
+    if (data?.demo) {
+        return (
+            <Card className="border-orange-500/40">
+                <p className="text-sm text-orange-200" data-testid="backup-demo-blocked">{t('demo.backupBlocked')}</p>
+            </Card>
+        );
+    }
+
     return (
         <div className="space-y-4">
             {/* Backups */}

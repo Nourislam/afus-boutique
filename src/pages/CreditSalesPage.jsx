@@ -298,7 +298,7 @@ export default function CreditSalesPage() {
                                         <td className="p-4">
                                             <div>
                                                 <p className="font-medium">{sale.customer_name || t('tx.unknown')}</p>
-                                                <p className="text-xs text-zinc-500">{sale.customer_email || sale.customer_phone}</p>
+                                                <p className="text-xs text-zinc-500"><bdi dir="ltr">{sale.customer_email || sale.customer_phone}</bdi></p>
                                             </div>
                                         </td>
                                         <td className="p-4 text-sm text-zinc-400">{formatDate(sale.created_at)}</td>
@@ -309,7 +309,7 @@ export default function CreditSalesPage() {
                                             {formatCurrency((sale.amount_due || 0) - (sale.amount_paid || 0))}
                                         </td>
                                         <td className="p-4 text-center">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(sale.status)}`}>
+                                            <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusColor(sale.status)}`}>
                                                 {getStatusLabel(sale.status)}
                                             </span>
                                         </td>
@@ -735,7 +735,7 @@ function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
                             <div>
                                 <p className="font-medium text-lg">{creditSale.customer_name}</p>
                                 <p className="text-sm text-zinc-400">{creditSale.customer_email}</p>
-                                <p className="text-sm text-zinc-400">{creditSale.customer_phone}</p>
+                                <p className="text-sm text-zinc-400"><bdi dir="ltr">{creditSale.customer_phone}</bdi></p>
                                 {creditSale.customer_address && (
                                     <p className="text-sm text-zinc-400 mt-1">{creditSale.customer_address}</p>
                                 )}

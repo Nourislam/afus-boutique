@@ -45,6 +45,15 @@ function App() {
             try {
                 await loadSettings();
                 await loadCatalogCustomization();
+                // After entering, restarting or leaving the demo shop (the screens reloaded)
+                try {
+                    const notice = sessionStorage.getItem('demo_notice');
+                    if (notice) {
+                        sessionStorage.removeItem('demo_notice');
+                        const key = { entered: 'demo.entered', reset: 'demo.resetDone', left: 'demo.left' }[notice];
+                        if (key) setTimeout(() => toast.success(translate(key)), 300);
+                    }
+                } catch { /* storage unavailable */ }
 
                 const settings = await window.electronAPI.settings.getAll();
                 // Handle both string 'true' and boolean true

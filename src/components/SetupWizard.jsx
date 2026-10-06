@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { translateError } from '../i18n/errors';
-import { Check, ChevronRight, ChevronLeft, Store, User, Percent, Printer, Languages, WifiOff, FlaskConical, ScanLine } from 'lucide-react';
+import { Check, ChevronRight, ChevronLeft, Store, User, Percent, Printer, Languages, WifiOff, FlaskConical, ScanLine, Sparkles } from 'lucide-react';
 import { AfusLogo } from './brand/AfusLogo';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -12,6 +12,7 @@ import { PrinterSettingsForm, PrintTestPanel, Panel } from './settings/PrinterSe
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { ShopLogo } from './shop/ShopLogo';
 import { TitleBar } from './layout/TitleBar';
+import { useDemoStore } from '../stores/demoStore';
 import { LANGUAGES, setLanguage, useT } from '../i18n';
 import { CATEGORY_SUGGESTIONS, DEFAULT_CATEGORY_CODES, categoryName } from '../lib/clothing';
 import {
@@ -83,6 +84,18 @@ export default function SetupWizard({ onComplete }) {
                 return true;
             default:
                 return true;
+        }
+    };
+
+    // The demo shop: its own database, the real shop stays to be set up
+    const [openingDemo, setOpeningDemo] = useState(false);
+    const tryDemo = async () => {
+        setOpeningDemo(true);
+        try {
+            await useDemoStore.getState().enter(shop.defaultLanguage);
+        } catch (error) {
+            toast.error(`${t('demo.failed')} — ${translateError(error)}`);
+            setOpeningDemo(false);
         }
     };
 
@@ -178,6 +191,21 @@ export default function SetupWizard({ onComplete }) {
                                     {l.label}
                                 </button>
                             ))}
+                        </div>
+
+                        {/* Real shop or the demo shop (its own data, never mixed with the real shop) */}
+                        <p className="form-label mt-8 mb-3">{t('demo.choiceTitle')}</p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <button type="button" onClick={handleNext} data-testid="setup-start-real"
+                                className="rounded-xl border-2 border-indigo-500 bg-indigo-500/10 p-4 text-start hover:bg-indigo-500/20">
+                                <span className="flex items-center gap-2 font-semibold"><Store className="w-5 h-5 shrink-0" /> {t('demo.startReal')}</span>
+                                <span className="block text-sm text-zinc-400 mt-1">{t('demo.startRealHint')}</span>
+                            </button>
+                            <button type="button" onClick={tryDemo} disabled={openingDemo} data-testid="setup-try-demo"
+                                className="rounded-xl border-2 border-orange-500/50 p-4 text-start hover:bg-orange-500/10 disabled:opacity-60">
+                                <span className="flex items-center gap-2 font-semibold text-orange-300"><Sparkles className="w-5 h-5 shrink-0" /> {openingDemo ? t('demo.opening') : t('demo.try')}</span>
+                                <span className="block text-sm text-zinc-400 mt-1">{t('demo.tryHint')}</span>
+                            </button>
                         </div>
                         </div>
 
