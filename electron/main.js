@@ -8,6 +8,11 @@ const dbApi = require('./database/api');
 const catalog = require('./services/catalogService');
 const dashboard = require('./services/dashboardService');
 const salesStatsService = require('./services/salesStatsService');
+const returnService = require('./services/returnService');
+const { nextReceiptNumber } = require('./services/receiptNumber');
+const pinService = require('./services/pinService');
+const session = require('./services/session');
+const guard = require('./services/guard');
 const i18n = require('./i18n');
 const { v4: uuid } = require('uuid');
 const { getImagesDir } = require('./services/imageService');
@@ -321,6 +326,8 @@ ipcMain.handle('window:close', () => {
 
 // Shell (for opening external URLs)
 ipcMain.handle('shell:openExternal', async (_, url) => {
+  // Only web pages, e-mail and WhatsApp links (never a file or a program)
+  if (!/^(https?:|mailto:|whatsapp:)/i.test(String(url || ''))) return { success: false, error: 'Unsupported link' };
   try {
     await shell.openExternal(url);
     return { success: true };
@@ -337,9 +344,9 @@ ipcMain.handle('db:shifts:start', (_, { employeeId, openingCash, notes }) => {
   return shift;
 });
 
-ipcMain.handle('db:shifts:end', (_, { shiftId, closingCash, notes, closedBy }) => {
+ipcMain.handle('db:shifts:end', (_, { shiftId, closingCash, notes, closedBy, cashCount }) => {
   const expected = shiftService.getShiftStats(shiftId).expected_cash;
-  const shift = shiftService.endShift(shiftId, closingCash, notes);
+  const shift = shiftService.endShift(shiftId, closingCash, notes, cashCount);
   logSystemAction('shift_end', `Shift Ended`, { shiftId: shift.id, closingCash, expectedCash: expected, closedBy: closedBy || shift.employee_id }, closedBy || shift.employee_id);
   return shift;
 });
@@ -353,6 +360,16 @@ ipcMain.handle('db:shifts:getActivity', (_, { startDate, endDate }) => shiftServ
 ipcMain.handle('db:shifts:getCurrent', (_, employeeId) => {
   return shiftService.getCurrentShift(employeeId);
 });
+
+// Cash taken out of the drawer (who takes it comes from the session)
+ipcMain.handle('db:shifts:addExpense', (_, { shiftId, amount, reason }) => {
+  const actor = session.getEmployee();
+  if (!actor) throw catalog.codedError('LOGIN_REQUIRED', {});
+  const expense = shiftService.addExpense(shiftId, { amount, reason }, actor);
+  logSystemAction('cash_expense', `Cash expense: ${expense.amount} (${expense.reason})`, { shiftId, expenseId: expense.id }, actor.id);
+  return expense;
+});
+ipcMain.handle('db:shifts:getExpenses', (_, shiftId) => shiftService.getExpenses(shiftId));
 
 ipcMain.handle('db:shifts:getStats', (_, shiftId) => {
   return shiftService.getShiftStats(shiftId);
@@ -390,12 +407,21 @@ ipcMain.handle('backup:list', () => ({
   settings: getBackupSettings(),
 }));
 
+// A backup that failed: what happened and what to do, in the shop's words
+function backupError(error, action = 'BACKUP_FAILED') {
+  const code = error && error.code;
+  if (code === 'ENOSPC') return catalog.coded('BACKUP_DISK_FULL', {});
+  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return catalog.coded('BACKUP_NO_ACCESS', {});
+  if (code === 'ENOENT' || /not found/i.test(String(error && error.message))) return catalog.coded('BACKUP_NOT_FOUND', {});
+  return catalog.coded(action, {});
+}
+
 ipcMain.handle('backup:create', async () => {
   try {
     return { success: true, backup: backupService.createBackup(backupFolder(), databasePath(app.getPath('userData'))) };
   } catch (error) {
     console.error('Backup failed:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: backupError(error) };
   }
 });
 
@@ -427,10 +453,12 @@ ipcMain.handle('backup:restore', async (_, name) => {
       await initDatabase();
       throw error;
     }
+    // The employees may differ in the restored data: log in again
+    session.clear();
     return { success: true, safety: safety.name };
   } catch (error) {
     console.error('Restore failed:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: backupError(error, 'RESTORE_FAILED') };
   }
 });
 
@@ -502,10 +530,11 @@ ipcMain.handle('backup:reset', async () => {
       fs.unlinkSync(dbPath);
     }
     await initDatabase();
+    session.clear();
     return { success: true };
   } catch (error) {
     console.error('Reset failed:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: backupError(error, 'RESET_FAILED') };
   }
 });
 
@@ -849,13 +878,24 @@ ipcMain.handle('db:employees:getById', (_, id) => {
 });
 
 ipcMain.handle('db:employees:verifyPin', (_, { id, pin }) => {
-  const employee = getOne('SELECT * FROM employees WHERE id = ? AND pin = ? AND is_active = 1', [id, pin]);
+  // PINs are hashed (services/pinService.js); a right PIN opens the session
+  const employee = pinService.checkEmployeePin(dbApi, id, pin);
   if (employee) {
+    session.setEmployee(employee);
     logSystemAction('login', `Employee Login: ${employee.name}`, null, employee.id);
-    return { id: employee.id, name: employee.name, role: employee.role };
+    return employee;
   }
   return null;
 });
+
+ipcMain.handle('auth:logout', () => { session.clear(); return true; });
+// A manager types their PIN to agree (discount above the limit, return...).
+// Only checks the PIN: the logged-in employee does not change.
+ipcMain.handle('auth:approve', (_, { employeeId, pin }) => {
+  const manager = guard.approver(dbApi, { employeeId, pin });
+  return manager ? { ok: true, id: manager.id, name: manager.name } : { ok: false };
+});
+ipcMain.handle('security:getRules', () => guard.readRules(dbApi));
 
 ipcMain.handle('db:employees:create', (_, employee) => {
   runInsert(`
@@ -865,7 +905,7 @@ ipcMain.handle('db:employees:create', (_, employee) => {
     employee.id,
     employee.name,
     employee.email || null,
-    employee.pin,
+    pinService.hashPin(employee.pin),
     employee.role,
     employee.is_active ? 1 : 0,
     employee.avatar_path || null
@@ -882,7 +922,7 @@ ipcMain.handle('db:employees:update', (_, employee) => {
     `, [
       employee.name,
       employee.email || null,
-      employee.pin,
+      pinService.hashPin(employee.pin),
       employee.role,
       employee.is_active ? 1 : 0,
       employee.avatar_path || null,
@@ -913,6 +953,12 @@ ipcMain.handle('db:employees:delete', (_, id) => {
 
 // Sales
 ipcMain.handle('db:sales:create', (_, sale) => {
+  // Discount limit and totals checked here, with the logged-in employee
+  // (services/guard.js): a cashier above the limit needs a manager's PIN
+  const check = guard.checkSale(dbApi, session.getEmployee(), sale, sale.approval);
+  if (check.approvedBy) {
+    logSystemAction('discount_approved', `Discount ${check.discount.percent}% approved by ${check.approvedBy.name}`, { saleId: sale.id, amount: check.discount.amount, approvedBy: check.approvedBy.id }, session.getEmployee()?.id || null);
+  }
   // The whole sale (header, lines, stock movements, payments, gift card
   // redemptions) is written in one transaction: if anything fails - e.g. a
   // gift card without enough balance or a variant that no longer exists -
@@ -1160,7 +1206,15 @@ ipcMain.handle('db:settings:get', (_, key) => {
   return row ? JSON.parse(row.value) : null;
 });
 
+// The cashiers' rights (discount limit, returns) are changed by the owner only
+const ADMIN_ONLY_SETTINGS = new Set(['security']);
+function checkSettingWrite(key) {
+  const actor = session.getEmployee();
+  if (ADMIN_ONLY_SETTINGS.has(key) && actor?.role !== 'admin') throw catalog.codedError('ADMIN_REQUIRED', {});
+}
+
 ipcMain.handle('db:settings:set', (_, { key, value }) => {
+  checkSettingWrite(key);
   const jsonValue = JSON.stringify(value);
   const existing = getOne('SELECT key FROM settings WHERE key = ?', [key]);
   if (existing) {
@@ -1174,6 +1228,7 @@ ipcMain.handle('db:settings:set', (_, { key, value }) => {
 });
 
 ipcMain.handle('db:settings:delete', (_, key) => {
+  checkSettingWrite(key);
   runInsert('DELETE FROM settings WHERE key = ?', [key]);
   return true;
 });
@@ -1393,22 +1448,7 @@ ipcMain.handle('db:reports:salesByCategory', (_, { startDate, endDate, employeeI
 ipcMain.handle('db:reports:paymentMethods', (_, range) => salesStatsService.paymentMethods(dbApi, range || {}));
 
 // Generate receipt number
-ipcMain.handle('db:generateReceiptNumber', () => {
-  const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-  const results = runQuery(`
-    SELECT receipt_number FROM sales 
-    WHERE receipt_number LIKE ?
-    ORDER BY receipt_number DESC LIMIT 1
-  `, [`${today}%`]);
-
-  let sequence = 1;
-  if (results.length > 0) {
-    const lastSequence = parseInt(results[0].receipt_number.slice(-4));
-    sequence = lastSequence + 1;
-  }
-
-  return `${today}${sequence.toString().padStart(4, '0')}`;
-});
+ipcMain.handle('db:generateReceiptNumber', () => nextReceiptNumber(dbApi));
 
 // ==========================================
 // RETURNS
@@ -1449,69 +1489,59 @@ ipcMain.handle('db:returns:getItems', (_, returnId) => {
 
 ipcMain.handle('db:returns:create', (_, returnData) => runTransaction(() => {
   // One transaction: the return, its lines, the stock and the sale status are
-  // saved together, or not at all
-  runInsert(`
-    INSERT INTO returns (id, sale_id, return_number, total_refund, reason, employee_id)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `, [returnData.id, returnData.sale_id, returnData.return_number, returnData.total_refund, returnData.reason, returnData.employee_id]);
-
-  // Insert return items and restock the exact variant that was sold
-  {
-    for (const item of returnData.items) {
-      const saleItem = item.sale_item_id
-        ? getOne('SELECT product_id, variant_id, product_name, variant_label, quantity FROM sale_items WHERE id = ?', [item.sale_item_id])
-        : null;
-      // Never more pieces back than were sold on the line (earlier returns included)
-      if (saleItem) {
-        const already = getOne('SELECT IFNULL(SUM(quantity), 0) AS n FROM return_items WHERE sale_item_id = ?', [item.sale_item_id]).n;
-        const left = (Number(saleItem.quantity) || 0) - already;
-        if (Number(item.quantity) > left) {
-          throw catalog.codedError('RETURN_TOO_MANY', {
-            product: saleItem.variant_label ? `${saleItem.product_name} (${saleItem.variant_label})` : saleItem.product_name,
-            left: Math.max(0, left),
-          });
-        }
-      }
-      const variantId = item.variant_id || (saleItem && saleItem.variant_id) || null;
-      const productId = item.product_id || (saleItem && saleItem.product_id);
-
-      runInsert(`
-        INSERT INTO return_items (id, return_id, sale_item_id, product_id, variant_id, quantity, refund_amount, condition)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [uuid(), returnData.id, item.sale_item_id, productId, variantId, item.quantity, item.refund_amount, item.condition]);
-
-      // Restock if sellable
-      if (item.condition === 'sellable' && productId && getOne('SELECT id FROM products WHERE id = ?', [productId])) {
-        catalog.adjustStock(dbApi, {
-          productId,
-          variantId,
-          delta: item.quantity,
-          type: 'return',
-          reason: `Return: ${returnData.return_number}`,
-          employeeId: returnData.employee_id || null,
-        });
-      }
-    }
-  }
-
-  // Check if sale is fully or partially refunded
-  const sale = getOne('SELECT total FROM sales WHERE id = ?', [returnData.sale_id]);
-  const allReturns = runQuery('SELECT SUM(total_refund) as total_returned FROM returns WHERE sale_id = ?', [returnData.sale_id]);
-  const totalReturned = allReturns[0]?.total_returned || 0;
-
-  // Get original sale items total (before any discounts)
-  const saleItems = runQuery('SELECT SUM(quantity * unit_price) as items_total FROM sale_items WHERE sale_id = ?', [returnData.sale_id]);
-  const itemsTotal = saleItems[0]?.items_total || sale.total;
-
-  // Determine status: fully refunded if total returned >= items total
-  const newStatus = totalReturned >= itemsTotal ? 'refunded' : 'partially_refunded';
-
-  runInsert('UPDATE sales SET status = ? WHERE id = ?', [newStatus, returnData.sale_id]);
-
+  // saved together, or not at all (rules in services/returnService.js)
+  const approvedBy = guard.checkReturn(dbApi, session.getEmployee(), returnData.approval);
+  returnService.createReturn(dbApi, { ...returnData, employee_id: returnData.employee_id || session.getEmployee().id });
+  if (approvedBy) logSystemAction('return_approved', `Return ${returnData.return_number} approved by ${approvedBy.name}`, { returnId: returnData.id, approvedBy: approvedBy.id }, session.getEmployee().id);
   logSystemAction('return_processed', `Processed Return: ${returnData.return_number}`, { returnId: returnData.id, saleId: returnData.sale_id, amount: returnData.total_refund }, returnData.employee_id);
-
   return returnData;
 }));
+
+// Exchanges (built on the returns, see services/exchangeService.js)
+const exchangeService = require('./services/exchangeService');
+function shopTax() {
+  const settings = getStoreSettings();
+  const rate = parseFloat(settings.taxRate) || 0;
+  const enabled = typeof settings.taxEnabled === 'boolean' ? settings.taxEnabled : rate > 0;
+  return { enabled, rate, inclusive: settings.taxType !== 'exclusive' };
+}
+const exchangeSummary = (p) => ({
+  quantity: p.quantity, credit: p.credit, new_unit_price: p.newUnitPrice, new_total: p.newTotal,
+  new_tax: p.newTax, difference: p.difference, new_label: p.newLabel,
+});
+ipcMain.handle('db:exchanges:preview', (_, input) => exchangeSummary(exchangeService.previewExchange(dbApi, input, shopTax())));
+ipcMain.handle('db:exchanges:create', (_, input) => {
+  const approvedBy = guard.checkReturn(dbApi, session.getEmployee(), input.approval);
+  const result = runTransaction(() => exchangeService.createExchange(dbApi, { ...input, employee_id: input.employee_id || session.getEmployee().id }, shopTax()));
+  if (approvedBy) logSystemAction('exchange_approved', `Exchange ${result.receipt_number} approved by ${approvedBy.name}`, { exchangeId: result.id, approvedBy: approvedBy.id }, session.getEmployee().id);
+  logSystemAction('exchange_processed', `Exchange ${result.original_receipt} -> ${result.receipt_number}`, result, input.employee_id || null);
+  SyncManager.triggerSync();
+  return result;
+});
+ipcMain.handle('db:exchanges:getBySale', (_, saleId) => exchangeService.exchangesOfSale(dbApi, saleId));
+
+// Stock count (services/stockCountService.js): the stock changes only on confirm
+const stockCounts = require('./services/stockCountService');
+ipcMain.handle('stockCount:current', () => {
+  const count = stockCounts.currentCount(dbApi);
+  return count ? stockCounts.summary(dbApi, count.id) : null;
+});
+ipcMain.handle('stockCount:start', (_, { categoryId = null, employeeId = null } = {}) => runTransaction(() => {
+  const count = stockCounts.startCount(dbApi, { categoryId, employeeId });
+  return stockCounts.summary(dbApi, count.id);
+}));
+ipcMain.handle('stockCount:scan', (_, { countId, code, quantity = 1 }) => runTransaction(() => stockCounts.scan(dbApi, countId, code, quantity)));
+ipcMain.handle('stockCount:setCounted', (_, { countId, lineId, counted }) => runTransaction(() => stockCounts.setCounted(dbApi, countId, lineId, counted)));
+ipcMain.handle('stockCount:removeLine', (_, { countId, lineId }) => runTransaction(() => stockCounts.removeLine(dbApi, countId, lineId)));
+ipcMain.handle('stockCount:summary', (_, countId) => stockCounts.summary(dbApi, countId));
+ipcMain.handle('stockCount:cancel', (_, countId) => runTransaction(() => stockCounts.cancelCount(dbApi, countId)));
+ipcMain.handle('stockCount:confirm', (_, { countId, reason, employeeId = null }) => {
+  const report = runTransaction(() => stockCounts.confirmCount(dbApi, countId, { reason, employeeId }));
+  logSystemAction('stock_count_confirmed', `Stock count confirmed: ${reason}`, { countId, shortage: report.shortage_pieces, surplus: report.surplus_pieces }, employeeId);
+  SyncManager.triggerSync();
+  return report;
+});
+ipcMain.handle('stockCount:list', (_, limit = 20) => stockCounts.listCounts(dbApi, limit));
 
 // ================================================
 // PHASE 2: ADVANCED FEATURES
@@ -1818,7 +1848,11 @@ function enrichSaleForPrint(sale) {
 function printerError(error, printerName) {
   const message = String(error && error.message || error);
   if (/deviceName|printer.*not found|no printer/i.test(message)) return catalog.codedError('PRINTER_NOT_FOUND', { name: printerName || '' });
-  return error;
+  // Already explained (e.g. no code on a label): keep it
+  if (/^[A-Z][A-Z0-9_]+\|/.test(message.replace(/^Error: /, ''))) return error;
+  // Anything else from the printer driver: say what to do, keep the detail in the log
+  console.error('Printing failed:', message);
+  return catalog.codedError('PRINT_FAILED', { name: printerName || '' });
 }
 
 /**
@@ -1889,6 +1923,44 @@ ipcMain.handle('receipts:savePdf', async (_, sale) => {
     throw error;
   }
 });
+
+// A4 invoice of a sale: data read again from the database (customer, lines,
+// payments, the TVA saved with the sale) and the shop's own legal numbers
+function saleForInvoice(saleId) {
+  const sale = getOne(`
+    SELECT s.*, c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email, c.address AS customer_address
+    FROM sales s LEFT JOIN customers c ON c.id = s.customer_id WHERE s.id = ?
+  `, [saleId]);
+  if (!sale) throw catalog.codedError('SALE_NOT_FOUND', {});
+  sale.items = runQuery('SELECT * FROM sale_items WHERE sale_id = ?', [saleId]);
+  sale.payments = runQuery('SELECT * FROM payments WHERE sale_id = ?', [saleId]);
+  return enrichSaleForPrint(sale);
+}
+ipcMain.handle('invoices:print', async (_, saleId) => {
+  const html = receiptService.generateHtml(saleForInvoice(saleId), { ...getShopSettingsForPrint(), type: 'invoice' });
+  const win = printDocument.hiddenWindow(BrowserWindow, { javascript: false });
+  try {
+    await printDocument.loadHtml(win, html);
+    // The system dialog: an A4 invoice usually goes to an office printer, not the ticket printer
+    const result = await printDocument.printContents(win.webContents, { silent: false, printBackground: true, pageSize: 'A4' });
+    return result.success;
+  } catch (error) {
+    throw printerError(error, '');
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+});
+ipcMain.handle('invoices:savePdf', async (_, saleId) => {
+  const sale = saleForInvoice(saleId);
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: shopT('dialog.saveReceipt'),
+    defaultPath: `Facture_${sale.receipt_number}.pdf`,
+    filters: [{ name: shopT('dialog.pdfFiles'), extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) return null;
+  return receiptService.generatePdf(sale, { ...getShopSettingsForPrint(), type: 'invoice' }, filePath);
+});
+ipcMain.handle('invoices:html', (_, saleId) => receiptService.generateHtml(saleForInvoice(saleId), { ...getShopSettingsForPrint(), type: 'invoice' }));
 
 // ==========================================
 // PRINTERS
@@ -3267,6 +3339,17 @@ async function getSettings() {
   // Includes the shop information (store_config) at the top level
   return getStoreSettings();
 }
+
+// Quick start: articles with their sizes/colours from a sheet (services/productImportService.js)
+const productImport = require('./services/productImportService');
+ipcMain.handle('excel:importProducts', (_, rows) => {
+  const report = runTransaction(() => productImport.importProducts(dbApi, rows || [], {
+    skuSettings: getSettingValue('sku_settings') || {}, employeeId: session.getEmployee()?.id || null,
+  }));
+  logSystemAction('products_imported', `Imported ${report.imported.length} articles, ${report.rejected.length} rejected`, null, session.getEmployee()?.id || null);
+  SyncManager.triggerSync();
+  return report;
+});
 
 ipcMain.handle('excel:export', (_, { data, dataType }) => {
   const buffer = excelService.exportData(data, dataType);

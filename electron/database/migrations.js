@@ -216,6 +216,98 @@ const MIGRATIONS = [
             db.run("UPDATE purchase_returns SET status = 'completed' WHERE status = 'complated'");
         },
     },
+    {
+        version: '2026_10_exchanges',
+        description: 'Exchanges: link the return of a piece to the sale of the new one',
+        up(db) {
+            // New table only: existing sales, returns and stock are not touched
+            db.run(`
+                CREATE TABLE IF NOT EXISTS exchanges (
+                    id TEXT PRIMARY KEY,
+                    original_sale_id TEXT NOT NULL REFERENCES sales(id),
+                    sale_item_id TEXT REFERENCES sale_items(id),
+                    return_id TEXT NOT NULL REFERENCES returns(id),
+                    sale_id TEXT NOT NULL REFERENCES sales(id),
+                    quantity INTEGER NOT NULL,
+                    credit REAL NOT NULL DEFAULT 0,
+                    new_total REAL NOT NULL DEFAULT 0,
+                    difference REAL NOT NULL DEFAULT 0,
+                    refund_method TEXT,
+                    employee_id TEXT REFERENCES employees(id),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            db.run('CREATE INDEX IF NOT EXISTS idx_exchanges_original ON exchanges(original_sale_id)');
+            db.run('CREATE INDEX IF NOT EXISTS idx_exchanges_return ON exchanges(return_id)');
+        },
+    },
+    {
+        version: '2026_10_stock_counts',
+        description: 'Stock counts: what was found on the shelves, applied only when confirmed',
+        up(db) {
+            // New tables only: the stock itself changes only when a count is confirmed
+            db.run(`
+                CREATE TABLE IF NOT EXISTS stock_counts (
+                    id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    category_id TEXT REFERENCES categories(id) ON DELETE SET NULL,
+                    employee_id TEXT REFERENCES employees(id),
+                    note TEXT,
+                    reason TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    confirmed_at DATETIME,
+                    confirmed_by TEXT REFERENCES employees(id),
+                    cancelled_at DATETIME
+                )
+            `);
+            db.run(`
+                CREATE TABLE IF NOT EXISTS stock_count_lines (
+                    id TEXT PRIMARY KEY,
+                    count_id TEXT NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+                    product_id TEXT NOT NULL REFERENCES products(id),
+                    variant_id TEXT REFERENCES product_variants(id),
+                    counted INTEGER NOT NULL DEFAULT 0,
+                    expected INTEGER,
+                    difference INTEGER,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            db.run('CREATE INDEX IF NOT EXISTS idx_stock_count_lines_count ON stock_count_lines(count_id)');
+        },
+    },
+    {
+        version: '2026_10_cash_expenses',
+        description: 'Cash taken out of the drawer for expenses, and the detail of the closing count',
+        up(db) {
+            // New table and one new column: existing drawers keep their figures
+            db.run(`
+                CREATE TABLE IF NOT EXISTS cash_expenses (
+                    id TEXT PRIMARY KEY,
+                    shift_id TEXT NOT NULL REFERENCES shifts(id),
+                    employee_id TEXT REFERENCES employees(id),
+                    amount REAL NOT NULL,
+                    reason TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            db.run('CREATE INDEX IF NOT EXISTS idx_cash_expenses_shift ON cash_expenses(shift_id)');
+            addColumnIfMissing(db, 'shifts', 'closing_count', 'TEXT');
+        },
+    },
+    {
+        version: '2026_10_hash_pins',
+        description: 'Employee PINs stored hashed instead of in clear',
+        up(db) {
+            // Each PIN still in clear is replaced by its hash: the same PIN keeps
+            // working, nobody has to change it. Rows already hashed are skipped.
+            if (!tableExists(db, 'employees')) return;
+            const { hashPin, isHashed } = require('../services/pinService');
+            const result = db.exec("SELECT id, pin FROM employees WHERE pin IS NOT NULL AND pin <> ''");
+            for (const [id, pin] of (result[0]?.values || [])) {
+                if (!isHashed(pin)) db.run('UPDATE employees SET pin = ? WHERE id = ?', [hashPin(pin), id]);
+            }
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

@@ -11,6 +11,7 @@ import EmployeesPage from './pages/EmployeesPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import DashboardPage from './pages/DashboardPage';
+import ManagerApprovalDialog from './components/auth/ManagerApprovalDialog';
 import TransactionsPage from './pages/TransactionsPage';
 
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
@@ -205,6 +206,7 @@ function App() {
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </MainLayout>
+            <ManagerApprovalDialog />
             <Toaster />
         </HashRouter>
     );

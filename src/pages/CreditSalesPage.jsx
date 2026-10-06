@@ -3,7 +3,7 @@ import { translateError } from '../i18n/errors';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { Search, FileText, Banknote, Mail, Bell, Eye, CreditCard, Check, Smartphone } from 'lucide-react';
+import { Search, FileText, Banknote, Mail, Bell, Eye, CreditCard, Check, Smartphone, MessageCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
@@ -14,6 +14,8 @@ import { paymentLabel } from '../lib/payments';
 import { useSearchParams } from 'react-router-dom';
 import { CREDIT_FILTERS, isLateCredit, readFilter } from '../lib/listFilters';
 import { localDate } from '../lib/dashboard';
+import { reminderMessage, whatsappLink } from '../lib/whatsapp';
+import { useSettingsStore } from '../stores/settingsStore';
 
 export default function CreditSalesPage() {
     const [creditSales, setCreditSales] = useState([]);
@@ -121,6 +123,20 @@ export default function CreditSalesPage() {
             console.error('Failed to send invoice:', error);
             toast.error(`${t('credit.invoiceFailed')} ${translateError(error)}`);
         }
+    };
+
+    // Opens WhatsApp on the customer's number with the reminder typed (nothing is sent by the program)
+    const shopName = useSettingsStore(state => state.settings.businessName);
+    const remindOnWhatsApp = async (sale) => {
+        const text = reminderMessage({
+            customerName: sale.customer_name, amount: (sale.amount_due || 0) - (sale.amount_paid || 0),
+            shopName, dueDate: sale.due_date,
+        });
+        const link = whatsappLink(sale.customer_phone, text);
+        if (!link) { toast.error(t('whatsapp.noPhone')); return; }
+        const result = await window.electronAPI.shell.openExternal(link).catch(() => ({ success: false }));
+        if (result?.success === false) toast.error(t('whatsapp.failed'));
+        else toast.success(t('whatsapp.opened'));
     };
 
     const handleSendReminder = async (sale) => {
@@ -322,6 +338,16 @@ export default function CreditSalesPage() {
                                                 >
                                                     <Mail className="w-4 h-4" />
                                                 </button>
+                                                {sale.status !== 'paid' && (
+                                                    <button
+                                                        onClick={() => remindOnWhatsApp(sale)}
+                                                        className="p-2 hover:bg-emerald-500/20 rounded-lg transition-colors text-emerald-400"
+                                                        title={t('whatsapp.remind')}
+                                                        data-testid="whatsapp-remind"
+                                                    >
+                                                        <MessageCircle className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 {sale.status !== 'paid' && (
                                                     <button
                                                         onClick={() => handleSendReminder(sale)}

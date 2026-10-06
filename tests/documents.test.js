@@ -49,7 +49,8 @@ describe('thermal receipt', () => {
         expect(html).toContain('الباقي');
         expect(html).toContain('1 000 د.ج');
         expect(html).toContain('16 - Alger');
-        expect(html).toContain('س.ت: 16/00-1234567A21');
+        // Legal numbers keep their own order inside Arabic text
+        expect(html).toContain('س.ت: <bdi dir="ltr">16/00-1234567A21</bdi>');
         expect(html).toContain('نقداً');
         expect(html).toContain('شكراً على زيارتكم!');
         // No tax line when the shop sells without TVA
@@ -65,7 +66,7 @@ describe('thermal receipt', () => {
         expect(html).toContain('Monnaie rendue');
         expect(html).toContain('Remise');
         expect(html).toContain('Échange sous 7 jours');
-        expect(html).toContain('NIF: 000116123456789');
+        expect(html).toContain('NIF: <bdi dir="ltr">000116123456789</bdi>');
         expect(html).not.toMatch(/\bPOS\b/);
     });
 

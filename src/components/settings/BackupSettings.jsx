@@ -177,6 +177,7 @@ export function BackupSettings({ appInfo }) {
             const result = await window.electronAPI.backup.reset();
             if (!result.success) throw new Error(result.error);
             toast.success(t('settings.backup.resetDone'));
+            try { sessionStorage.removeItem('pos_auth'); } catch { /* ignore */ }
             setTimeout(() => window.location.reload(), 1500);
         } catch (error) {
             toast.error(t('settings.backup.resetFailed', { error: translateError(error) }));
@@ -293,6 +294,8 @@ export function BackupSettings({ appInfo }) {
                 onRestored={() => {
                     setToRestore(null);
                     toast.success(t('settings.backup.restored'));
+                    // The employees come from the restored data: log in again
+                    try { sessionStorage.removeItem('pos_auth'); } catch { /* ignore */ }
                     setTimeout(() => window.location.reload(), 1500);
                 }}
             />

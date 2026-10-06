@@ -6,7 +6,7 @@ import {
     LayoutGrid, List, Tag, Percent, Banknote, ChevronDown, History, Check,
 } from 'lucide-react';
 import { useCartStore, heldLines } from '../stores/cartStore';
-import { useAuthStore, PERMISSIONS } from '../stores/authStore';
+import { useAuthStore } from '../stores/authStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { toast } from '../components/ui/Toast';
 import { Button } from '../components/ui/Button';
@@ -17,6 +17,7 @@ import PaymentModal from '../components/pos/PaymentModal';
 import { afterSaleMode } from '../components/settings/PrinterSettingsForm';
 import CustomerPickerModal from '../components/pos/CustomerPickerModal';
 import OpeningCashDialog from '../components/shifts/OpeningCashDialog';
+import CashExpenseDialog from '../components/shifts/CashExpenseDialog';
 import { VariantPickerModal } from '../components/pos/VariantPickerModal';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { colorHex, colorName, sortSizes, variantLabel } from '../lib/clothing';
@@ -24,6 +25,7 @@ import { formatMoney } from '../i18n/format';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { t } from '../i18n';
 import { beep } from '../lib/sound';
+import { withManagerApproval } from '../lib/approval';
 
 const VIEW_KEY = 'pos_view';
 
@@ -82,6 +84,7 @@ export default function POSPage() {
     const [unknownCode, setUnknownCode] = useState(null);
     const [editingLine, setEditingLine] = useState(null);
     const [shift, setShift] = useState(undefined); // undefined = loading, null = no open drawer
+    const [showExpense, setShowExpense] = useState(false);
     const [showOpenDrawer, setShowOpenDrawer] = useState(false);
     const [lastSale, setLastSale] = useState(null);
     const searchRef = useRef(null);
@@ -91,10 +94,12 @@ export default function POSPage() {
     const { currentEmployee, hasPermission } = useAuthStore();
     const features = useSettingsStore(state => state.settings.features);
     const money = (amount) => formatMoney(amount);
-    const canDiscount = hasPermission(PERMISSIONS.POS_APPLY_DISCOUNT);
+    // Everybody may bargain: a cashier within the limit set by the owner,
+    // above it a manager types their PIN at payment (checked by the main process)
+    const canDiscount = true;
 
     const anyModalOpen = showPaymentModal || showHeldModal || showReceiptModal || showOptionsModal || showCustomerModal
-        || !!unknownCode || !!variantProduct || showOpenDrawer;
+        || !!unknownCode || !!variantProduct || showOpenDrawer || showExpense;
 
     const loadShift = useCallback(async () => {
         if (!currentEmployee) return;
@@ -259,7 +264,8 @@ export default function POSPage() {
 
     const handlePaymentComplete = async (payments, creditCustomer = null, dueDate = null) => {
         try {
-            const sale = await cart.processPayment(payments, currentEmployee.id, currentEmployee.name);
+            // Above the cashier's discount limit the main process asks for a manager's PIN
+            const sale = await withManagerApproval((approval) => cart.processPayment(payments, currentEmployee.id, currentEmployee.name, approval));
 
             if (payments[0]?.method === 'credit' && creditCustomer) {
                 try {
@@ -591,6 +597,11 @@ export default function POSPage() {
                         <kbd className="ms-auto text-xs font-normal opacity-70 border border-white/30 rounded px-1.5">F4</kbd>
                     </Button>
                     <p className="text-[11px] text-zinc-600 text-center">{t('pos.shortcuts')}</p>
+                    {shift && (
+                        <button type="button" onClick={() => setShowExpense(true)} className="text-xs text-zinc-400 hover:text-zinc-200 underline-offset-2 hover:underline self-center">
+                            {t('expense.open')}
+                        </button>
+                    )}
                 </div>
             </aside>
 
@@ -664,6 +675,7 @@ export default function POSPage() {
             />
             <CartOptionsModal isOpen={showOptionsModal} onClose={() => setShowOptionsModal(false)} />
 
+            <CashExpenseDialog isOpen={showExpense && !!shift} onClose={() => setShowExpense(false)} shiftId={shift?.id} />
             {showOpenDrawer && (
                 <OpeningCashDialog
                     employee={currentEmployee}

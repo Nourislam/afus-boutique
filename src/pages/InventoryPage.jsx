@@ -3,7 +3,7 @@ import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Package, AlertTriangle, Plus, Minus, History, ArrowUpDown } from 'lucide-react';
+import { Package, AlertTriangle, Plus, Minus, History, ArrowUpDown, ClipboardCheck } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, SearchInput } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
@@ -17,6 +17,8 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { variantLabel } from '../lib/clothing';
 import { MANUAL_REASONS, stockReasonLabel } from '../lib/stockReasons';
 import { readFilter, stockMatches, STOCK_FILTERS } from '../lib/listFilters';
+import { PERMISSIONS } from '../lib/permissions';
+import StockCountModal from '../components/inventory/StockCountModal';
 
 export default function InventoryPage() {
     const [products, setProducts] = useState([]);
@@ -28,6 +30,7 @@ export default function InventoryPage() {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [loading, setLoading] = useState(true);
     const [variantsByProduct, setVariantsByProduct] = useState({});
+    const [showCount, setShowCount] = useState(false);
     // Sold out / running low: read from the address (?stock=out|low), so a link from the home screen opens filtered
     const [searchParams, setSearchParams] = useSearchParams();
     const stockFilter = readFilter(searchParams, 'stock', STOCK_FILTERS);
@@ -37,7 +40,8 @@ export default function InventoryPage() {
         setSearchParams(next, { replace: true });
     };
 
-    const { currentEmployee } = useAuthStore();
+    const { currentEmployee, hasPermission } = useAuthStore();
+    const canCount = hasPermission(PERMISSIONS.INVENTORY_ADJUST);
     const { loadSettings } = useSettingsStore();
 
     useEffect(() => {
@@ -106,6 +110,11 @@ export default function InventoryPage() {
                         <h1 className="text-2xl font-bold">{t('inventory.title')}</h1>
                         <p className="text-zinc-500">{t('inventory.subtitle')}</p>
                     </div>
+                    {canCount && (
+                        <Button variant="secondary" onClick={() => setShowCount(true)}>
+                            <ClipboardCheck className="w-4 h-4" /> {t('count.open')}
+                        </Button>
+                    )}
                 </div>
 
                 {/* Stats */}
@@ -333,6 +342,7 @@ export default function InventoryPage() {
                     )}
                 </ModalBody>
             </Modal>
+            <StockCountModal isOpen={showCount} onClose={() => setShowCount(false)} onConfirmed={loadData} />
         </div>
     );
 }

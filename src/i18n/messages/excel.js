@@ -14,6 +14,8 @@ export default {
     'excel.field.category': ["Category", "Catégorie", "الصنف"],
     'excel.field.brand': ["Brand", "Marque", "الماركة"],
     'excel.field.cost': ["Purchase price", "Prix d'achat", "سعر الشراء"],
+    'excel.field.color': ["Colour", "Couleur", "اللون"],
+    'excel.field.size': ["Size", "Taille", "المقاس"],
     'excel.field.stock_quantity': ["Stock quantity", "Quantité en stock", "الكمية"],
     'excel.field.min_stock_level': ["Minimum stock", "Stock minimum", "الحد الأدنى"],
     'excel.field.tax_rate': ["Tax rate", "TVA", "الرسم"],

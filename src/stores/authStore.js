@@ -56,6 +56,8 @@ export const useAuthStore = create((set, get) => ({
     },
 
     logout: () => {
+        // The main process forgets who was logged in (protected actions need a new PIN)
+        try { window.electronAPI?.auth?.logout?.(); } catch { /* not in the desktop app */ }
         sessionStorage.removeItem('pos_auth');
         set({ currentEmployee: null, isAuthenticated: false });
     },

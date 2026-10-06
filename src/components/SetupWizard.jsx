@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { translateError } from '../i18n/errors';
-import { Check, ChevronRight, ChevronLeft, Store, User, Percent, Printer, Languages, WifiOff } from 'lucide-react';
+import { Check, ChevronRight, ChevronLeft, Store, User, Percent, Printer, Languages, WifiOff, FlaskConical, ScanLine } from 'lucide-react';
 import { AfusLogo } from './brand/AfusLogo';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -8,7 +8,8 @@ import { Select } from './ui/Select';
 import { toast } from './ui/Toast';
 import { v4 as uuid } from 'uuid';
 import { ShopInfoForm } from './settings/ShopInfoForm';
-import { PrinterSettingsForm } from './settings/PrinterSettingsForm';
+import { PrinterSettingsForm, PrintTestPanel, Panel } from './settings/PrinterSettingsForm';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { ShopLogo } from './shop/ShopLogo';
 import { TitleBar } from './layout/TitleBar';
 import { LANGUAGES, setLanguage, useT } from '../i18n';
@@ -128,6 +129,8 @@ export default function SetupWizard({ onComplete }) {
                 is_active: 1,
             };
             await window.electronAPI.employees.create(adminEmployee);
+            // Opens the session in the main process for the new owner (PIN checked there)
+            await window.electronAPI.employees.verifyPin({ id: adminEmployee.id, pin: admin.pin });
 
             await saveShopConfiguration({
                 shop: { ...shop, currency: 'DZD', currencySymbol: 'DA', taxRate: parseFloat(shop.taxRate) || 0 },
@@ -295,6 +298,11 @@ export default function SetupWizard({ onComplete }) {
                             onLabelsChange={setLabels}
                             compact
                         />
+                        {/* Optional checks: nothing here blocks the setup (devices can be plugged in later) */}
+                        <Panel icon={FlaskConical} title={t('setup.check.title')} hint={t('setup.check.hint')}>
+                            <PrintTestPanel printers={printers} layout={labels} shop={shop} only={['receipt']} />
+                            <ScannerCheck />
+                        </Panel>
                         <p className="text-xs text-zinc-500">{t('setup.printingHint')}</p>
                     </div>
                 );
@@ -403,6 +411,24 @@ export default function SetupWizard({ onComplete }) {
                         </div>
                     </section>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+/** Scan any code: shows it, to check the scanner is plugged in (never required). */
+function ScannerCheck() {
+    const { t } = useT();
+    const [last, setLast] = useState('');
+    useBarcodeScanner((code) => setLast(code));
+    return (
+        <div className="flex items-center gap-3 rounded-lg border border-dark-border px-3 py-2.5" data-testid="setup-scanner-check">
+            <ScanLine className="w-5 h-5 text-zinc-400 flex-none" />
+            <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">{t('setup.check.scanner')}</p>
+                <p className={`text-xs break-words ${last ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                    {last ? t('setup.check.scanned', { code: last }) : t('setup.check.scanHint')}
+                </p>
             </div>
         </div>
     );

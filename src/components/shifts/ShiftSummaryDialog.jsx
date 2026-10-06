@@ -61,6 +61,8 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                 closingCash: parseFloat(closingCash),
                 notes: [notes, byOther ? t('shift.closedByNote', { name: currentEmployee.name }) : ''].filter(Boolean).join(' — '),
                 closedBy: currentEmployee?.id,
+                // The detail of the notes and coins counted, kept with the drawer
+                cashCount: showCounter ? counts : null,
             });
             toast.success(t('shift.closed'));
             window.dispatchEvent(new Event('pos:shift-changed'));
@@ -135,6 +137,9 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                             )}
                             {stats.total_cash_refunds > 0 && (
                                 <div className="flex justify-between"><span className="text-zinc-400">{t('shift.refunds')}</span><span className="tabular text-red-400">- {formatMoney(stats.total_cash_refunds)}</span></div>
+                            )}
+                            {stats.total_expenses > 0 && (
+                                <div className="flex justify-between"><span className="text-zinc-400">{t('expense.inDrawer')}</span><span className="tabular text-red-400">- {formatMoney(stats.total_expenses)}</span></div>
                             )}
                             <div className="h-px bg-dark-border" />
                             <div className="flex justify-between text-base font-bold">

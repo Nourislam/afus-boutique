@@ -13,8 +13,11 @@ const coded = (code, params = {}) => `${code}|${JSON.stringify(params)}`;
 const FIELD_MAPPINGS = {
     products: {
         required: ['name', 'price'],
-        optional: ['sku', 'barcode', 'description', 'category', 'brand', 'cost', 'stock_quantity', 'min_stock_level', 'tax_rate'],
+        // One row per size/colour: rows with the same name make one article
+        optional: ['color', 'size', 'stock_quantity', 'cost', 'sku', 'barcode', 'category', 'brand', 'description', 'min_stock_level', 'tax_rate'],
         aliases: {
+            'couleur': 'color', 'colour': 'color', 'اللون': 'color', 'لون': 'color',
+            'taille': 'size', 'pointure': 'size', 'المقاس': 'size', 'مقاس': 'size', 'القياس': 'size',
             // French and Arabic column names used in Algerian shops
             'nom': 'name', 'désignation': 'name', 'designation': 'name', 'article': 'name', 'produit': 'name',
             'الاسم': 'name', 'السلعة': 'name', 'المنتج': 'name',
@@ -284,7 +287,8 @@ class ExcelService {
                         warnings: rowWarnings,
                     });
                 }
-                results.valid.push(record);
+                // The sheet row, for the import report
+                results.valid.push({ ...record, __row: rowIndex + 2 });
             }
         });
 
@@ -360,8 +364,12 @@ class ExcelService {
         switch (dataType) {
             case 'products':
                 return [
-                    // Same order as the headers: name, price, sku, barcode, description, category, brand, cost, stock, min stock, tax
-                    ['T-shirt basique', 1500, 'TSH-001', '', 'T-shirt 100% coton', 'T-shirts', 'Zara', 900, 20, 3, 0],
+                    // Same order as the headers: name, price, color, size, quantity, cost, sku, barcode, category, brand, description, min stock, tax.
+                    // One row per size/colour; the rows with the same name make one article (SKU made by the program when empty)
+                    ['Jean slim', 3000, 'Noir', '38', 4, 1800, '', '', 'Jeans', '', '', 2, 0],
+                    ['Jean slim', 3000, 'Noir', '40', 2, 1800, '', '', 'Jeans', '', '', 2, 0],
+                    ['Jean slim', 3500, 'Bleu', '44', 1, 1800, '', '', 'Jeans', '', '', 2, 0],
+                    ['Ceinture cuir', 800, '', '', 10, 300, 'CEIN-001', '', 'Accessoires', '', '', 3, 0],
                 ];
             case 'customers':
                 return [

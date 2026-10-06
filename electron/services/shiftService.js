@@ -30,20 +30,61 @@ class ShiftService {
         return shift;
     }
 
-    endShift(shiftId, closingCash, notes = '') {
+    /**
+     * Close the drawer with the cash counted. cashCount (optional) is the
+     * detail of the count, { "2000": 3, "500": 1, ... }, kept with the drawer.
+     */
+    endShift(shiftId, closingCash, notes = '', cashCount = null) {
         const shift = this.getShiftById(shiftId);
         if (!shift) throw new Error('SHIFT_NOT_FOUND|{}');
         if (shift.end_time) throw new Error('SHIFT_ALREADY_CLOSED|{}');
 
         const endTime = new Date().toISOString();
+        const count = cashCount && typeof cashCount === 'object'
+            ? JSON.stringify(Object.fromEntries(Object.entries(cashCount).filter(([, n]) => (parseInt(n, 10) || 0) > 0).map(([d, n]) => [d, parseInt(n, 10)])))
+            : null;
 
         runInsert(`
             UPDATE shifts 
-            SET end_time = ?, closing_cash = ?, notes = COALESCE(notes, '') || ?
+            SET end_time = ?, closing_cash = ?, closing_count = ?, notes = COALESCE(notes, '') || ?
             WHERE id = ?
-        `, [endTime, closingCash, notes ? `\nClosing Note: ${notes}` : '', shiftId]);
+        `, [endTime, closingCash, count, notes ? `\nClosing Note: ${notes}` : '', shiftId]);
 
-        return { ...shift, end_time: endTime, closing_cash: closingCash };
+        return { ...shift, end_time: endTime, closing_cash: closingCash, closing_count: count };
+    }
+
+    /**
+     * Cash taken out of an open drawer (bread, cleaning, a delivery...). It
+     * lowers the cash expected in the drawer; the sales are not changed.
+     * actor: { id, role } of who takes the money: the drawer's owner, or a
+     * manager / the owner of the shop.
+     */
+    addExpense(shiftId, { amount, reason }, actor = {}) {
+        const shift = this.getShiftById(shiftId);
+        if (!shift) throw new Error('SHIFT_NOT_FOUND|{}');
+        if (shift.end_time) throw new Error('SHIFT_ALREADY_CLOSED|{}');
+        if (!actor.id || (actor.id !== shift.employee_id && !['admin', 'manager'].includes(actor.role))) {
+            throw new Error('EXPENSE_NOT_ALLOWED|{}');
+        }
+        const value = round2(amount);
+        if (!(value > 0)) throw new Error('EXPENSE_AMOUNT|{}');
+        const why = String(reason || '').trim();
+        if (!why) throw new Error('EXPENSE_REASON|{}');
+        const inDrawer = this.getShiftStats(shiftId).expected_cash;
+        if (value > inDrawer) throw new Error(`EXPENSE_MORE_THAN_DRAWER|${JSON.stringify({ available: inDrawer })}`);
+        const expense = { id: uuid(), shift_id: shiftId, employee_id: actor.id, amount: value, reason: why, created_at: new Date().toISOString() };
+        runInsert('INSERT INTO cash_expenses (id, shift_id, employee_id, amount, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [expense.id, expense.shift_id, expense.employee_id, expense.amount, expense.reason, expense.created_at]);
+        return expense;
+    }
+
+    /** Expenses of a drawer, oldest first, with who took the money. */
+    getExpenses(shiftId) {
+        return runQuery(`
+            SELECT x.*, e.name AS employee_name
+            FROM cash_expenses x LEFT JOIN employees e ON e.id = x.employee_id
+            WHERE x.shift_id = ? ORDER BY x.created_at
+        `, [shiftId]);
     }
 
     getCurrentShift(employeeId) {
@@ -124,6 +165,15 @@ class ShiftService {
             FROM returns r
             WHERE r.employee_id = ? AND datetime(r.created_at) BETWEEN datetime(?) AND datetime(?)
               AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.sale_id = r.sale_id AND LOWER(p.method) = 'credit')
+              AND NOT EXISTS (SELECT 1 FROM exchanges x WHERE x.return_id = r.id)
+        `, [shift.employee_id, shift.start_time, endTime]);
+
+        // An exchange only moves the difference: given back in cash when the new piece costs less
+        const exchangeCashBack = getOne(`
+            SELECT COALESCE(SUM(-difference), 0) AS total
+            FROM exchanges
+            WHERE employee_id = ? AND difference < 0 AND refund_method = 'cash'
+              AND datetime(created_at) BETWEEN datetime(?) AND datetime(?)
         `, [shift.employee_id, shift.start_time, endTime]);
 
         // Kridi repaid in cash to this employee goes into the same drawer
@@ -143,9 +193,11 @@ class ShiftService {
         const openingCash = Number(shift.opening_cash) || 0;
         const totalCashSales = cashSales.total_cash || 0;
         const totalRefunds = refunds.total_refunds || 0;
-        const totalCashRefunds = cashRefunds.total || 0;
+        const totalCashRefunds = round2((cashRefunds.total || 0) + (exchangeCashBack.total || 0));
         const totalCreditCollected = creditCollected.total || 0;
-        const expectedCash = round2(openingCash + totalCashSales + totalCreditCollected - totalCashRefunds);
+        // Cash taken out for expenses during this drawer
+        const totalExpenses = round2(getOne('SELECT COALESCE(SUM(amount), 0) AS total FROM cash_expenses WHERE shift_id = ?', [shift.id])?.total || 0);
+        const expectedCash = round2(openingCash + totalCashSales + totalCreditCollected - totalCashRefunds - totalExpenses);
         const durationMinutes = Math.max(0, Math.round((new Date(endTime) - new Date(shift.start_time)) / 60000));
 
         return {
@@ -160,9 +212,11 @@ class ShiftService {
             total_refunds: totalRefunds,
             total_cash_refunds: totalCashRefunds,
             credit_collected_cash: totalCreditCollected,
+            total_expenses: totalExpenses,
             opening_cash: openingCash,
             expected_cash: expectedCash,
             closing_cash: shift.closing_cash,
+            closing_count: shift.closing_count ? JSON.parse(shift.closing_count) : null,
             cash_difference: shift.closing_cash === null || shift.closing_cash === undefined ? null : round2(Number(shift.closing_cash) - expectedCash),
             duration_minutes: durationMinutes,
             start_time: shift.start_time,

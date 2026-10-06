@@ -7,6 +7,7 @@ import { Card } from '../ui/Card';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { toast } from '../ui/Toast';
 import { formatDate as formatLocalDate } from '../../i18n/format';
+import { translateError } from '../../i18n/errors';
 
 // Platform configurations
 const PLATFORMS = {
@@ -160,7 +161,7 @@ export function EcommerceSettings() {
             if (result.success) {
                 toast.success(t('ecommerce.testOk', { message: result.message }));
             } else {
-                toast.error(t('ecommerce.testFailed', { message: result.message }));
+                toast.error(t('ecommerce.testFailed', { message: translateError(result.message) }));
             }
         } catch {
             toast.error(t('ecommerce.testError'));

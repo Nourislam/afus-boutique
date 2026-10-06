@@ -43,7 +43,8 @@ describe('offline-first core', () => {
     it('no server address is built into the program (only help links for the online store)', () => {
         const urls = CODE.flatMap(f => [...read(f).matchAll(/https?:\/\/[^\s'"`)]+/g)].map(m => [f, m[0]]))
             .filter(([, url]) => !/^https?:\/\/(localhost|127\.0\.0\.1|www\.w3\.org)/.test(url));
-        const allowed = /shopify\.dev|help\.shopify\.com|woocommerce\.(com|github\.io)|your-store\.com/;
+        // wa.me: the credit reminder only hands a WhatsApp link to the system (the program connects to nothing)
+        const allowed = /shopify\.dev|help\.shopify\.com|woocommerce\.(com|github\.io)|your-store\.com|^https:\/\/wa\.me\b/;
         expect(urls.filter(([, url]) => !allowed.test(url))).toEqual([]);
     });
 

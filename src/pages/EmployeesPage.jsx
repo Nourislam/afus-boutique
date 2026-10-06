@@ -16,6 +16,7 @@ import { useAuthStore } from '../stores/authStore';
 import { v4 as uuid } from 'uuid';
 import { ExcelImport } from '../components/ui/ExcelImport';
 import { FileSpreadsheet } from 'lucide-react';
+import CashierRights from '../components/employees/CashierRights';
 
 const roleIcons = {
     admin: ShieldCheck,
@@ -206,7 +207,7 @@ export default function EmployeesPage() {
             >
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="segmented">
-                        {['team', 'drawers'].map(id => (
+                        {['team', 'drawers', ...(isAdmin() ? ['rights'] : [])].map(id => (
                             <button key={id} type="button" className={view === id ? 'active' : ''} onClick={() => setView(id)}>{t(`employees.view.${id}`)}</button>
                         ))}
                     </div>
@@ -243,6 +244,8 @@ export default function EmployeesPage() {
                     </div>
                 ) : view === 'drawers' ? (
                     <DrawerHistory shifts={history} />
+                ) : view === 'rights' ? (
+                    <CashierRights />
                 ) : filteredEmployees.length === 0 ? (
                     <EmptyState icon={UserCog} title={t('employees.none')} description={t('employees.addHint')} />
                 ) : (

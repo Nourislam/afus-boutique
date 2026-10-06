@@ -8,6 +8,7 @@ import { Select } from '../ui/Select';
 import { toast } from '../ui/Toast';
 import { translateError } from '../../i18n/errors';
 import { useAuthStore } from '../../stores/authStore';
+import { withManagerApproval } from '../../lib/approval';
 
 export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) {
     const { user } = useAuthStore();
@@ -86,7 +87,8 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
                 }))
             };
 
-            await window.electronAPI.returns.create(returnData);
+            // A cashier may need a manager's PIN (checked by the main process)
+            await withManagerApproval((approval) => window.electronAPI.returns.create({ ...returnData, approval }));
             toast.success(t('return.done'));
             if (onReturnSuccess) onReturnSuccess();
             onClose();

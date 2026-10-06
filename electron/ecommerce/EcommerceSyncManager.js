@@ -12,6 +12,20 @@ const { v4: uuid } = require('uuid');
 const ShopifyAdapter = require('./adapters/ShopifyAdapter');
 const WooCommerceAdapter = require('./adapters/WooCommerceAdapter');
 
+/**
+ * What went wrong with the online store, said so the shop can act on it
+ * ("CODE|{}", shown in the screen's language). The detail stays in the log.
+ */
+function friendlyError(message) {
+    const text = String(message || '');
+    if (/^[A-Z][A-Z0-9_]+\|/.test(text)) return text;
+    if (/invalid url|ERR_INVALID_URL/i.test(text)) return 'ECOM_BAD_URL|{}';
+    if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|network|socket/i.test(text)) return 'ECOM_OFFLINE|{}';
+    if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid api key|access token/i.test(text)) return 'ECOM_AUTH|{}';
+    console.error('Online store error:', text);
+    return 'ECOM_FAILED|{}';
+}
+
 const DEFAULT_ADAPTERS = { shopify: ShopifyAdapter, woocommerce: WooCommerceAdapter };
 
 class EcommerceSyncManager {
@@ -288,9 +302,10 @@ class EcommerceSyncManager {
         }
 
         try {
-            return await adapter.testConnection();
+            const result = await adapter.testConnection();
+            return result && result.success === false ? { ...result, message: friendlyError(result.message) } : result;
         } catch (error) {
-            return { success: false, message: error.message };
+            return { success: false, message: friendlyError(error.message) };
         }
     }
 
@@ -892,3 +907,4 @@ class EcommerceSyncManager {
 // Export singleton instance (the class too, for tests)
 module.exports = new EcommerceSyncManager();
 module.exports.EcommerceSyncManager = EcommerceSyncManager;
+module.exports.friendlyError = friendlyError;

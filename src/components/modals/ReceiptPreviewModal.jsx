@@ -5,7 +5,7 @@ import { Modal, ModalBody } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { toast } from '../ui/Toast';
-import { Printer, Mail, Download } from 'lucide-react';
+import { Printer, Mail, Download, FileText } from 'lucide-react';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
@@ -16,6 +16,22 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
     const [email, setEmail] = useState('');
     const [sendingEmail, setSendingEmail] = useState(false);
     const [printing, setPrinting] = useState(false);
+    const [invoiceBusy, setInvoiceBusy] = useState('');
+    // A4 invoice (office printer or PDF), from the data saved with the sale
+    const runInvoice = async (kind) => {
+        setInvoiceBusy(kind);
+        try {
+            if (kind === 'print') await window.electronAPI.invoices.print(sale.id);
+            else {
+                const path = await window.electronAPI.invoices.savePdf(sale.id);
+                if (path) toast.success(t('invoice.saved'));
+            }
+        } catch (error) {
+            toast.error(translateError(error));
+        } finally {
+            setInvoiceBusy('');
+        }
+    };
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
@@ -131,6 +147,16 @@ export default function ReceiptPreviewModal({ isOpen, onClose, sale }) {
                                 <Download className="w-5 h-5 me-2" />
                                 {t('receipt.savePdf')}
                             </Button>
+                            {sale?.id && sale.id !== 'test' && (
+                                <div className="grid grid-cols-2 gap-2 mt-2" data-testid="invoice-a4">
+                                    <Button variant="secondary" onClick={() => runInvoice('print')} loading={invoiceBusy === 'print'}>
+                                        <FileText className="w-4 h-4" /> {t('invoice.printA4')}
+                                    </Button>
+                                    <Button variant="secondary" onClick={() => runInvoice('pdf')} loading={invoiceBusy === 'pdf'}>
+                                        <Download className="w-4 h-4" /> {t('invoice.pdf')}
+                                    </Button>
+                                </div>
+                            )}
                         </div>
 
                         {emailOn && (

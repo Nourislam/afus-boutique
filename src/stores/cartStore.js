@@ -331,7 +331,7 @@ export const useCartStore = create((set, get) => ({
         });
     },
 
-    processPayment: async (payments, employeeId, employeeName = null) => {
+    processPayment: async (payments, employeeId, employeeName = null, approval = null) => {
         const { items, customer, notes, serviceCharge, taxExempt } = get();
         if (items.length === 0) throw new Error(t('cart.empty'));
 
@@ -364,6 +364,10 @@ export const useCartStore = create((set, get) => ({
             notes: promo ? [notes, promo.promotion.name].filter(Boolean).join(' · ') : notes,
             promotion_id: promo ? promo.promotion.id : null,
             promotion_name: promo ? promo.promotion.name : null,
+            // Checked again by the main process: discount typed by hand, coupon typed
+            manual_discount: get().getManualDiscount(),
+            coupon: get().coupon || null,
+            approval: approval || null,
             items: saleItems,
             payments: payments.map(p => ({ ...p, id: uuid() })),
         };
@@ -371,6 +375,8 @@ export const useCartStore = create((set, get) => ({
         // The saved sale comes back with the variant/SKU snapshot of each line
         const saved = await window.electronAPI.sales.create(sale);
         if (saved && saved.items) sale.items = saved.items;
+        // The manager's PIN is never kept with the sale
+        delete sale.approval;
 
         // Loyalty points and total spent are updated by the main process in
         // the same transaction as the sale.

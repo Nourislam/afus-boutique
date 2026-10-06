@@ -142,8 +142,9 @@ export function ExcelImport({
 
         setImporting(true);
         try {
-            await onImport(validationResult.valid);
-            toast.success(t('excel.imported', { n: validationResult.valid.length }));
+            // The page may report itself what was imported and what was rejected
+            const result = await onImport(validationResult.valid, validationResult);
+            if (!result?.reported) toast.success(t('excel.imported', { n: validationResult.valid.length }));
             handleClose();
         } catch (error) {
             toast.error(t('excel.importFailed', { error: translateError(error) }));

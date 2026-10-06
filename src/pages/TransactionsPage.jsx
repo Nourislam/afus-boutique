@@ -10,6 +10,7 @@ import { Tabs } from '../components/ui/Tabs';
 import { Search, Eye } from 'lucide-react';
 import ReceiptPreviewModal from '../components/modals/ReceiptPreviewModal';
 import ReturnModal from '../components/modals/ReturnModal';
+import ExchangeModal from '../components/modals/ExchangeModal';
 import ReturnDetailsModal from '../components/modals/ReturnDetailsModal';
 import { toast } from '../components/ui/Toast';
 
@@ -22,6 +23,7 @@ export default function TransactionsPage() {
     const [showReceiptModal, setShowReceiptModal] = useState(false);
     const [showReturnModal, setShowReturnModal] = useState(false);
     const [saleToReturn, setSaleToReturn] = useState(null);
+    const [saleToExchange, setSaleToExchange] = useState(null);
     const [showReturnDetails, setShowReturnDetails] = useState(false);
     const [selectedReturn, setSelectedReturn] = useState(null);
     const [activeTab, setActiveTab] = useState('sales');
@@ -200,6 +202,11 @@ export default function TransactionsPage() {
                                                             {t('po.return')}
                                                         </Button>
                                                     )}
+                                                    {(sale.status === 'completed' || sale.status === 'partially_refunded') && (
+                                                        <Button size="sm" variant="secondary" onClick={() => setSaleToExchange(sale)}>
+                                                            {t('exchange.action')}
+                                                        </Button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -232,7 +239,7 @@ export default function TransactionsPage() {
                                             <td className="p-4 font-mono text-zinc-400">{ret.receipt_number}</td>
                                             <td className="p-4 text-zinc-300">{formatDate(ret.created_at)}</td>
                                             <td className="p-4 text-zinc-300">{ret.employee_name || t('tx.unknown')}</td>
-                                            <td className="p-4 text-zinc-300 italic">{ret.reason || '-'}</td>
+                                            <td className="p-4 text-zinc-300 italic">{ret.reason === 'exchange' ? t('exchange.reason') : (ret.reason || '-')}</td>
                                             <td className="p-4 text-end font-medium text-red-400">{formatCurrency(ret.total_refund)}</td>
                                             <td className="p-4 text-end">
                                                 <Button size="sm" variant="secondary" onClick={() => { setSelectedReturn(ret); setShowReturnDetails(true); }}>
@@ -255,6 +262,13 @@ export default function TransactionsPage() {
                     setSelectedSale(null);
                 }}
                 sale={selectedSale}
+            />
+
+            <ExchangeModal
+                isOpen={!!saleToExchange}
+                sale={saleToExchange}
+                onClose={() => setSaleToExchange(null)}
+                onDone={(result) => { loadTransactions(); handleViewReceipt(result.sale_id); }}
             />
 
             <ReturnModal

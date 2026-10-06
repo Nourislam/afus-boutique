@@ -61,7 +61,7 @@ class ReceiptService {
             const docType = settings.type || 'receipt';
             let pageConfig;
 
-            if (docType === 'purchase_order' || docType === 'quotation') {
+            if (docType === 'purchase_order' || docType === 'quotation' || docType === 'invoice') {
                 // A4 size for formal documents
                 pageConfig = {
                     pageSize: 'A4',
@@ -142,7 +142,7 @@ class ReceiptService {
             ['legal.nif', storeSettings.businessTaxId],
             ['legal.nis', storeSettings.businessNis],
             ['legal.ai', storeSettings.businessAi],
-        ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${T(k)}: ${esc(v)}`).join(' · ');
+        ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${T(k)}: <bdi dir="ltr">${esc(v)}</bdi>`).join(' · ');
 
         const dateStr = formatDate(data.created_at, T.lang, false);
 
@@ -179,7 +179,7 @@ class ReceiptService {
                         <div class="info-box-content">
                             <div class="company-name">${esc(data.supplier_name || T('doc.supplierDefault'))}</div>
                             ${data.supplier_address ? `<div class="detail">${data.supplier_address}</div>` : ''}
-                            ${data.supplier_phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> ${esc(data.supplier_phone)}</div>` : ''}
+                            ${data.supplier_phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> <bdi dir="ltr">${esc(data.supplier_phone)}</bdi></div>` : ''}
                             ${data.supplier_email ? `<div class="detail"><strong>${T('doc.email')}:</strong> ${esc(data.supplier_email)}</div>` : ''}
                             ${data.supplier_contact_person ? `<div class="detail"><strong>${T('doc.contact')}:</strong> ${esc(data.supplier_contact_person)}</div>` : ''}
                             ${data.supplier_website ? `<div class="detail"><strong>${T('doc.website')}:</strong> ${esc(data.supplier_website)}</div>` : ''}
@@ -190,8 +190,8 @@ class ReceiptService {
                         <div class="info-box-content">
                             <div class="company-name">${settings.name}</div>
                             <div class="detail">${settings.address}</div>
-                            ${settings.phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> ${esc(settings.phone)}</div>` : ''}
-                            ${settings.email ? `<div class="detail"><strong>${T('doc.email')}:</strong> ${esc(settings.email)}</div>` : ''}
+                            ${settings.phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> <bdi dir="ltr">${esc(settings.phone)}</bdi></div>` : ''}
+                            ${settings.email ? `<div class="detail"><strong>${T('doc.email')}:</strong> <bdi dir="ltr">${esc(settings.email)}</bdi></div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -242,6 +242,30 @@ class ReceiptService {
                     </div>
                 </div>
             `;
+        } else if (type === 'invoice') {
+            // A4 invoice of a sale: only the data saved with the sale and the
+            // shop's own legal numbers (nothing is made up)
+            docTitle = T('doc.invoice');
+            docNumber = data.receipt_number || data.id?.slice(0, 8);
+            supplierSection = data.customer_name ? `
+                <div class="info-grid">
+                    <div class="info-box">
+                        <div class="info-box-header">${T('doc.billTo')}</div>
+                        <div class="info-box-content">
+                            <div class="company-name">${esc(data.customer_name)}</div>
+                            ${data.customer_address ? `<div class="detail">${esc(data.customer_address)}</div>` : ''}
+                            ${data.customer_phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> <bdi dir="ltr">${esc(data.customer_phone)}</bdi></div>` : ''}
+                            ${data.customer_email ? `<div class="detail"><strong>${T('doc.email')}:</strong> <bdi dir="ltr">${esc(data.customer_email)}</bdi></div>` : ''}
+                        </div>
+                    </div>
+                </div>
+            ` : '';
+            notesSection = (data.payments || []).length ? `
+                <div class="notes-section">
+                    <div class="notes-header">${T('doc.paidWith')}</div>
+                    <div class="notes-content">${(data.payments || []).map(p => `${esc(paymentLabel(p.method, T.lang))}: ${money(p.amount)}`).join(' · ')}</div>
+                </div>
+            ` : '';
         } else if (type === 'quotation') {
             docTitle = T('doc.quotation');
             docNumber = data.quote_number || data.id?.slice(0, 8);
@@ -251,8 +275,8 @@ class ReceiptService {
                         <div class="info-box-header">${T('doc.preparedFor')}</div>
                         <div class="info-box-content">
                             <div class="company-name">${esc(data.customer_name || T('doc.customerDefault'))}</div>
-                            ${data.customer_email ? `<div class="detail">${data.customer_email}</div>` : ''}
-                            ${data.customer_phone ? `<div class="detail">${data.customer_phone}</div>` : ''}
+                            ${data.customer_email ? `<div class="detail"><bdi dir="ltr">${esc(data.customer_email)}</bdi></div>` : ''}
+                            ${data.customer_phone ? `<div class="detail"><bdi dir="ltr">${esc(data.customer_phone)}</bdi></div>` : ''}
                         </div>
                     </div>
                     <div class="info-box">
@@ -586,8 +610,8 @@ class ReceiptService {
                         <div class="company-logo">${esc(settings.name)}</div>
                         <div class="company-details">
                             ${settings.address ? `${esc(settings.address)}<br>` : ''}
-                            ${settings.phone ? `${T('doc.phone')}: ${esc(settings.phone)}<br>` : ''}
-                            ${settings.email ? `${T('doc.email')}: ${esc(settings.email)}` : ''}
+                            ${settings.phone ? `${T('doc.phone')}: <bdi dir="ltr">${esc(settings.phone)}</bdi><br>` : ''}
+                            ${settings.email ? `${T('doc.email')}: <bdi dir="ltr">${esc(settings.email)}</bdi>` : ''}
                             ${settings.website ? `<br>${T('doc.website')}: ${esc(settings.website)}` : ''}
                             ${legal ? `<br>${legal}` : ''}
                         </div>
@@ -656,8 +680,13 @@ class ReceiptService {
                             <span style="color:#ef4444">-${money(data.discount_amount)}</span>
                         </div>
                         ` : ''}
+                        ${type === 'invoice' && (parseFloat(data.tax_amount) || 0) > 0 ? `
+                        <div class="summary-row">
+                            <span>${T('doc.totalHt')}</span>
+                            <span>${money((parseFloat(data.total) || 0) - (parseFloat(data.tax_amount) || 0) - (parseFloat(data.service_charge) || 0))}</span>
+                        </div>` : ''}
                         <div class="summary-row total">
-                            <span>${T('receipt.total')}</span>
+                            <span>${type === 'invoice' && (parseFloat(data.tax_amount) || 0) > 0 ? T('doc.totalTtc') : T('receipt.total')}</span>
                             <span>${money(data.total)}</span>
                         </div>
                     </div>
@@ -745,7 +774,7 @@ class ReceiptService {
             ['legal.nif', storeSettings.businessTaxId],
             ['legal.nis', storeSettings.businessNis],
             ['legal.ai', storeSettings.businessAi],
-        ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${T(k)}: ${esc(v)}`);
+        ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${T(k)}: <bdi dir="ltr">${esc(v)}</bdi>`);
 
         const shop = {
             name: storeSettings.businessName || '',
@@ -782,6 +811,10 @@ class ReceiptService {
                     const parsed = JSON.parse(p.reference);
                     if (Number.isFinite(parsed.tendered) && parsed.tendered > 0) tendered += parsed.tendered;
                 } catch { /* plain text reference */ }
+            }
+            // Value of the piece brought back, with the ticket it came from
+            if (p.method === 'exchange' && p.reference) {
+                methodLabel += ` (<span class="ltr">${esc(p.reference)}</span>)`;
             }
             if (p.method === 'gift_card' && p.reference) {
                 let code = p.reference;

@@ -9,10 +9,11 @@ import { Select } from '../components/ui/Select';
 import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader, EmptyState } from '../components/ui/Table';
 import { Badge, StatusBadge } from '../components/ui/Badge';
 import { toast } from '../components/ui/Toast';
-import { v4 as uuid } from 'uuid';
 import { PermissionGate } from '../components/auth/PermissionGate';
 import { PERMISSIONS } from '../stores/authStore';
 import { ExcelImport } from '../components/ui/ExcelImport';
+import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
+import { translateError } from '../i18n/errors';
 
 
 import { useSettingsStore } from '../stores/settingsStore';
@@ -29,6 +30,7 @@ export default function ProductsPage() {
     const [editingProduct, setEditingProduct] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showExcelImport, setShowExcelImport] = useState(false);
+    const [importReport, setImportReport] = useState(null);
     const [initialValues, setInitialValues] = useState(null);
     const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
@@ -126,45 +128,19 @@ export default function ProductsPage() {
         return 'in-stock';
     };
 
-    const handleExcelImport = async (records) => {
-        let successCount = 0;
-        const failures = [];
-        for (const record of records) {
-            try {
-                // Find or create category
-                let categoryId = null;
-                if (record.category) {
-                    const existingCat = categories.find(
-                        c => c.name.toLowerCase() === record.category.toLowerCase()
-                    );
-                    categoryId = existingCat?.id || null;
-                }
-
-                await window.electronAPI.products.create({
-                    id: uuid(),
-                    sku: record.sku || null,
-                    barcode: record.barcode || null,
-                    name: record.name,
-                    description: record.description || null,
-                    category_id: categoryId,
-                    brand: record.brand || null,
-                    price: parseFloat(record.price) || 0,
-                    cost: parseFloat(record.cost) || 0,
-                    stock_quantity: parseInt(record.stock_quantity) || 0,
-                    min_stock_level: parseInt(record.min_stock_level) || 5,
-                    tax_rate: parseFloat(record.tax_rate) || 0,
-                    is_active: true,
-                    image_path: null,
-                });
-                successCount++;
-            } catch (error) {
-                console.error('Failed to import product:', record.name, error);
-                failures.push(record.name);
-            }
-        }
-        toast.success(t('products.imported', { n: successCount }));
-        if (failures.length) toast.error(t('products.importFailures', { n: failures.length, names: failures.slice(0, 3).join(', ') }));
+    // One row per size/colour: rows with the same name become one article with
+    // its variants (main process). Rows not imported are listed with the reason.
+    const handleExcelImport = async (records, validation) => {
+        const rows = records.map(({ __row, ...record }) => ({ ...record, row: __row }));
+        const report = await window.electronAPI.excel.importProducts(rows);
+        const refused = [
+            ...(validation?.errors || []).map(e => ({ rows: [e.row], name: e.data?.name || '', reason: e.errors.join('\n') })),
+            ...report.rejected,
+        ];
+        toast.success(t('import.done', { n: report.imported.length, pieces: report.imported.reduce((s, x) => s + (x.pieces || 0), 0) }));
+        if (refused.length) setImportReport({ imported: report.imported, rejected: refused });
         loadData();
+        return { reported: true };
     };
 
     return (
@@ -391,6 +367,22 @@ export default function ProductsPage() {
 
 
                 {/* Excel Import Modal */}
+                <Modal isOpen={!!importReport} onClose={() => setImportReport(null)} title={t('import.reportTitle')} size="lg">
+                    <ModalBody>
+                        <div className="space-y-3" data-testid="import-report">
+                            <p className="text-sm">{t('import.reportText', { ok: importReport?.imported.length || 0, bad: importReport?.rejected.length || 0 })}</p>
+                            <ul className="divide-y divide-dark-border text-sm max-h-80 overflow-y-auto">
+                                {(importReport?.rejected || []).map((r, i) => (
+                                    <li key={i} className="py-2">
+                                        <span className="font-medium">{t('import.rows', { rows: r.rows.join(', ') })}{r.name ? ` · ${r.name}` : ''}</span>
+                                        <span className="block text-red-300 whitespace-pre-line">{translateError(r.reason)}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </ModalBody>
+                    <ModalFooter><Button onClick={() => setImportReport(null)}>{t('common.close')}</Button></ModalFooter>
+                </Modal>
                 <ExcelImport
                     isOpen={showExcelImport}
                     onClose={() => setShowExcelImport(false)}

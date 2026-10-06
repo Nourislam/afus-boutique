@@ -8,6 +8,7 @@ const LABEL_KEYS = {
     transfer: 'pay.transfer',
     credit: 'pay.credit',
     gift_card: 'pay.giftCard',
+    exchange: 'pay.exchange',
     split: 'pay.split',
     mixed: 'pay.split',
 };

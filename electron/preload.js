@@ -10,6 +10,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     maximize: () => ipcRenderer.invoke('window:maximize'),
     close: () => ipcRenderer.invoke('window:close'),
 
+    // Logged-in session kept by the main process; approval of a manager by PIN
+    auth: {
+        logout: () => ipcRenderer.invoke('auth:logout'),
+        approve: (data) => ipcRenderer.invoke('auth:approve', data),
+        rules: () => ipcRenderer.invoke('security:getRules'),
+    },
+
     // Shifts
     shifts: {
         start: (data) => ipcRenderer.invoke('db:shifts:start', data),
@@ -20,6 +27,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         getOpen: () => ipcRenderer.invoke('db:shifts:getOpen'),
         getLastClosed: () => ipcRenderer.invoke('db:shifts:getLastClosed'),
         getActivity: (range) => ipcRenderer.invoke('db:shifts:getActivity', range),
+        addExpense: (data) => ipcRenderer.invoke('db:shifts:addExpense', data),
+        getExpenses: (shiftId) => ipcRenderer.invoke('db:shifts:getExpenses', shiftId),
     },
 
 
@@ -121,6 +130,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
         create: (data) => ipcRenderer.invoke('db:returns:create', data),
         getAll: () => ipcRenderer.invoke('db:returns:getAll'),
         getItems: (id) => ipcRenderer.invoke('db:returns:getItems', id),
+    },
+
+    // Stock count: what is on the shelves, applied only when confirmed
+    stockCount: {
+        current: () => ipcRenderer.invoke('stockCount:current'),
+        start: (data) => ipcRenderer.invoke('stockCount:start', data),
+        scan: (data) => ipcRenderer.invoke('stockCount:scan', data),
+        setCounted: (data) => ipcRenderer.invoke('stockCount:setCounted', data),
+        removeLine: (data) => ipcRenderer.invoke('stockCount:removeLine', data),
+        summary: (countId) => ipcRenderer.invoke('stockCount:summary', countId),
+        cancel: (countId) => ipcRenderer.invoke('stockCount:cancel', countId),
+        confirm: (data) => ipcRenderer.invoke('stockCount:confirm', data),
+        list: (limit) => ipcRenderer.invoke('stockCount:list', limit),
+    },
+
+    // A4 invoice of a sale
+    invoices: {
+        print: (saleId) => ipcRenderer.invoke('invoices:print', saleId),
+        savePdf: (saleId) => ipcRenderer.invoke('invoices:savePdf', saleId),
+        html: (saleId) => ipcRenderer.invoke('invoices:html', saleId),
+    },
+
+    // Exchanges (a piece brought back for another size, colour or article)
+    exchanges: {
+        preview: (data) => ipcRenderer.invoke('db:exchanges:preview', data),
+        create: (data) => ipcRenderer.invoke('db:exchanges:create', data),
+        getBySale: (saleId) => ipcRenderer.invoke('db:exchanges:getBySale', saleId),
     },
 
     // Held Transactions
@@ -332,6 +368,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         validateAndTransform: (rows, mappings, dataType) => ipcRenderer.invoke('excel:validateAndTransform', { rows, mappings, dataType }),
         getFieldMappings: (dataType) => ipcRenderer.invoke('excel:getFieldMappings', dataType),
         generateTemplate: (dataType) => ipcRenderer.invoke('excel:generateTemplate', dataType),
+        importProducts: (rows) => ipcRenderer.invoke('excel:importProducts', rows),
         export: (data, dataType) => ipcRenderer.invoke('excel:export', { data, dataType }),
     },
 
