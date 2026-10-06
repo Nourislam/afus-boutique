@@ -183,7 +183,7 @@ export default function ExchangeModal({ isOpen, onClose, sale, onDone }) {
             </ModalBody>
             <ModalFooter>
                 <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
-                <Button onClick={submit} loading={saving} disabled={!preview}>
+                <Button onClick={submit} loading={saving} disabled={!preview} data-testid="exchange-confirm">
                     <ArrowLeftRight className="w-4 h-4" /> {t('exchange.confirm')}
                 </Button>
             </ModalFooter>

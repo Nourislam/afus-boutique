@@ -19,6 +19,7 @@ import CustomerPickerModal from '../components/pos/CustomerPickerModal';
 import OpeningCashDialog from '../components/shifts/OpeningCashDialog';
 import CashExpenseDialog from '../components/shifts/CashExpenseDialog';
 import { VariantPickerModal } from '../components/pos/VariantPickerModal';
+import FirstSaleGuide from '../components/pos/FirstSaleGuide';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { colorHex, colorName, sortSizes, variantLabel } from '../lib/clothing';
 import { formatMoney } from '../i18n/format';
@@ -334,6 +335,7 @@ export default function POSPage() {
                             <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 pointer-events-none" />
                             <input
                                 ref={searchRef}
+                                data-testid="pos-search"
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -480,6 +482,7 @@ export default function POSPage() {
                     <button
                         type="button"
                         onClick={() => setShowCustomerModal(true)}
+                        data-testid="pos-customer"
                         className="w-full h-10 px-3 rounded-lg border border-dashed border-dark-border hover:border-zinc-600 flex items-center gap-2 text-sm text-start"
                     >
                         <UserRound className="w-4 h-4 text-zinc-500" />
@@ -502,6 +505,7 @@ export default function POSPage() {
                             <ScanLine className="w-12 h-12 opacity-40" />
                             <p className="font-medium text-zinc-400">{t('pos.cartEmpty')}</p>
                             <p className="text-sm">{t('pos.cartEmptyHint')}</p>
+                            {!lastSale && <FirstSaleGuide />}
                             {lastSale && (
                                 <div className="mt-4 w-full rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
                                     <p className="font-semibold flex items-center justify-center gap-1.5"><Check className="w-4 h-4" /> {t('pos.lastSale', { n: lastSale.receipt_number })}</p>
@@ -591,7 +595,7 @@ export default function POSPage() {
                             <Trash2 className="w-4 h-4" /> {t('pos.clear')}
                         </Button>
                     </div>
-                    <Button variant="success" size="lg" className="w-full h-14 text-lg" onClick={startPayment} disabled={cart.items.length === 0}>
+                    <Button variant="success" size="lg" className="w-full h-14 text-lg" onClick={startPayment} disabled={cart.items.length === 0} data-testid="pos-pay">
                         <Banknote className="w-5 h-5" />
                         {t('pos.pay', { amount: money(total) })}
                         <kbd className="ms-auto text-xs font-normal opacity-70 border border-white/30 rounded px-1.5">F4</kbd>

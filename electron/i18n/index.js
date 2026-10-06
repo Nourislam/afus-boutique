@@ -37,6 +37,10 @@ const MESSAGES = {
     'pay.credit': ['Credit', 'Crédit', 'كريدي'],
     'pay.gift_card': ['Gift card', 'Carte cadeau', 'بطاقة هدية'],
     'pay.exchange': ['Exchanged piece', 'Pièce échangée', 'قطعة مُبدّلة'],
+    // Training mode
+    'receipt.training': ['TRAINING — NOT A SALE', 'FORMATION — PAS UNE VENTE', 'تدريب — ليست بيعًا حقيقيًا'],
+    'training.product': ['Training shirt', 'Chemise d\'entraînement', 'قميص تدريب'],
+    'training.customer': ['Training customer', 'Client d\'entraînement', 'زبون تدريب'],
     'pay.bank_transfer': ['Bank transfer', 'Virement bancaire', 'تحويل بنكي'],
     'pay.check': ['Cheque', 'Chèque', 'صك'],
     'pay.other': ['Other', 'Autre', 'أخرى'],

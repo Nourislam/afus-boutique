@@ -203,7 +203,7 @@ export default function TransactionsPage() {
                                                         </Button>
                                                     )}
                                                     {(sale.status === 'completed' || sale.status === 'partially_refunded') && (
-                                                        <Button size="sm" variant="secondary" onClick={() => setSaleToExchange(sale)}>
+                                                        <Button size="sm" variant="secondary" onClick={() => setSaleToExchange(sale)} data-testid="exchange-btn">
                                                             {t('exchange.action')}
                                                         </Button>
                                                     )}

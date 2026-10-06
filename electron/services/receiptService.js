@@ -618,6 +618,7 @@ class ReceiptService {
                     </div>
                     <div class="doc-info">
                         <div class="doc-title">${docTitle}</div>
+                        ${storeSettings.training ? `<div style="margin-top:6px;padding:4px 10px;border:2px solid #dc2626;color:#dc2626;font-weight:bold;display:inline-block">${esc(T('receipt.training'))}</div>` : ''}
                         <div class="doc-meta">
                             <div class="doc-meta-row">
                                 <span class="doc-meta-label">${T('doc.number')}:</span>
@@ -857,6 +858,7 @@ class ReceiptService {
     .shop-name { font-size: 1.5em; font-weight: bold; margin-bottom: 1mm; }
     .muted { color: #333; font-size: 0.9em; }
     .sep { border-top: 1px dashed #000; margin: 2mm 0; }
+    .training-mark { margin: 2mm 0; padding: 1.5mm; border: 2px solid #000; text-align: center; font-weight: bold; font-size: 1.15em; }
     .row { display: flex; justify-content: space-between; gap: 2mm; }
     .row span:last-child { text-align: end; white-space: nowrap; }
     .small { font-size: 0.92em; }
@@ -879,6 +881,7 @@ class ReceiptService {
         ${shop.city ? `<div class="muted">${esc(shop.city)}</div>` : ''}
         ${shop.phone ? `<div class="muted ltr">${esc(shop.phone)}</div>` : ''}
         ${legal.length ? `<div class="muted small">${legal.join(' · ')}</div>` : ''}
+        ${storeSettings.training ? `<div class="training-mark">${esc(T('receipt.training'))}</div>` : ''}
         ${shop.header ? `<div class="header" style="margin-top:1.5mm;white-space:pre-line">${esc(shop.header)}</div>` : ''}
     </div>
     <div class="sep"></div>

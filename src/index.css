@@ -515,3 +515,18 @@ html.theme-light .modal-overlay {
 .afus-logo-a { fill: #FFFFFF; }
 html.theme-light .afus-logo-bg { fill: #FFFFFF; }
 html.theme-light .afus-logo-a { fill: #1239B0; }
+
+/* Training mode: the part of the screen to use in the current exercise */
+@keyframes training-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px #f59e0b, 0 0 0 6px rgba(245, 158, 11, 0.35); }
+  50% { box-shadow: 0 0 0 2px #f59e0b, 0 0 0 12px rgba(245, 158, 11, 0); }
+}
+.training-glow {
+  outline: 2px solid #f59e0b !important;
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+  animation: training-pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .training-glow { animation: none; }
+}

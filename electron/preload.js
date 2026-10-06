@@ -17,6 +17,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         rules: () => ipcRenderer.invoke('security:getRules'),
     },
 
+    // Training mode: a copy of the shop's data in memory, thrown away at the end
+    training: {
+        status: () => ipcRenderer.invoke('training:status'),
+        start: (data) => ipcRenderer.invoke('training:start', data),
+        stop: () => ipcRenderer.invoke('training:stop'),
+        progress: () => ipcRenderer.invoke('training:progress'),
+    },
+
     // Shifts
     shifts: {
         start: (data) => ipcRenderer.invoke('db:shifts:start', data),
@@ -52,6 +60,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Home screen (read-only)
     dashboard: {
         home: (args) => ipcRenderer.invoke('dashboard:home', args),
+        firstSteps: () => ipcRenderer.invoke('dashboard:firstSteps'),
         selling: (args) => ipcRenderer.invoke('dashboard:selling', args),
         series: (args) => ipcRenderer.invoke('dashboard:series', args),
         stock: (args) => ipcRenderer.invoke('dashboard:stock', args),

@@ -4,6 +4,7 @@ import { PinPad } from '../ui/NumPad';
 import { useAuthStore } from '../../stores/authStore';
 import { toast } from '../ui/Toast';
 import { TitleBar } from '../layout/TitleBar';
+import TrainingBanner from '../training/TrainingBanner';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { ShopLogo } from '../shop/ShopLogo';
 import { AfusLogo } from '../brand/AfusLogo';
@@ -99,6 +100,8 @@ export default function LoginScreen() {
         return (
             <div className="h-screen w-screen flex flex-col bg-dark-primary">
                 <TitleBar />
+            <TrainingBanner compact />
+                <TrainingBanner compact />
                 <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6">
                     <div className="w-full max-w-3xl">
                         <button
@@ -158,6 +161,7 @@ export default function LoginScreen() {
     return (
         <div className="h-screen w-screen flex flex-col bg-dark-primary">
             <TitleBar />
+            <TrainingBanner compact />
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center p-6 lg:p-8">
                 {/* The shop: its logo (or initials) and name */}
                 <div className="mb-8 lg:mb-10 text-center max-w-full">

@@ -7,6 +7,9 @@ const { databasePath } = require('../brand');
 
 let db = null;
 let SQL = null;
+// Training mode: while set, `db` is an in-memory copy and `realDb` the shop's
+// database, which nothing touches until the copy is thrown away.
+let realDb = null;
 const changeListeners = [];
 // Depth of the currently open transaction (0 = none). While a transaction is
 // open, writes are not flushed to disk and failures throw instead of being
@@ -31,6 +34,8 @@ function timestampSuffix() {
 }
 
 async function initDatabase() {
+    // Reloading from the file always ends a training copy first
+    if (realDb) stopSandbox();
     const dbPath = getDbPath();
     console.log('Database path:', dbPath);
 
@@ -601,6 +606,8 @@ function getTableColumns(tableName) {
 }
 
 function saveDatabase() {
+    // Training copy: nothing is ever written to the shop's file
+    if (realDb) return;
     if (db) {
         const data = db.export();
         const buffer = Buffer.from(data);
@@ -668,6 +675,31 @@ function seedDefaultData() {
 function getDatabase() {
     return db;
 }
+
+/**
+ * Training mode: from now on every query works on a copy of the shop's data
+ * kept in memory. The shop's database stays as it is and is never saved
+ * while the copy is in use.
+ */
+function startSandbox() {
+    if (realDb) return false;
+    if (!db || !SQL) throw new Error('Database not ready');
+    const copy = new SQL.Database(db.export());
+    realDb = db;
+    db = copy;
+    return true;
+}
+
+/** Leave training mode: the copy and everything done in it are thrown away. */
+function stopSandbox() {
+    if (!realDb) return false;
+    try { db.close(); } catch { /* already closed */ }
+    db = realDb;
+    realDb = null;
+    return true;
+}
+
+const isSandbox = () => realDb !== null;
 
 // Helper function to run queries and return results as array of objects
 function runQuery(sql, params = []) {
@@ -766,6 +798,6 @@ function getOne(sql, params = []) {
 }
 
 module.exports = {
-    initDatabase, getDatabase, saveDatabase, runQuery, runInsert, runStatement, runTransaction,
+    initDatabase, getDatabase, saveDatabase, startSandbox, stopSandbox, isSandbox, runQuery, runInsert, runStatement, runTransaction,
     getOne, getTableColumns, addDatabaseChangeListener, getDbPath, bindable,
 };

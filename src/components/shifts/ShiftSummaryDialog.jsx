@@ -202,7 +202,7 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                         </div>
 
                         <div className="flex flex-col gap-2">
-                            <Button onClick={handleCloseShift} loading={submitting} disabled={closingCash === ''} className="w-full">
+                            <Button onClick={handleCloseShift} loading={submitting} disabled={closingCash === ''} className="w-full" data-testid="shift-close">
                                 {!revealed ? t('shift.checkCount') : mode === 'logout' ? t('shift.closeAndLogout') : t('shift.closeDrawer')}
                             </Button>
                             <div className="flex gap-2">

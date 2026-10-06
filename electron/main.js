@@ -3,7 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme } = re
 const path = require('path');
 const fs = require('fs');
 const { BRAND, dataDirectory, databasePath } = require('./brand');
-const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener } = require('./database/init');
+const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener, startSandbox, stopSandbox, isSandbox } = require('./database/init');
 const dbApi = require('./database/api');
 const catalog = require('./services/catalogService');
 const dashboard = require('./services/dashboardService');
@@ -189,7 +189,8 @@ if (!gotTheLock) {
 
     // Online store connections (optional module): started once the database is
     // open so the saved connections are loaded; the window is given by createWindow()
-    EcommerceSyncManager.init({ isEnabled: () => (getSettingValue('features') || {}).ecommerce === true });
+    // Never synchronised with the online store while training (the stock seen is a copy)
+    EcommerceSyncManager.init({ isEnabled: () => !isSandbox() && (getSettingValue('features') || {}).ecommerce === true, isTraining: isSandbox });
 
 
   // Register app protocol for serving images
@@ -436,6 +437,8 @@ ipcMain.handle('backup:inspect', async (_, name) => {
 });
 
 ipcMain.handle('backup:restore', async (_, name) => {
+  // Training works on a copy: the shop's data cannot be replaced from it
+  if (isSandbox()) return { success: false, error: catalog.coded('TRAINING_ACTIVE', {}) };
   const dir = backupFolder();
   const dbPath = databasePath(app.getPath('userData'));
   try {
@@ -520,6 +523,8 @@ function runDailyBackup() {
 }
 
 ipcMain.handle('backup:reset', async () => {
+  // Training works on a copy: the shop's data cannot be replaced from it
+  if (isSandbox()) return { success: false, error: catalog.coded('TRAINING_ACTIVE', {}) };
   const dbPath = databasePath(app.getPath('userData'));
   try {
     if (fs.existsSync(dbPath)) {
@@ -896,6 +901,29 @@ ipcMain.handle('auth:approve', (_, { employeeId, pin }) => {
   return manager ? { ok: true, id: manager.id, name: manager.name } : { ok: false };
 });
 ipcMain.handle('security:getRules', () => guard.readRules(dbApi));
+
+// Training mode (services/trainingService.js): a manager or the owner starts it,
+// or a cashier with a manager's PIN. Everything happens in a copy in memory.
+const trainingService = require('./services/trainingService');
+ipcMain.handle('training:status', () => ({ active: isSandbox() }));
+ipcMain.handle('training:start', (_, { approval } = {}) => {
+  const actor = session.getEmployee();
+  if (!actor) throw catalog.codedError('LOGIN_REQUIRED', {});
+  if (!session.isManager(actor) && !guard.approver(dbApi, approval)) throw catalog.codedError('TRAINING_NEEDS_MANAGER', {});
+  if (isSandbox()) return { active: true };
+  // Written in the shop's log before the copy is made
+  logSystemAction('training_start', `Training mode started by ${actor.name}`, null, actor.id);
+  startSandbox();
+  trainingService.seed(dbApi, { productName: shopT('training.product'), customerName: shopT('training.customer') });
+  EcommerceSyncManager.refreshSchedule();
+  return { active: true };
+});
+ipcMain.handle('training:stop', () => {
+  stopSandbox();
+  EcommerceSyncManager.refreshSchedule();
+  return { active: false };
+});
+ipcMain.handle('training:progress', () => trainingService.progress(dbApi));
 
 ipcMain.handle('db:employees:create', (_, employee) => {
   runInsert(`
@@ -1359,6 +1387,7 @@ ipcMain.handle('dashboard:home', async (_, { today, tomorrow, since30, todayRang
     firstSteps: dashboard.firstSteps(dbApi),
   };
 });
+ipcMain.handle('dashboard:firstSteps', () => dashboard.firstSteps(dbApi));
 ipcMain.handle('dashboard:selling', (_, { range, since30 }) => ({
   best: dashboard.bestSellers(dbApi, range),
   slow: dashboard.slowMovers(dbApi, since30),
@@ -1829,6 +1858,8 @@ function getShopSettingsForPrint() {
   const { getImageBase64: imageAsBase64 } = require('./services/imageService');
   settings.shopLogoDataUri = settings.shopLogo ? imageAsBase64(settings.shopLogo) : null;
   settings.receiptPaperWidthMm = getPrinterSettings().receipt.paperWidthMm;
+  // Tickets and invoices printed in training say so in large letters
+  settings.training = isSandbox();
   return settings;
 }
 

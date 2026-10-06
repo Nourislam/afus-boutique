@@ -58,6 +58,8 @@ export default {
     'errors.ECOM_BAD_URL': ["The store address is not valid — write it like my-shop.myshopify.com", "L'adresse de la boutique n'est pas valide — écrivez-la comme ma-boutique.myshopify.com", "عنوان المتجر غير صالح — اكتبه هكذا my-shop.myshopify.com"],
     'errors.ECOM_AUTH': ["The store refused the key — copy the access key again from your store", "La boutique a refusé la clé — copiez à nouveau la clé d'accès depuis votre boutique", "رفض المتجر المفتاح — انسخ مفتاح الوصول من متجرك من جديد"],
     'errors.ECOM_FAILED': ["The store did not answer as expected — try again in a moment", "La boutique n'a pas répondu comme prévu — réessayez dans un instant", "لم يستجب المتجر كما يجب — أعد المحاولة بعد قليل"],
+    'errors.TRAINING_ACTIVE': ["Not possible in training mode — leave training first", "Impossible en mode formation — quittez d'abord la formation", "غير ممكن في وضع التدريب — اخرج من التدريب أولًا"],
+    'errors.TRAINING_NEEDS_MANAGER': ["A manager must agree to start training mode", "Un responsable doit accepter pour lancer la formation", "يلزم موافقة المدير لبدء وضع التدريب"],
     'errors.RETURN_TOO_MANY': ["\"{product}\": only {left} piece(s) can still be returned", "« {product} » : il ne reste que {left} pièce(s) à retourner", "«{product}»: يمكن إرجاع {left} قطعة فقط"],
     'errors.GIFT_CARD_BALANCE': ["Not enough balance on gift card {code}", "Solde insuffisant sur la carte {code}", "رصيد غير كافٍ في البطاقة {code}"],
     'errors.LABEL_NO_CODE': ["\"{product}\" has no SKU or barcode for the QR code", "« {product} » n'a pas de SKU ni de code-barres pour le QR", "«{product}» ليس له رمز SKU أو باركود لـ QR"],

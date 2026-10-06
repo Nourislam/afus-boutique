@@ -51,4 +51,12 @@ describe('A4 invoice of a sale', () => {
         const ticket = service.generateHtml(SALE, { ...SHOP, defaultLanguage: 'ar' });
         expect(ticket).toContain('<bdi dir="ltr">001216099999999</bdi>');
     });
+
+    it('in training mode the ticket and the invoice say clearly it is not a sale', () => {
+        const ticket = service.generateHtml(SALE, { ...SHOP, defaultLanguage: 'ar', training: true });
+        expect(ticket).toContain('تدريب — ليست بيعًا حقيقيًا');
+        const invoice = service.generateHtml(SALE, { ...SHOP, type: 'invoice', training: true });
+        expect(invoice).toContain('FORMATION — PAS UNE VENTE');
+        expect(service.generateHtml(SALE, { ...SHOP })).not.toContain('PAS UNE VENTE');
+    });
 });

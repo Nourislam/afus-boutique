@@ -61,9 +61,10 @@ class EcommerceSyncManager {
      * Start the manager. Must be called once the database is open (it reads
      * the saved connections). The window comes later through setWindow().
      */
-    init({ mainWindow = null, isEnabled } = {}) {
+    init({ mainWindow = null, isEnabled, isTraining } = {}) {
         this.mainWindow = mainWindow;
         if (isEnabled) this.deps = { ...this.deps, isEnabled };
+        if (isTraining) this.deps = { ...this.deps, isTraining };
         this.ready = true;
         this.registerIpcHandlers();
         this.startWebhookListener();
@@ -463,6 +464,8 @@ class EcommerceSyncManager {
      * Sync a specific connection
      */
     async syncConnection(connectionId) {
+        // Training works on a copy of the stock: never sent to the online store
+        if (this.deps.isTraining?.()) return { success: false, message: 'TRAINING_ACTIVE|{}' };
         if (this.isSyncing) {
             return { success: false, message: 'Sync already in progress' };
         }
@@ -591,6 +594,7 @@ class EcommerceSyncManager {
      * Sync all active connections
      */
     async syncAll() {
+        if (this.deps.isTraining?.()) return { success: false, message: 'TRAINING_ACTIVE|{}' };
         const connections = this.getConnections().filter(c => c.sync_enabled);
         const results = [];
 
