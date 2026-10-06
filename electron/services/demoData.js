@@ -15,6 +15,7 @@ const returnService = require('./returnService');
 const { hashPin } = require('./pinService');
 const { nextReceiptNumber } = require('./receiptNumber');
 const CLOTHING = require('../shared/clothing.json');
+const { getDatabase, bindable } = require('../database/init');
 
 const DAYS = 90;
 
@@ -161,6 +162,72 @@ function weighted(random, items, weightOf) {
     return items[items.length - 1];
 }
 
+/**
+ * The same database adapter, with each SQL text prepared once and reused.
+ * Building the shop runs about 11 000 statements; sql.js would otherwise
+ * compile every one of them again (db.run), which is most of the time spent.
+ * Used only inside the transaction that builds the shop (nothing is saved
+ * statement by statement there), and freed at the end.
+ */
+function withPreparedStatements(api) {
+    const db = getDatabase();
+    const cache = new Map();
+    const prepared = (sql) => {
+        let stmt = cache.get(sql);
+        if (!stmt) { stmt = db.prepare(sql); cache.set(sql, stmt); }
+        return stmt;
+    };
+    const all = (sql, params = []) => {
+        const stmt = prepared(sql);
+        try {
+            stmt.bind(bindable(params));
+            const rows = [];
+            while (stmt.step()) rows.push(stmt.getAsObject());
+            return rows;
+        } finally {
+            stmt.reset();
+        }
+    };
+    return {
+        ...api,
+        all,
+        get: (sql, params = []) => all(sql, params)[0] || null,
+        run: (sql, params = []) => { prepared(sql).run(bindable(params)); return true; },
+        free: () => { for (const stmt of cache.values()) { try { stmt.free(); } catch { /* already freed */ } } cache.clear(); },
+    };
+}
+
+/**
+ * EAN-13 codes for the articles, as catalog.generateInternalBarcodes makes
+ * them (same digits from the same random numbers). The demo database is empty
+ * at this point, so only the codes made here can collide; no lookup needed.
+ */
+function demoBarcodes(count, random) {
+    const taken = new Set();
+    const codes = [];
+    for (let attempts = 0; codes.length < count && attempts < count * 200; attempts++) {
+        let body = '2' + Math.min(Math.floor(random() * 9), 8);
+        for (let i = 0; i < 10; i++) body += Math.floor(random() * 10);
+        const code = body + catalog.ean13CheckDigit(body);
+        if (taken.has(code)) continue;
+        taken.add(code);
+        codes.push(code);
+    }
+    if (codes.length < count) throw new Error('Demo barcodes: not enough codes');
+    return codes;
+}
+
+// The demo PINs are known to everybody: hashed once per run of the program
+// (scrypt is slow on purpose), then reused when the demo is started again.
+const demoPinHashes = new Map();
+function demoPinHash(pin) {
+    if (!demoPinHashes.has(pin)) demoPinHashes.set(pin, hashPin(pin));
+    return demoPinHashes.get(pin);
+}
+
+/** Last stock movement written so far (the next ones are after it). */
+const lastLogRow = (api) => api.get('SELECT COALESCE(MAX(rowid), 0) AS id FROM inventory_logs').id;
+
 // ------------------------------------------------------------------
 // Pictures: simple drawings of the garment in its colour, kept on disk
 // ------------------------------------------------------------------
@@ -203,9 +270,18 @@ function logoSvg(letter) {
 /**
  * Fill an empty (just created) demo database.
  * @param api       database adapter of the OPEN database (the demo file)
- * @param options   { lang: 'ar'|'fr'|'en', imagesDir, now: Date, seed, shiftService }
+ * @param options   { lang: 'ar'|'fr'|'en', imagesDir, now: Date, seed }
  */
-function seedDemoShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20261006, shiftService } = {}) {
+function seedDemoShop(baseApi, options = {}) {
+    const api = withPreparedStatements(baseApi);
+    try {
+        return buildShop(api, options);
+    } finally {
+        api.free();
+    }
+}
+
+function buildShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20261006 } = {}) {
     const random = seeded(seed);
     const tr = (obj) => obj[lang] || obj.fr;
     const setSetting = (key, value) => api.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, JSON.stringify(value)]);
@@ -234,7 +310,7 @@ function seedDemoShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20
     // Employees (PINs hashed like real ones)
     for (const staff of DEMO_STAFF) {
         api.run('INSERT INTO employees (id, name, pin, role, is_active, created_at) VALUES (?, ?, ?, ?, 1, ?)',
-            [staff.id, tr(staff.name), hashPin(staff.pin), staff.role, sqlTime(at(DAYS + 10, 9))]);
+            [staff.id, tr(staff.name), demoPinHash(staff.pin), staff.role, sqlTime(at(DAYS + 10, 9))]);
     }
     const cashier = DEMO_STAFF[1].id;
     const admin = DEMO_STAFF[0].id;
@@ -312,8 +388,7 @@ function seedDemoShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20
     }
 
     // ---- Articles with their stock: what is left today + what was sold
-    const reservedBarcodes = new Set();
-    const barcodes = catalog.generateInternalBarcodes(api, variantsPlan.length, reservedBarcodes, random);
+    const barcodes = demoBarcodes(variantsPlan.length, random);
     let barcodeIndex = 0;
     for (const article of articles) {
         const image = writeImage(`demo-${article.key.toLowerCase()}.svg`, garmentSvg(article.shape, colorOf(article.colors[0]).hex));
@@ -384,6 +459,10 @@ function seedDemoShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20
     const soldLines = [];
     for (const day of days) {
         const opening = 5000;
+        // Cash expected in the drawer at closing, counted as the day goes
+        // (same rule as shiftService.getShiftStats: cash sales + kridi paid in
+        // cash - refunds of tickets not on kridi - expenses; checked in the tests)
+        let drawer = opening;
         const shiftStart = at(day.daysAgo, 9, 20);
         const shiftId = `demo-shift-${day.daysAgo}`;
         api.run('INSERT INTO shifts (id, employee_id, start_time, opening_cash, notes) VALUES (?, ?, ?, ?, ?)',
@@ -402,6 +481,7 @@ function seedDemoShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20
             const discount = random() < 0.12 ? Math.min(500, Math.round(subtotal * 0.05 / 100) * 100) : 0;
             const total = subtotal - discount;
             const created = sqlTime(ticket.time);
+            const logsBefore = lastLogRow(api);
             api.run(`INSERT INTO sales (id, receipt_number, employee_id, customer_id, subtotal, tax_amount, discount_amount, total, status, created_at)
                      VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'completed', ?)`, [saleId, receipt, cashier, customer ? customer.id : null, subtotal, discount, total, created]);
             for (const line of ticket.lines) {
@@ -414,8 +494,10 @@ function seedDemoShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20
                 catalog.adjustStock(api, { productId: line.article.id, variantId: v.id, delta: -line.quantity, type: 'sale', reason: `Sale #${receipt}`, employeeId: cashier });
                 soldLines.push({ saleId, lineId, line, time: ticket.time, receipt, credit, method });
             }
-            api.run('UPDATE inventory_logs SET created_at = ? WHERE reason = ?', [created, `Sale #${receipt}`]);
+            // The ticket's stock movements: the rows written since logsBefore
+            api.run('UPDATE inventory_logs SET created_at = ? WHERE rowid > ?', [created, logsBefore]);
             api.run('INSERT INTO payments (id, sale_id, method, amount, created_at) VALUES (?, ?, ?, ?, ?)', [api.uuid(), saleId, method, total, created]);
+            if (method === 'cash') drawer += total;
             if (customer) api.run('UPDATE customers SET total_spent = total_spent + ? WHERE id = ?', [total, customer.id]);
             if (credit) {
                 creditCount++;
@@ -440,6 +522,7 @@ function seedDemoShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20
             api.run('INSERT INTO credit_payments (id, credit_sale_id, amount, payment_method, received_by, created_at) VALUES (?, ?, ?, ?, ?, ?)',
                 [api.uuid(), debt.id, amount, 'cash', cashier, when]);
             debt.paid += amount;
+            drawer += amount;
             api.run('UPDATE credit_sales SET amount_paid = ?, status = ? WHERE id = ?', [debt.paid, debt.paid >= debt.total ? 'paid' : 'partial', debt.id]);
             api.run('UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?', [amount, debt.customer]);
         }
@@ -453,6 +536,7 @@ function seedDemoShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20
                 returnCount++;
                 const returnId = api.uuid();
                 const sellable = random() < 0.8;
+                const logsBefore = lastLogRow(api);
                 returnService.createReturn(api, {
                     id: returnId, sale_id: s.saleId, return_number: `RET-DEMO-${String(returnCount).padStart(3, '0')}`,
                     total_refund: s.line.article.price, reason: sellable ? 'size' : 'defect', employee_id: cashier,
@@ -460,22 +544,24 @@ function seedDemoShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20
                 });
                 const when = sqlTime(at(day.daysAgo, 15, Math.floor(random() * 50)));
                 api.run('UPDATE returns SET created_at = ? WHERE id = ?', [when, returnId]);
-                api.run('UPDATE inventory_logs SET created_at = ? WHERE reason = ?', [when, `Return: RET-DEMO-${String(returnCount).padStart(3, '0')}`]);
+                drawer -= s.line.article.price;
+                api.run('UPDATE inventory_logs SET created_at = ? WHERE rowid > ?', [when, logsBefore]);
             }
         }
 
         // Money taken out for the shop
         if (random() < 0.3) {
+            const amount = (2 + Math.floor(random() * 12)) * 100;
             api.run('INSERT INTO cash_expenses (id, shift_id, employee_id, amount, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                [api.uuid(), shiftId, cashier, (2 + Math.floor(random() * 12)) * 100, pick(random, expenseReasons), sqlTime(at(day.daysAgo, 13, Math.floor(random() * 50)))]);
+                [api.uuid(), shiftId, cashier, amount, pick(random, expenseReasons), sqlTime(at(day.daysAgo, 13, Math.floor(random() * 50)))]);
+            drawer -= amount;
         }
 
         // Closing, except today's drawer which is still open
         if (day.daysAgo > 0) {
             const end = at(day.daysAgo, 19, 30);
             api.run('UPDATE shifts SET end_time = ? WHERE id = ?', [end.toISOString(), shiftId]);
-            const stats = shiftService ? shiftService.getShiftStats(shiftId) : null;
-            const expected = stats ? stats.expected_cash : opening;
+            const expected = Math.round(drawer * 100) / 100;
             // Usually right, sometimes a small difference
             const roll = random();
             const diff = roll < 0.8 ? 0 : roll < 0.9 ? -100 : roll < 0.95 ? -50 : 50;

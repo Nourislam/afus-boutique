@@ -17,12 +17,6 @@ const init = require('../database/init');
 const dbApi = require('../database/api');
 const { seedDemoShop } = require('./demoData');
 
-let ShiftServiceClass = null;
-const shiftService = () => {
-    if (!ShiftServiceClass) ShiftServiceClass = require('./shiftService');
-    return new ShiftServiceClass();
-};
-
 const demoFolder = () => {
     const { app } = require('electron');
     return path.join(app.getPath('userData'), init.DEMO_FOLDER);
@@ -32,10 +26,10 @@ const demoFolder = () => {
 function build(lang) {
     const imagesDir = path.join(demoFolder(), 'images');
     let summary = null;
+    // One transaction: written to the demo file once, when it is committed
     dbApi.transaction(() => {
-        summary = seedDemoShop(dbApi, { lang, imagesDir, now: new Date(), shiftService: shiftService() });
+        summary = seedDemoShop(dbApi, { lang, imagesDir, now: new Date() });
     });
-    init.saveDatabase();
     return summary;
 }
 

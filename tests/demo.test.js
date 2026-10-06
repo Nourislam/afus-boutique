@@ -106,9 +106,11 @@ describe('demo shop: its own database, never the shop\'s', () => {
             expect(Math.round(c.credit_balance)).toBe(Math.round(owed));
         }
         expect(api.get("SELECT COUNT(*) AS n FROM credit_sales WHERE status != 'paid' AND due_date < ?", [new Date().toISOString()]).n).toBeGreaterThan(0);
-        // Closed drawers: counted cash close to what was expected
+        // Every closed drawer: counted cash close to what the program expects
+        // (the demo computes it while building; checked here with the program's own formula)
         const shifts = new ShiftService();
-        const closed = api.all('SELECT id FROM shifts WHERE end_time IS NOT NULL LIMIT 20');
+        const closed = api.all('SELECT id FROM shifts WHERE end_time IS NOT NULL');
+        expect(closed.length).toBe(90);
         for (const s of closed) {
             const d = shifts.getShiftStats(s.id).cash_difference;
             expect(d).toBeGreaterThanOrEqual(-100);
