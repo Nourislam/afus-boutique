@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import {
     LayoutDashboard, ShoppingCart, Package, Boxes, UserCog, BarChart3, Settings, LogOut, Percent, QrCode,
-    History, CreditCard, FileText, LibraryBig, Users, Truck, PanelLeftClose, PanelLeftOpen, LayoutGrid, Rows3,
+    History, CreditCard, FileText, LibraryBig, Users, Truck, PanelLeftClose, PanelLeftOpen,
     GraduationCap,
 } from 'lucide-react';
 import { useAuthStore, PERMISSIONS } from '../../stores/authStore';
@@ -13,7 +13,7 @@ import { translateError } from '../../i18n/errors';
 import ShiftSummaryDialog from '../shifts/ShiftSummaryDialog';
 import { ShopLogo } from '../shop/ShopLogo';
 import { toast } from '../ui/Toast';
-import { SIMPLE_PATHS, saveUiMode } from '../../lib/uiMode';
+import { SIMPLE_PATHS } from '../../lib/uiMode';
 import { offerTabs } from '../../lib/modules';
 import { useTrainingStore } from '../../stores/trainingStore';
 
@@ -96,7 +96,6 @@ export function Sidebar() {
     const [currentShiftId, setCurrentShiftId] = useState(null);
     const [showShiftSummary, setShowShiftSummary] = useState(false);
     const [collapsed, setCollapsed] = useState(readCollapsed);
-    const [switching, setSwitching] = useState(false);
     const { t } = useT();
     const features = useSettingsStore(state => state.settings.features);
     const shopName = useSettingsStore(state => state.settings.businessName);
@@ -141,19 +140,6 @@ export function Sidebar() {
         return !value;
     });
 
-    const switchMode = async (mode) => {
-        if (mode === uiMode || switching) return;
-        setSwitching(true);
-        try {
-            await saveUiMode(mode);
-            toast.success(t(mode === 'simple' ? 'nav.mode.nowSimple' : 'nav.mode.nowFull'));
-        } catch (error) {
-            toast.error(translateError(error));
-        } finally {
-            setSwitching(false);
-        }
-    };
-
     // Leaving with an open cash drawer always goes through the closing screen
     const handleLogout = () => {
         if (currentShiftId) setShowShiftSummary(true);
@@ -162,7 +148,8 @@ export function Sidebar() {
 
     const roleName = t(`role.${currentEmployee?.role || 'cashier'}`);
     const shopLabel = shopName || t('shop.unnamed');
-    const who = `${shopLabel} — ${currentEmployee?.name || t('role.user')} (${roleName})`;
+    const userName = currentEmployee?.name || t('role.user');
+    const who = `${shopLabel} — ${userName} — ${roleName}`;
     const itemClass = (isActive) => `sidebar-item ${collapsed ? 'justify-center !px-0' : ''} ${isActive ? 'active' : ''}`;
     const navItem = (item) => (
         <NavLink
@@ -177,7 +164,6 @@ export function Sidebar() {
         </NavLink>
     );
     const logoutLabel = currentShiftId ? t('nav.closeAndLogout') : t('nav.logout');
-    const canChangeMode = hasPermission(PERMISSIONS.SETTINGS_VIEW);
 
     return (
         <aside className={`${collapsed ? 'w-16' : 'w-56'} flex-none bg-dark-secondary border-e border-dark-border flex flex-col transition-[width] duration-200`}>
@@ -196,18 +182,22 @@ export function Sidebar() {
                         {currentShiftId && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-label={t('shift.open')} />}
                     </span>
                 ) : (
-                    <span className="block px-1 min-w-0">
-                        <span className="flex items-start justify-between gap-2">
-                            <ShopLogo fileName={shopLogo} name={shopName} size={40} maxWidth={150} rounded="rounded-md" />
-                            <PanelLeftClose className="w-4 h-4 mt-1 text-zinc-500 group-hover:text-zinc-300 flip-rtl flex-none" aria-hidden />
+                    <span className="flex items-center gap-2.5 min-w-0" data-testid="sidebar-shop">
+                        {/* The shop's own logo, once, in a fixed square (a wide logo fits inside) */}
+                        <span className="w-10 h-10 flex-none flex items-center justify-center" data-testid="sidebar-logo">
+                            <ShopLogo fileName={shopLogo} name={shopName} size={40} rounded="rounded-md" />
                         </span>
-                        <span className="block mt-2 text-sm font-semibold truncate">{shopLabel}</span>
-                        <span className="flex items-center gap-1.5 text-xs text-zinc-300 min-w-0">
-                            <span className="truncate">{currentEmployee?.name || t('role.user')}</span>
-                            {/* Open cash drawer: a dot, so the role keeps its line */}
-                            {currentShiftId && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-none" title={t('shift.open')} aria-label={t('shift.open')} />}
+                        {/* Shop name, then who is working and their role */}
+                        <span className="flex-1 min-w-0 leading-tight" data-testid="sidebar-info">
+                            {/* dir="auto": an Arabic name in a French screen (or the reverse) is cut at its own end */}
+                            <span dir="auto" className="block text-sm font-semibold truncate ltr:text-left rtl:text-right" title={shopLabel}>{shopLabel}</span>
+                            <span className="flex items-center gap-1 mt-0.5 text-xs min-w-0" title={`${userName} — ${roleName}`}>
+                                <span dir="auto" className="truncate min-w-0 text-zinc-300">{userName}</span>
+                                <span className="flex-none text-zinc-500">— {roleName}</span>
+                                {/* Open cash drawer: a dot */}
+                                {currentShiftId && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-none" title={t('shift.open')} aria-label={t('shift.open')} />}
+                            </span>
                         </span>
-                        <span className="block text-xs text-zinc-500 truncate">({roleName})</span>
                     </span>
                 )}
             </button>
@@ -225,25 +215,6 @@ export function Sidebar() {
             </nav>
 
             <div className="p-2 border-t border-dark-border space-y-1">
-                {/* Simple / full menu, for the people who may change Settings */}
-                {canChangeMode && (collapsed ? (
-                    <button type="button" onClick={() => switchMode(simple ? 'full' : 'simple')} disabled={switching}
-                        className="sidebar-item w-full justify-center !px-0"
-                        {...tooltip.props(t(simple ? 'nav.mode.switchToFull' : 'nav.mode.switchToSimple'))}>
-                        {simple ? <LayoutGrid className="w-[18px] h-[18px]" /> : <Rows3 className="w-[18px] h-[18px]" />}
-                    </button>
-                ) : (
-                    <div className="segmented w-full" role="group" aria-label={t('nav.mode.label')}>
-                        {['simple', 'full'].map(mode => (
-                            <button key={mode} type="button" onClick={() => switchMode(mode)} disabled={switching}
-                                aria-pressed={uiMode === mode}
-                                className={`flex-1 !px-1 !h-7 text-xs ${uiMode === mode ? 'active' : ''}`}
-                                title={t(`nav.mode.${mode}Hint`)}>
-                                {t(`nav.mode.${mode}`)}
-                            </button>
-                        ))}
-                    </div>
-                ))}
                 {!trainingActive && (
                     <button type="button" onClick={enterTraining} disabled={startingTraining} data-testid="nav-training"
                         className={`sidebar-item w-full text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 ${collapsed ? 'justify-center !px-0' : ''}`}
@@ -259,9 +230,15 @@ export function Sidebar() {
                     <LogOut className="w-[18px] h-[18px] flip-rtl flex-none" />
                     <span className={collapsed ? 'sr-only' : 'truncate'}>{logoutLabel}</span>
                 </button>
-                {collapsed && (
+                {/* Open / close the menu (a click on the shop does it too) */}
+                {collapsed ? (
                     <button type="button" onClick={toggleCollapsed} className="sidebar-item w-full justify-center !px-0 text-zinc-500" {...tooltip.props(t('nav.expand'))}>
                         <PanelLeftOpen className="w-[18px] h-[18px] flip-rtl" />
+                    </button>
+                ) : (
+                    <button type="button" onClick={toggleCollapsed} className="sidebar-item w-full text-zinc-500" data-testid="nav-collapse">
+                        <PanelLeftClose className="w-[18px] h-[18px] flip-rtl flex-none" />
+                        <span className="truncate">{t('nav.collapse')}</span>
                     </button>
                 )}
             </div>
