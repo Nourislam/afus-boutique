@@ -455,8 +455,10 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             quantity: i.quantity, unitPrice: i.unit_price === null || i.unit_price === undefined ? null : Number(i.unit_price),
         }));
         const first = items[0] || {};
+        const total = items.reduce((sum, i) => sum + (i.unitPrice === null ? 0 : i.unitPrice * i.quantity), 0);
         return {
-            id: o.id, createdAt: o.received_at, status: o.status, statusAt: o.status_at || null,
+            id: o.id, createdAt: o.received_at, status: o.status, statusAt: o.status_at || null, phoneKey: o.phone_key || '',
+            total: Math.round(total * 100) / 100,
             moneyReceivedAt: o.money_received_at || null, receipt: o.receipt_number || null,
             productId: first.productId || '', productName: first.productName || '', size: first.size || '', color: first.color || '',
             quantity: items.reduce((n, i) => n + i.quantity, 0),
@@ -550,15 +552,42 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return syncOrders({ now });
     }
 
-    /** The website's orders kept in AFUS (after bringing the new ones). Shown without internet too. */
-    async function orders() {
+    const customerView = (c) => ({
+        phone: c.phone, name: c.name || '', orders: c.orders, delivered: c.delivered, returned: c.returned,
+        cancelled: c.cancelled, successful: c.successful, total: c.total, lastAt: c.lastAt,
+    });
+
+    /**
+     * The website's orders kept in AFUS (after bringing the new ones), each
+     * with its customer's figures (by phone). Shown without internet too.
+     */
+    async function orders({ status = null } = {}) {
         mustExist(read());
         if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
         const r = await syncOrders();
-        const list = orderBook.listOrders(api).map(orderView);
+        const list = orderBook.listOrders(api, { status }).map(orderView);
+        const stats = Object.fromEntries(orderBook.customerStats(api, { phones: list.map(o => o.phoneKey) }).map(c => [c.phone, customerView(c)]));
+        for (const o of list) o.customer = stats[o.phoneKey] || null;
         const sync = read().sync;
-        if (r.reason === 'not_published' && !list.length) return { ok: false, reason: 'not_published', orders: [], sync };
-        return { ok: true, synced: r.ok, reason: r.ok ? null : r.reason, orders: list, sync };
+        const counts = orderBook.statusCounts(api);
+        if (r.reason === 'not_published' && !list.length && !status) return { ok: false, reason: 'not_published', orders: [], sync, counts };
+        return { ok: true, synced: r.ok, reason: r.ok ? null : r.reason, orders: list, sync, counts };
+    }
+
+    /** The website's customers (one per phone), most recent first; search by name or phone. AFUS only. */
+    function customers({ search = '' } = {}) {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        return orderBook.customerStats(api, { search: String(search).slice(0, 60) }).map(customerView);
+    }
+
+    /** One customer's history: figures and every order with its statuses. */
+    function customerHistory({ phone } = {}) {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        const h = orderBook.customerHistory(api, phone);
+        if (!h) throw codedError('WEBSITE_CUSTOMER_NOT_FOUND', {});
+        return { ...customerView(h), list: h.list.map(o => ({ ...orderView(o), events: o.events })) };
     }
 
     /**
@@ -590,7 +619,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
-        publishSite, recheckSite, orders, syncOrders, syncIfDue, setOrderStatus, setPublicInfo,
+        publishSite, recheckSite, orders, customers, customerHistory, syncOrders, syncIfDue, setOrderStatus, setPublicInfo,
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),

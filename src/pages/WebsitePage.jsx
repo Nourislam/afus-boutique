@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Globe, Github, Cloud, Copy, RefreshCw, Palette, CheckCircle2, Circle, Link2, Sparkles, Package, Tag, Image as ImageIcon, Shirt, PackageCheck, X,
-    XCircle, Clock, Loader2, ShoppingBag, Store,
+    XCircle, Clock, Loader2, ShoppingBag, Store, Users, Undo2,
 } from 'lucide-react';
+import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { StatTile } from '../components/ui/StatTile';
@@ -777,18 +778,30 @@ function PublishPanel({ site, setSite, busy, run }) {
 /** The order requests customers sent from the website, newest first (read from the website). */
 function WebsiteOrders() {
     const { t } = useT();
+    const [tab, setTab] = useState('orders');
+    const [status, setStatus] = useState(null);
     const [state, setState] = useState({ loading: false, data: null });
-    const load = () => {
+    const [history, setHistory] = useState(null);
+    const load = (st = status) => {
         setState(s => ({ ...s, loading: true }));
-        window.electronAPI.website.orders().then((data) => setState({ loading: false, data }), () => setState({ loading: false, data: { ok: false, reason: 'network', orders: [] } }));
+        window.electronAPI.website.orders({ status: st }).then((data) => setState({ loading: false, data }), () => setState({ loading: false, data: { ok: false, reason: 'network', orders: [] } }));
     };
-    useEffect(() => { load(); }, []);
+    useEffect(() => { load(status); }, [status]);
     const data = state.data;
+    const counts = data?.counts || {};
+    const all = Object.values(counts).reduce((n, x) => n + x, 0);
     return (
         <section className="card space-y-3 xl:col-span-3" data-testid="website-orders">
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-semibold flex items-center gap-2"><ShoppingBag className="w-4 h-4 text-indigo-300" /> {t('website.orders.title')}</h2>
-                <Button size="sm" variant="secondary" onClick={load} loading={state.loading} data-testid="website-orders-refresh"><RefreshCw className="w-4 h-4" /> {t('website.orders.refresh')}</Button>
+                <div className="flex flex-wrap gap-2">
+                    {['orders', 'customers'].map(k => (
+                        <Button key={k} size="sm" variant={tab === k ? 'primary' : 'ghost'} onClick={() => setTab(k)} data-testid={`website-orders-tab-${k}`}>
+                            {k === 'orders' ? <ShoppingBag className="w-4 h-4" /> : <Users className="w-4 h-4" />} {t(`website.orders.tab.${k}`)}
+                        </Button>
+                    ))}
+                    <Button size="sm" variant="secondary" onClick={() => load()} loading={state.loading} data-testid="website-orders-refresh"><RefreshCw className="w-4 h-4" /> {t('website.orders.refresh')}</Button>
+                </div>
             </div>
             <p className="text-xs text-zinc-500">{t('website.orders.hint')}</p>
             {data?.sync?.lastAt && (
@@ -801,18 +814,36 @@ function WebsiteOrders() {
                 </p>
             )}
             {data && (!data.ok || data.synced === false) && data.reason && <p className="text-sm text-amber-300">{t(`website.orders.reason.${data.reason || 'network'}`)}</p>}
-            {data?.ok && data.orders.length === 0 && <p className="text-sm text-zinc-500">{t('website.orders.none')}</p>}
-            {data?.ok && data.orders.length > 0 && (
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm" data-testid="website-orders-table">
-                        <thead className="text-zinc-500 text-xs">
-                            <tr>{['date', 'customer', 'phone', 'article', 'options', 'quantity', 'where', 'status'].map(k => <th key={k} className="text-start font-medium py-2 px-2 whitespace-nowrap">{t(`website.orders.col.${k}`)}</th>)}</tr>
-                        </thead>
-                        <tbody>
-                            {data.orders.map(o => (
+
+            {tab === 'customers' ? <WebsiteCustomers onOpen={setHistory} /> : (
+                <>
+                    {/* One status at a time, with how many orders are in it */}
+                    <div className="flex flex-wrap gap-1.5" data-testid="website-orders-filters">
+                        <button type="button" className={`badge cursor-pointer ${!status ? 'bg-indigo-500/20 text-indigo-200' : 'bg-dark-tertiary text-zinc-400'}`} onClick={() => setStatus(null)} data-testid="website-orders-filter-all">
+                            {t('website.orders.filterAll')} <bdi>{formatNumber(all)}</bdi>
+                        </button>
+                        {ORDER_STATUSES.map(st => (
+                            <button key={st} type="button" className={`badge cursor-pointer ${status === st ? 'bg-indigo-500/20 text-indigo-200' : 'bg-dark-tertiary text-zinc-400'}`}
+                                onClick={() => setStatus(st)} data-testid={`website-orders-filter-${st}`}>
+                                {t(`website.orders.status.${st}`)} <bdi>{formatNumber(counts[st] || 0)}</bdi>
+                            </button>
+                        ))}
+                    </div>
+                    {data?.ok && data.orders.length === 0 && <p className="text-sm text-zinc-500">{t('website.orders.none')}</p>}
+                    {data?.ok && data.orders.length > 0 && (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm" data-testid="website-orders-table">
+                                <thead className="text-zinc-500 text-xs">
+                                    <tr>{['date', 'customer', 'phone', 'article', 'options', 'quantity', 'where', 'status'].map(k => <th key={k} className="text-start font-medium py-2 px-2 whitespace-nowrap">{t(`website.orders.col.${k}`)}</th>)}</tr>
+                                </thead>
+                                <tbody>
+                                    {data.orders.map(o => (
                                 <tr key={o.id} className="border-t border-dark-border align-top">
                                     <td className="py-2 px-2 whitespace-nowrap">{formatDate(o.createdAt, 'datetime')}</td>
-                                    <td className="py-2 px-2"><bdi>{o.customerName}</bdi></td>
+                                    <td className="py-2 px-2">
+                                        <bdi>{o.customerName}</bdi>
+                                        {o.customer && <CustomerBadge c={o.customer} onOpen={() => setHistory(o.phoneKey)} />}
+                                    </td>
                                     <td className="py-2 px-2"><bdi dir="ltr" className="font-mono">{o.phone}</bdi></td>
                                     {o.items?.length ? (
                                         <td className="py-2 px-2" colSpan={3} data-testid="website-order-items">
@@ -845,18 +876,124 @@ function WebsiteOrders() {
                                         )}
                                         {o.note && <span className="block text-xs text-zinc-500">{o.note}</span>}
                                     </td>
-                                    <td className="py-2 px-2"><OrderStatus order={o} onChanged={(next) => setState(st => ({ ...st, data: { ...st.data, orders: st.data.orders.map(x => (x.id === next.id ? next : x)) } }))} /></td>
+                                    <td className="py-2 px-2"><OrderStatus order={o} onChanged={() => load()} /></td>
+                                </tr>
+                            ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </>
+            )}
+            {history && <CustomerHistory phone={history} onClose={() => setHistory(null)} />}
+        </section>
+    );
+}
+
+/** A customer's figures in one line, under their name (AFUS only). */
+function CustomerBadge({ c, onOpen }) {
+    const { t } = useT();
+    return (
+        <button type="button" onClick={onOpen} className="mt-1 flex flex-wrap gap-x-2 text-xs text-start text-zinc-400 hover:text-indigo-200" data-testid="website-order-customer">
+            <span>{t('website.customers.ordersN', { n: c.orders })}</span>
+            {c.successful > 0 && <span className="text-emerald-300">{t('website.customers.successfulN', { n: c.successful })}</span>}
+            {c.returned > 0 && <span className="text-amber-300">{t('website.customers.returnedN', { n: c.returned })}</span>}
+            {c.cancelled > 0 && <span className="text-zinc-500">{t('website.customers.cancelledN', { n: c.cancelled })}</span>}
+        </button>
+    );
+}
+
+/** The website's customers, one per phone number; search by name or phone. */
+function WebsiteCustomers({ onOpen }) {
+    const { t } = useT();
+    const [search, setSearch] = useState('');
+    const [list, setList] = useState(null);
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            window.electronAPI.website.customers({ search }).then(setList, (e) => { toast.error(translateError(e)); setList([]); });
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [search]);
+    return (
+        <div className="space-y-3" data-testid="website-customers">
+            <input className="input w-full max-w-sm" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('website.customers.search')} data-testid="website-customers-search" />
+            {list && list.length === 0 && <p className="text-sm text-zinc-500">{t('website.customers.none')}</p>}
+            {list && list.length > 0 && (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm" data-testid="website-customers-table">
+                        <thead className="text-zinc-500 text-xs">
+                            <tr>{['customer', 'phone', 'orders', 'delivered', 'returned', 'cancelled', 'successful', 'total'].map(k => <th key={k} className="text-start font-medium py-2 px-2 whitespace-nowrap">{t(`website.customers.col.${k}`)}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                            {list.map(c => (
+                                <tr key={c.phone} className="border-t border-dark-border cursor-pointer hover:bg-dark-tertiary/40" onClick={() => onOpen(c.phone)} data-testid="website-customer-row">
+                                    <td className="py-2 px-2"><bdi>{c.name}</bdi></td>
+                                    <td className="py-2 px-2"><bdi dir="ltr" className="font-mono">{c.phone}</bdi></td>
+                                    <td className="py-2 px-2">{formatNumber(c.orders)}</td>
+                                    <td className="py-2 px-2">{formatNumber(c.delivered)}</td>
+                                    <td className="py-2 px-2 text-amber-300">{formatNumber(c.returned)}</td>
+                                    <td className="py-2 px-2 text-zinc-400">{formatNumber(c.cancelled)}</td>
+                                    <td className="py-2 px-2 text-emerald-300">{formatNumber(c.successful)}</td>
+                                    <td className="py-2 px-2 whitespace-nowrap"><bdi dir="ltr">{formatMoney(c.total)}</bdi></td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
             )}
-        </section>
+        </div>
     );
 }
 
-const ORDER_STATUSES = ['new', 'confirmed', 'preparing', 'shipped', 'delivered', 'money_received', 'cancelled'];
+/** One customer (by phone): their figures, every order and the statuses it went through. */
+function CustomerHistory({ phone, onClose }) {
+    const { t } = useT();
+    const [h, setH] = useState(null);
+    useEffect(() => {
+        window.electronAPI.website.customerHistory({ phone }).then(setH, (e) => { toast.error(translateError(e)); onClose(); });
+    }, [phone]);
+    return (
+        <Modal isOpen onClose={onClose} title={t('website.customers.history')} size="lg">
+            {!h ? <p className="text-sm text-zinc-500">…</p> : (
+                <div className="space-y-4" data-testid="website-customer-history">
+                    <div>
+                        <p className="font-semibold"><bdi>{h.name}</bdi></p>
+                        <p className="text-sm text-zinc-400"><bdi dir="ltr" className="font-mono">{h.phone}</bdi></p>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2" data-testid="website-customer-stats">
+                        <StatTile icon={ShoppingBag} label={t('website.customers.col.orders')} value={formatNumber(h.orders)} />
+                        <StatTile icon={PackageCheck} label={t('website.customers.col.delivered')} value={formatNumber(h.delivered)} iconTone="bg-sky-500/15 text-sky-300" />
+                        <StatTile icon={Undo2} label={t('website.customers.col.returned')} value={formatNumber(h.returned)} iconTone="bg-amber-500/15 text-amber-300" />
+                        <StatTile icon={XCircle} label={t('website.customers.col.cancelled')} value={formatNumber(h.cancelled)} />
+                        <StatTile icon={CheckCircle2} label={t('website.customers.col.successful')} value={formatNumber(h.successful)} iconTone="bg-emerald-500/15 text-emerald-300" />
+                        <StatTile icon={Tag} label={t('website.customers.col.total')} value={formatMoney(h.total)} iconTone="bg-emerald-500/15 text-emerald-300" />
+                    </div>
+                    <p className="text-xs text-zinc-500">{t('website.customers.privateHint')}</p>
+                    <ul className="space-y-2" data-testid="website-customer-orders">
+                        {h.list.map(o => (
+                            <li key={o.id} className="rounded-lg bg-dark-tertiary/50 p-3 space-y-1">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-sm">{formatDate(o.createdAt, 'datetime')}</span>
+                                    <span className="badge bg-dark-tertiary text-zinc-200" data-status={o.status}>{t(`website.orders.status.${o.status}`)}</span>
+                                </div>
+                                <p className="text-sm text-zinc-300">
+                                    {o.items.map(i => `${i.productName || i.productId}${[i.size, i.color].filter(Boolean).length ? ` (${[i.size, i.color].filter(Boolean).join(' · ')})` : ''} × ${i.quantity}`).join('، ')}
+                                    {o.total > 0 && <span className="ms-2 text-zinc-400"><bdi dir="ltr">{formatMoney(o.total)}</bdi></span>}
+                                    {o.receipt && <span className="ms-2 text-xs text-zinc-500">{t('website.orders.ticket')} <bdi dir="ltr">{o.receipt}</bdi></span>}
+                                </p>
+                                <p className="text-xs text-zinc-500">
+                                    {o.events.map((e, n) => <span key={n} className="me-2 whitespace-nowrap">{t(`website.orders.status.${e.status}`)} <bdi>{formatDate(e.at, 'datetime')}</bdi>{n < o.events.length - 1 ? ' ←' : ''}</span>)}
+                                </p>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+        </Modal>
+    );
+}
+
+const ORDER_STATUSES = ['new', 'contacted', 'confirmed', 'preparing', 'shipped', 'delivered', 'money_received', 'returned', 'cancelled'];
 
 /**
  * Where a website order is (cash on delivery). Only "Money received" makes it
@@ -889,7 +1026,7 @@ function OrderStatus({ order, onChanged }) {
             <select className="input py-1 text-xs" value={asking ? 'money_received' : order.status} disabled={busy}
                 aria-label={t('website.orders.col.status')} data-testid="website-order-status-select"
                 onChange={(e) => (e.target.value === 'money_received' ? setAsking(true) : (setAsking(false), change(e.target.value)))}>
-                {ORDER_STATUSES.filter(st => !(order.status === 'cancelled' && st === 'money_received')).map(st => <option key={st} value={st}>{t(`website.orders.status.${st}`)}</option>)}
+                {ORDER_STATUSES.filter(st => !(['cancelled', 'returned'].includes(order.status) && st === 'money_received')).map(st => <option key={st} value={st}>{t(`website.orders.status.${st}`)}</option>)}
             </select>
             {asking && (
                 <span className="block space-y-1 rounded-lg bg-dark-tertiary/60 p-2">

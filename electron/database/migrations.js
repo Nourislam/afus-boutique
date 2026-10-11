@@ -452,6 +452,38 @@ const MIGRATIONS = [
             }
         },
     },
+    {
+        version: '2026_10_website_order_history',
+        description: "Website orders: the customer recognised by phone, and each order's status history (contacted, returned)",
+        up(db) {
+            if (!tableExists(db, 'website_orders')) return;
+            const { phoneKey } = require('../website/orders/phone');
+            // The customer key, filled for the orders already kept (their phone stays as it is)
+            addColumnIfMissing(db, 'website_orders', 'phone_key', "TEXT NOT NULL DEFAULT ''");
+            const rows = db.exec('SELECT id, phone FROM website_orders')[0]?.values || [];
+            const stmt = db.prepare('UPDATE website_orders SET phone_key = ? WHERE id = ?');
+            for (const [id, phone] of rows) stmt.run([phoneKey(phone), id]);
+            stmt.free();
+            db.run('CREATE INDEX IF NOT EXISTS idx_website_orders_phone ON website_orders(phone_key)');
+            // Every status an order went through (who, when); the orders already kept get theirs
+            db.run(`
+                CREATE TABLE IF NOT EXISTS website_order_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id TEXT NOT NULL REFERENCES website_orders(id) ON DELETE CASCADE,
+                    status TEXT NOT NULL,
+                    at DATETIME NOT NULL,
+                    employee_id TEXT
+                )
+            `);
+            db.run('CREATE INDEX IF NOT EXISTS idx_website_order_events_order ON website_order_events(order_id, id)');
+            db.run(`INSERT INTO website_order_events (order_id, status, at)
+                    SELECT o.id, 'new', o.received_at FROM website_orders o
+                    WHERE NOT EXISTS (SELECT 1 FROM website_order_events e WHERE e.order_id = o.id)`);
+            db.run(`INSERT INTO website_order_events (order_id, status, at, employee_id)
+                    SELECT o.id, o.status, COALESCE(o.status_at, o.received_at), o.employee_id FROM website_orders o
+                    WHERE o.status <> 'new' AND NOT EXISTS (SELECT 1 FROM website_order_events e WHERE e.order_id = o.id AND e.status = o.status)`);
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

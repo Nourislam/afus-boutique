@@ -2,8 +2,13 @@
  * The website's orders, kept in AFUS (SQLite) with their delivery status.
  * Cash on delivery: an order is not a sale while it is on its way.
  *
- *   new -> confirmed -> preparing -> shipped -> delivered -> money_received
- *   (cancelled at any step before the money is received)
+ *   new -> contacted -> confirmed -> preparing -> shipped -> delivered -> money_received
+ *   cancelled (before it left) / returned (the parcel came back): never a sale;
+ *   set back to New to take them again
+ *
+ * The customer is recognised by the phone number (phone.js): every order of
+ * one phone makes their history (customerStats / customerHistory). AFUS
+ * only: none of it is published.
  *
  * Only "money_received" is a completed sale: at that moment AFUS records
  * the order as ONE ordinary sale (lines, stock out, payment "cod"), in the
@@ -17,12 +22,17 @@
  *                                  changes an order already kept)
  *   listOrders(api, { limit })     newest first, with their lines
  *   setStatus(api, { id, status, employeeId, now })
+ *   customerStats(api, { phones?, search?, limit? })   per phone
+ *   customerHistory(api, phone)                        one customer
  */
 const catalog = require('../../services/catalogService');
+const { phoneKey } = require('./phone');
 const { nextReceiptNumber } = require('../../services/receiptNumber');
 
-const STATUSES = ['new', 'confirmed', 'preparing', 'shipped', 'delivered', 'money_received', 'cancelled'];
+const STATUSES = ['new', 'contacted', 'confirmed', 'preparing', 'shipped', 'delivered', 'money_received', 'returned', 'cancelled'];
 const COMPLETED = 'money_received';
+// Orders that stopped: never paid from there (set back to New first)
+const STOPPED = ['cancelled', 'returned'];
 const DELIVERY = ['home', 'office', 'pickup'];
 const MAX_LINES = 30;
 
@@ -50,15 +60,17 @@ function importOrders(api, remote = []) {
             if (!lines.length) continue;
             const at = new Date(o.created_at);
             // An order only: no sale and no stock movement until the money is received
-            api.run(`INSERT INTO website_orders (id, received_at, customer_name, first_name, last_name, phone, wilaya, commune, address, delivery,
+            const receivedAt = Number.isNaN(at.getTime()) ? sqlTime(new Date()) : sqlTime(at);
+            api.run(`INSERT INTO website_orders (id, received_at, customer_name, first_name, last_name, phone, phone_key, wilaya, commune, address, delivery,
                                                  courier_company, office_wilaya, office_commune, courier_office, note, status, status_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`, [
-                id, Number.isNaN(at.getTime()) ? sqlTime(new Date()) : sqlTime(at),
-                text(o.customer_name, 80), text(o.first_name, 40), text(o.last_name, 40), text(o.phone, 20), text(o.wilaya, 60), text(o.commune, 60), text(o.address, 200),
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`, [
+                id, receivedAt,
+                text(o.customer_name, 80), text(o.first_name, 40), text(o.last_name, 40), text(o.phone, 20), phoneKey(o.phone), text(o.wilaya, 60), text(o.commune, 60), text(o.address, 200),
                 DELIVERY.includes(o.delivery) ? o.delivery : '',
                 text(o.courier_company, 60), text(o.office_wilaya, 60), text(o.office_commune, 60), text(o.courier_office, 120),
                 text(o.note, 500), sqlTime(new Date()),
             ]);
+            api.run("INSERT INTO website_order_events (order_id, status, at) VALUES (?, 'new', ?)", [id, receivedAt]);
             lines.forEach((i, n) => {
                 const price = Number(i.unit_price);
                 api.run(`INSERT INTO website_order_items (order_id, line, product_id, product_name, size, color, quantity, unit_price)
@@ -81,11 +93,15 @@ function knownIds(api, ids) {
     return api.all(`SELECT id FROM website_orders WHERE id IN (${list.map(() => '?').join(',')})`, list).map(r => r.id);
 }
 
-function listOrders(api, { limit = 200, id = null } = {}) {
+function listOrders(api, { limit = 200, id = null, status = null } = {}) {
+    const where = [];
+    const params = [];
+    if (id) { where.push('o.id = ?'); params.push(id); }
+    if (status && STATUSES.includes(status)) { where.push('o.status = ?'); params.push(status); }
     const orders = api.all(`
         SELECT o.*, s.receipt_number FROM website_orders o LEFT JOIN sales s ON s.id = o.sale_id
-        ${id ? 'WHERE o.id = ?' : ''}
-        ORDER BY julianday(o.received_at) DESC, o.id LIMIT ?`, id ? [id, limit] : [limit]);
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY julianday(o.received_at) DESC, o.id LIMIT ?`, [...params, limit]);
     const items = orders.length
         ? api.all(`SELECT * FROM website_order_items WHERE order_id IN (${orders.map(() => '?').join(',')}) ORDER BY order_id, line`, orders.map(o => o.id))
         : [];
@@ -149,15 +165,76 @@ function setStatus(api, { id, status, employeeId = null, now = new Date(), coded
         if (order.status === COMPLETED || order.sale_id) throw codedError('WEBSITE_ORDER_FINAL', {});
         if (status === order.status) return;
         if (status === COMPLETED) {
-            if (order.status === 'cancelled') throw codedError('WEBSITE_ORDER_CANCELLED', {});
+            if (STOPPED.includes(order.status)) throw codedError('WEBSITE_ORDER_CANCELLED', {});
             sale = recordSale(api, order, { employeeId, now, codedError });
             api.run('UPDATE website_orders SET status = ?, status_at = ?, sale_id = ?, money_received_at = ?, employee_id = ? WHERE id = ? AND sale_id IS NULL',
                 [COMPLETED, sqlTime(now), sale.saleId, sqlTime(now), employeeId, order.id]);
         } else {
             api.run('UPDATE website_orders SET status = ?, status_at = ?, employee_id = ? WHERE id = ?', [status, sqlTime(now), employeeId, order.id]);
         }
+        api.run('INSERT INTO website_order_events (order_id, status, at, employee_id) VALUES (?, ?, ?, ?)', [order.id, status, sqlTime(now), employeeId]);
     });
     return { order: listOrders(api, { id: String(id) })[0], sale };
 }
 
-module.exports = { STATUSES, COMPLETED, importOrders, knownIds, listOrders, setStatus, sqlTime };
+/**
+ * Per customer (phone): orders, delivered (delivered or paid), returned,
+ * cancelled, successful purchases (money received = a sale) and their
+ * total (the sales' totals less what was refunded at the till since).
+ */
+function customerStats(api, { phones = null, search = '', limit = 200 } = {}) {
+    const keys = phones ? [...new Set(phones.map(phoneKey).filter(Boolean))] : null;
+    if (keys && !keys.length) return [];
+    const where = ["o.phone_key <> ''"];
+    const params = [];
+    if (keys) { where.push(`o.phone_key IN (${keys.map(() => '?').join(',')})`); params.push(...keys); }
+    const term = String(search || '').trim();
+    if (term) {
+        // A piece of a number, written any way (+213 770, 00213..., 0770...): its digits after the 0
+        let digits = term.replace(/\D/g, '');
+        if (digits.startsWith('00')) digits = digits.slice(2);
+        digits = digits.startsWith('213') ? digits.slice(3) : digits.replace(/^0/, '');
+        where.push(`(o.customer_name LIKE ?${digits.length >= 3 ? ' OR o.phone_key LIKE ?' : ''})`);
+        params.push(`%${term}%`);
+        if (digits.length >= 3) params.push(`%${digits}%`);
+    }
+    return api.all(`
+        SELECT o.phone_key AS phone,
+               (SELECT x.customer_name FROM website_orders x WHERE x.phone_key = o.phone_key ORDER BY julianday(x.received_at) DESC LIMIT 1) AS name,
+               COUNT(*) AS orders,
+               SUM(CASE WHEN o.status IN ('delivered', 'money_received') THEN 1 ELSE 0 END) AS delivered,
+               SUM(CASE WHEN o.status = 'returned' THEN 1 ELSE 0 END) AS returned,
+               SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+               SUM(CASE WHEN o.status = 'money_received' THEN 1 ELSE 0 END) AS successful,
+               SUM(CASE WHEN o.status = 'money_received' THEN MAX(COALESCE(s.total, 0) - COALESCE(r.refund, 0), 0) ELSE 0 END) AS total,
+               MAX(o.received_at) AS lastAt
+        FROM website_orders o
+        LEFT JOIN sales s ON s.id = o.sale_id
+        LEFT JOIN (SELECT sale_id, SUM(total_refund) AS refund FROM returns GROUP BY sale_id) r ON r.sale_id = o.sale_id
+        WHERE ${where.join(' AND ')}
+        GROUP BY o.phone_key
+        ORDER BY MAX(julianday(o.received_at)) DESC
+        LIMIT ?`, [...params, limit]).map(r => ({ ...r, total: Math.round((Number(r.total) || 0) * 100) / 100 }));
+}
+
+/** One customer: their figures and every order (newest first) with its status history. */
+function customerHistory(api, phone) {
+    const key = phoneKey(phone);
+    if (!key) return null;
+    const stats = customerStats(api, { phones: [key] })[0];
+    if (!stats) return null;
+    const orders = api.all(`
+        SELECT o.id FROM website_orders o WHERE o.phone_key = ? ORDER BY julianday(o.received_at) DESC LIMIT 200`, [key])
+        .map(r => listOrders(api, { id: r.id })[0]);
+    const events = orders.length
+        ? api.all(`SELECT order_id, status, at FROM website_order_events WHERE order_id IN (${orders.map(() => '?').join(',')}) ORDER BY id`, orders.map(o => o.id))
+        : [];
+    return { ...stats, list: orders.map(o => ({ ...o, events: events.filter(e => e.order_id === o.id).map(e => ({ status: e.status, at: e.at })) })) };
+}
+
+/** How many orders are in each status (the screen's filters). */
+function statusCounts(api) {
+    return Object.fromEntries(api.all('SELECT status, COUNT(*) AS n FROM website_orders GROUP BY status').map(r => [r.status, r.n]));
+}
+
+module.exports = { statusCounts, STATUSES, COMPLETED, STOPPED, importOrders, knownIds, listOrders, setStatus, customerStats, customerHistory, sqlTime };

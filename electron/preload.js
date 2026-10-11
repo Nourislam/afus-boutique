@@ -123,7 +123,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         // Opening hours, social pages, map link (shown on the website only)
         setPublicInfo: (info) => ipcRenderer.invoke('website:setPublicInfo', info),
         recheck: () => ipcRenderer.invoke('website:recheck'),
-        orders: () => ipcRenderer.invoke('website:orders'),
+        orders: (args) => ipcRenderer.invoke('website:orders', args),
+        // The website's customers (by phone) and one customer's history: AFUS only
+        customers: (args) => ipcRenderer.invoke('website:customers', args),
+        customerHistory: (args) => ipcRenderer.invoke('website:customerHistory', args),
         // An order's delivery status (money received: it becomes one sale)
         setOrderStatus: (args) => ipcRenderer.invoke('website:setOrderStatus', args),
         openSite: () => ipcRenderer.invoke('website:openSite'),

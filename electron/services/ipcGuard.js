@@ -147,6 +147,8 @@ const RULES = {
     'website:recheck': 'admin',
     'website:orders': 'admin',
     'website:setOrderStatus': 'admin',
+    'website:customers': 'admin',
+    'website:customerHistory': 'admin',
     'website:openSite': 'admin',
     'website:githubStart': 'admin',
     'website:githubCancel': 'admin',

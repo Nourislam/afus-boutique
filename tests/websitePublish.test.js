@@ -256,6 +256,14 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         expect(r.order).toMatchObject({ status: 'money_received', receipt: r.sale.receipt });
         expect(api.get("SELECT COUNT(*) AS n FROM sales WHERE notes = ?", [`website:${id}`]).n).toBe(1);
         expect(await codeOf(() => service.setOrderStatus({ id, status: 'money_received' }))).toBe('WEBSITE_ORDER_FINAL');
+        // The customer (by phone), AFUS only: figures and the order with its statuses
+        const customers = service.customers({ search: '0770' });
+        expect(customers).toEqual([expect.objectContaining({ phone: '0770112233', name: 'Sofiane K.', orders: 1, successful: 1, total: 3000, returned: 0, cancelled: 0, delivered: 1 })]);
+        const h = service.customerHistory({ phone: '+213 770 11 22 33' });
+        expect(h).toMatchObject({ orders: 1, successful: 1, total: 3000 });
+        expect(h.list.map(x => [x.id, x.status, x.events.map(e => e.status)])).toEqual([[id, 'money_received', ['new', 'shipped', 'money_received']]]);
+        expect(o.orders[0].customer).toBeTruthy();
+        expect(await codeOf(() => service.customerHistory({ phone: '0555000000' }))).toBe('WEBSITE_CUSTOMER_NOT_FOUND');
         // No internet: the list is AFUS's own
         await cloud.close();
         o = await service.orders();

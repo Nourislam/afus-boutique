@@ -1934,7 +1934,9 @@ ipcMain.handle('website:githubManage', async () => {
 ipcMain.handle('website:publish', () => website.publishSite());
 ipcMain.handle('website:setPublicInfo', (_, info = {}) => website.setPublicInfo(info));
 ipcMain.handle('website:recheck', () => website.recheckSite());
-ipcMain.handle('website:orders', () => website.orders());
+ipcMain.handle('website:orders', (_, args = {}) => website.orders(args || {}));
+ipcMain.handle('website:customers', (_, args = {}) => website.customers(args || {}));
+ipcMain.handle('website:customerHistory', (_, args = {}) => website.customerHistory(args || {}));
 ipcMain.handle('website:setOrderStatus', (_, args = {}) => website.setOrderStatus(args));
 // The shop's own published website, in the browser (its address comes from GitHub Pages)
 ipcMain.handle('website:openSite', async () => {
