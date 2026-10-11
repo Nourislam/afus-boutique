@@ -10,6 +10,7 @@ const LABEL_KEYS = {
     gift_card: 'pay.giftCard',
     exchange: 'pay.exchange',
     deposit: 'pay.deposit',
+    cod: 'pay.cod',
     split: 'pay.split',
     mixed: 'pay.split',
 };

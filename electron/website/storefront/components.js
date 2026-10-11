@@ -90,7 +90,7 @@ function navItems(ctx) {
         { href: ctx.link('home'), label: ctx.t('home'), page: 'home' },
         { href: ctx.link('page', 'products'), label: ctx.t('products'), page: 'page:products' },
         snap.categories.length && { href: ctx.link('page', 'categories'), label: ctx.t('categories'), page: 'page:categories' },
-        snap.products.length && { href: ctx.link('page', 'new'), label: ctx.t('newIn'), page: 'page:new' },
+        (snap.newProducts || []).length && { href: ctx.link('page', 'new'), label: ctx.t('newIn'), page: 'page:new' },
         snap.products.some(onSale) && { href: ctx.link('page', 'offers'), label: ctx.t('offers'), page: 'page:offers', sale: true },
         (snap.bestSellers || []).length && { href: ctx.link('page', 'best'), label: ctx.t('best'), page: 'page:best' },
         { href: ctx.link('page', 'about'), label: ctx.t('about'), page: 'page:about' },

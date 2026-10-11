@@ -791,13 +791,13 @@ function WebsiteOrders() {
                 <Button size="sm" variant="secondary" onClick={load} loading={state.loading} data-testid="website-orders-refresh"><RefreshCw className="w-4 h-4" /> {t('website.orders.refresh')}</Button>
             </div>
             <p className="text-xs text-zinc-500">{t('website.orders.hint')}</p>
-            {data && !data.ok && <p className="text-sm text-amber-300">{t(`website.orders.reason.${data.reason || 'network'}`)}</p>}
+            {data && (!data.ok || data.synced === false) && data.reason && <p className="text-sm text-amber-300">{t(`website.orders.reason.${data.reason || 'network'}`)}</p>}
             {data?.ok && data.orders.length === 0 && <p className="text-sm text-zinc-500">{t('website.orders.none')}</p>}
             {data?.ok && data.orders.length > 0 && (
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="website-orders-table">
                         <thead className="text-zinc-500 text-xs">
-                            <tr>{['date', 'customer', 'phone', 'article', 'options', 'quantity', 'where'].map(k => <th key={k} className="text-start font-medium py-2 px-2 whitespace-nowrap">{t(`website.orders.col.${k}`)}</th>)}</tr>
+                            <tr>{['date', 'customer', 'phone', 'article', 'options', 'quantity', 'where', 'status'].map(k => <th key={k} className="text-start font-medium py-2 px-2 whitespace-nowrap">{t(`website.orders.col.${k}`)}</th>)}</tr>
                         </thead>
                         <tbody>
                             {data.orders.map(o => (
@@ -830,6 +830,7 @@ function WebsiteOrders() {
                                         {o.delivery && <span className="block text-xs text-indigo-300">{t(`website.orders.delivery.${o.delivery}`)}</span>}
                                         {o.note && <span className="block text-xs text-zinc-500">{o.note}</span>}
                                     </td>
+                                    <td className="py-2 px-2"><OrderStatus order={o} onChanged={(next) => setState(st => ({ ...st, data: { ...st.data, orders: st.data.orders.map(x => (x.id === next.id ? next : x)) } }))} /></td>
                                 </tr>
                             ))}
                         </tbody>
@@ -837,6 +838,54 @@ function WebsiteOrders() {
                 </div>
             )}
         </section>
+    );
+}
+
+const ORDER_STATUSES = ['new', 'confirmed', 'preparing', 'shipped', 'delivered', 'money_received', 'cancelled'];
+
+/**
+ * Where a website order is (cash on delivery). Only "Money received" makes it
+ * a sale: AFUS then records it once (ticket, stock out) and it can no longer
+ * change; asked to confirm first.
+ */
+function OrderStatus({ order, onChanged }) {
+    const { t } = useT();
+    const [asking, setAsking] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const final = order.status === 'money_received';
+    const change = (status) => {
+        setBusy(true);
+        window.electronAPI.website.setOrderStatus({ id: order.id, status }).then((r) => {
+            setBusy(false); setAsking(false);
+            onChanged(r.order);
+            if (r.sale) toast.success(t('website.orders.saleRecorded', { receipt: r.sale.receipt }));
+        }, (e) => { setBusy(false); setAsking(false); toast.error(translateError(e)); });
+    };
+    if (final) {
+        return (
+            <span className="space-y-1 block" data-testid="website-order-status" data-status={order.status}>
+                <span className="badge bg-emerald-500/15 text-emerald-300 whitespace-nowrap">{t('website.orders.status.money_received')}</span>
+                {order.receipt && <span className="block text-xs text-zinc-500 whitespace-nowrap">{t('website.orders.ticket')} <bdi dir="ltr">{order.receipt}</bdi></span>}
+            </span>
+        );
+    }
+    return (
+        <span className="space-y-1 block min-w-[9rem]" data-testid="website-order-status" data-status={order.status}>
+            <select className="input py-1 text-xs" value={asking ? 'money_received' : order.status} disabled={busy}
+                aria-label={t('website.orders.col.status')} data-testid="website-order-status-select"
+                onChange={(e) => (e.target.value === 'money_received' ? setAsking(true) : (setAsking(false), change(e.target.value)))}>
+                {ORDER_STATUSES.filter(st => !(order.status === 'cancelled' && st === 'money_received')).map(st => <option key={st} value={st}>{t(`website.orders.status.${st}`)}</option>)}
+            </select>
+            {asking && (
+                <span className="block space-y-1 rounded-lg bg-dark-tertiary/60 p-2">
+                    <span className="block text-xs text-zinc-400">{t('website.orders.confirmMoney')}</span>
+                    <span className="flex gap-1">
+                        <Button size="sm" onClick={() => change('money_received')} loading={busy} data-testid="website-order-money-confirm">{t('website.orders.recordSale')}</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setAsking(false)}>{t('common.cancel')}</Button>
+                    </span>
+                </span>
+            )}
+        </span>
     );
 }
 

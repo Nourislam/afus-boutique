@@ -401,6 +401,48 @@ const MIGRATIONS = [
             db.run('CREATE INDEX IF NOT EXISTS idx_markdowns_product ON markdowns(product_id)');
         },
     },
+    {
+        version: '2026_10_website_orders',
+        description: "Orders from the shop's website kept in AFUS with their delivery status (cash on delivery: a sale only once the money is received)",
+        up(db) {
+            // New tables only: nothing already saved is changed
+            db.run(`
+                CREATE TABLE IF NOT EXISTS website_orders (
+                    id TEXT PRIMARY KEY,
+                    received_at DATETIME NOT NULL,
+                    customer_name TEXT NOT NULL DEFAULT '',
+                    phone TEXT NOT NULL DEFAULT '',
+                    wilaya TEXT NOT NULL DEFAULT '',
+                    commune TEXT NOT NULL DEFAULT '',
+                    address TEXT NOT NULL DEFAULT '',
+                    delivery TEXT NOT NULL DEFAULT '',
+                    note TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'new',
+                    status_at DATETIME,
+                    sale_id TEXT REFERENCES sales(id) ON DELETE SET NULL,
+                    money_received_at DATETIME,
+                    employee_id TEXT,
+                    imported_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            db.run(`
+                CREATE TABLE IF NOT EXISTS website_order_items (
+                    order_id TEXT NOT NULL REFERENCES website_orders(id) ON DELETE CASCADE,
+                    line INTEGER NOT NULL,
+                    product_id TEXT NOT NULL,
+                    product_name TEXT NOT NULL DEFAULT '',
+                    size TEXT NOT NULL DEFAULT '',
+                    color TEXT NOT NULL DEFAULT '',
+                    quantity INTEGER NOT NULL,
+                    unit_price REAL,
+                    PRIMARY KEY (order_id, line)
+                )
+            `);
+            db.run('CREATE INDEX IF NOT EXISTS idx_website_orders_status ON website_orders(status)');
+            // One website order is one sale at most
+            db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_website_orders_sale ON website_orders(sale_id) WHERE sale_id IS NOT NULL');
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

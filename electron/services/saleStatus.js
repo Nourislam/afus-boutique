@@ -15,4 +15,16 @@ function countedSale(alias = 's') {
     return `COALESCE(${column}, 'completed') NOT IN (${NOT_COUNTED.map(s => `'${s}'`).join(', ')})`;
 }
 
-module.exports = { NOT_COUNTED, countedSale };
+/**
+ * Completed sales only (best sellers): a sale paid and handed over. A sale
+ * without status is an ordinary completed sale; refunded ones stay completed
+ * sales whose returned pieces are taken off line by line. Any other status
+ * (voided, cancelled, or one added later such as a pending order) is not.
+ */
+const COMPLETED = ['completed', 'partially_refunded', 'refunded'];
+function completedSale(alias = 's') {
+    const column = alias ? `${alias}.status` : 'status';
+    return `COALESCE(${column}, 'completed') IN (${COMPLETED.map(s => `'${s}'`).join(', ')})`;
+}
+
+module.exports = { NOT_COUNTED, COMPLETED, countedSale, completedSale };

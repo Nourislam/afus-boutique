@@ -16,7 +16,8 @@
  * deps: { api, getSetting(key), saveSetting(key, value), codedError(code, params),
  *         github: { client, store, openPage, onConnected } (optional),
  *         cloudflare: { client, store, openPage, onConnected, ports, callbackPage } (optional),
- *         blockedMode() -> 'demo' | 'training' | null }
+ *         blockedMode() -> 'demo' | 'training' | null,
+ *         currentEmployee() -> the employee logged in (who changes an order's status) }
  */
 const state = require('./websiteState');
 const providers = require('./providers');
@@ -31,6 +32,7 @@ const { createCloudflareClient } = require('./cloudflare');
 const { createDeployer } = require('./publish/deployer');
 const { canPublishPages } = require('./github');
 const publishPing = require('./publish/ping');
+const orderBook = require('./orders/orderBook');
 const fs = require('fs');
 const path = require('path');
 
@@ -44,7 +46,7 @@ const REPO_TRIES = 5;
 
 const KEY = 'website';
 
-function createWebsiteService({ api, getSetting, saveSetting, codedError, github = {}, cloudflare = {}, blockedMode = () => null, publish = {} }) {
+function createWebsiteService({ api, getSetting, saveSetting, codedError, github = {}, cloudflare = {}, blockedMode = () => null, publish = {}, currentEmployee = () => null }) {
     const read = () => state.normalizeState(getSetting(KEY));
     const write = (next) => { saveSetting(KEY, next); return next; };
     const shopName = () => (getSetting('store_config') || {}).businessName || '';
@@ -443,37 +445,60 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return { ...view(), result };
     }
 
-    /** The cart lines of an order (the website API keeps them as JSON text). */
-    function orderItems(value) {
-        try {
-            const list = typeof value === 'string' ? JSON.parse(value) : value;
-            return Array.isArray(list) ? list.filter(i => i && typeof i === 'object').slice(0, 30) : [];
-        } catch { return []; }
+    /** An order of the order book as the Website screen shows it. */
+    function orderView(o) {
+        const items = o.items.map(i => ({
+            productId: i.product_id, productName: i.product_name, size: i.size, color: i.color,
+            quantity: i.quantity, unitPrice: i.unit_price === null || i.unit_price === undefined ? null : Number(i.unit_price),
+        }));
+        const first = items[0] || {};
+        return {
+            id: o.id, createdAt: o.received_at, status: o.status, statusAt: o.status_at || null,
+            moneyReceivedAt: o.money_received_at || null, receipt: o.receipt_number || null,
+            productId: first.productId || '', productName: first.productName || '', size: first.size || '', color: first.color || '',
+            quantity: items.reduce((n, i) => n + i.quantity, 0),
+            customerName: o.customer_name, phone: o.phone, wilaya: o.wilaya, commune: o.commune, address: o.address, note: o.note,
+            delivery: o.delivery, items,
+        };
     }
 
-    /** The order requests customers sent from the website (from the shop's website API). */
+    /**
+     * The website's orders: the new ones are fetched from the shop's website
+     * API and kept in AFUS (website/orders/orderBook.js), with their delivery
+     * status. The list is AFUS's own, so it shows without internet too.
+     */
     async function orders() {
         const s = mustExist(read());
         if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
         const apiUrl = s.resources.worker?.url;
         const key = deployer.key();
-        if (!apiUrl || !key) return { ok: false, reason: 'not_published', orders: [] };
-        const r = await publishPing.fetchOrders(apiUrl, key, { fetch: publish.fetch });
-        if (!r.ok) return { ok: false, reason: r.reason, orders: [] };
-        const text = (v, n) => String(v ?? '').slice(0, n);
-        return {
-            ok: true,
-            orders: r.orders.slice(-200).reverse().map(o => ({
-                id: text(o.id, 40), createdAt: text(o.created_at, 30), productId: text(o.product_id, 80), productName: text(o.product_name, 160),
-                size: text(o.size, 40), color: text(o.color, 40), quantity: Number(o.quantity) || 1,
-                customerName: text(o.customer_name, 80), phone: text(o.phone, 20), wilaya: text(o.wilaya, 60), commune: text(o.commune, 60), address: text(o.address, 200), note: text(o.note, 500),
-                delivery: ['home', 'pickup'].includes(o.delivery) ? o.delivery : '',
-                items: orderItems(o.items).map(i => ({
-                    productId: text(i.product_id, 80), productName: text(i.product_name, 160), size: text(i.size, 40), color: text(i.color, 40),
-                    quantity: Math.min(20, Math.max(1, parseInt(i.quantity, 10) || 1)), unitPrice: Number.isFinite(Number(i.unit_price)) && i.unit_price !== null ? Number(i.unit_price) : null,
-                })),
-            })),
-        };
+        let reason = null;
+        if (!apiUrl || !key) reason = 'not_published';
+        else {
+            // Only what came after the last order kept (the API gives 200 at a time)
+            for (let page = 0; page < 10; page++) {
+                const last = api.get('SELECT MAX(received_at) AS at FROM website_orders')?.at;
+                const since = last ? `${String(last).replace(' ', 'T').slice(0, 19)}.000Z` : undefined;
+                const r = await publishPing.fetchOrders(apiUrl, key, { fetch: publish.fetch, since });
+                if (!r.ok) { reason = r.reason; break; }
+                orderBook.importOrders(api, r.orders);
+                if (r.orders.length < 200) break;
+            }
+        }
+        const list = orderBook.listOrders(api).map(orderView);
+        if (reason === 'not_published' && !list.length) return { ok: false, reason, orders: [] };
+        return { ok: true, synced: !reason, reason, orders: list };
+    }
+
+    /**
+     * Where an order is: new, confirmed, preparing, shipped, delivered,
+     * money received (then it is one sale in AFUS), cancelled.
+     */
+    function setOrderStatus({ id, status } = {}) {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        const r = orderBook.setStatus(api, { id, status, employeeId: currentEmployee()?.id || null, codedError });
+        return { order: orderView(r.order), sale: r.sale ? { receipt: r.sale.receipt, total: r.sale.total } : null };
     }
 
     /** Link an account (the window's "Connect" buttons). */
@@ -494,7 +519,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
-        publishSite, recheckSite, orders, setPublicInfo,
+        publishSite, recheckSite, orders, setOrderStatus, setPublicInfo,
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),

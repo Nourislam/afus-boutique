@@ -19,11 +19,12 @@ const byNewest = (list) => [...list].sort((a, b) => String(b.createdAt || '').lo
 function pick(ctx, source) {
     const all = ctx.snap.products;
     switch (source) {
-        case 'new': return byNewest(all.filter(p => p.available));
+        // Added to AFUS in the last 7 days (newest first), in stock
+        case 'new': return (ctx.snap.newProducts || []).map(id => all.find(p => p.id === id)).filter(p => p && p.available);
         case 'sale': return all.filter(p => C.onSale(p) && p.available);
         case 'available': return all.filter(p => p.available);
         case 'featured': return [...all.filter(p => p.available && p.images.length), ...all.filter(p => p.available && !p.images.length)];
-        // The shop's best sellers of the last 90 days (order only), in stock
+        // The shop's best sellers of the last 7 days (completed sales, order only), in stock
         case 'best': return (ctx.snap.bestSellers || []).map(id => all.find(p => p.id === id)).filter(p => p && p.available);
         default: return all;
     }

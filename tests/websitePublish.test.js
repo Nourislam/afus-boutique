@@ -230,6 +230,43 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         expect(again.items[0]).toMatchObject({ quantity: 20, unitPrice: null });
     });
 
+    it('orders kept in AFUS: fetched once each, a status per order, money received = one sale; shown without internet', async () => {
+        const { service } = makeService();
+        service.publishSite();
+        await service.publishPending();
+        const orderUrl = `${cloud.base}/w/boutique-yasmine-api/api/orders`;
+        const form = (fields) => fetch(orderUrl, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields).toString() });
+        const items = JSON.stringify([{ product_id: 'jean', product_name: 'Jean', size: '40', color: 'Noir', quantity: 1, unit_price: 3000 }]);
+        await form({ items, customer_name: 'Sofiane K.', phone: '0770112233', wilaya: '16 - Alger', delivery: 'home', website: '' });
+        let o = await service.orders();
+        expect(o).toMatchObject({ ok: true, synced: true });
+        expect(o.orders).toHaveLength(1);
+        expect(o.orders[0]).toMatchObject({ status: 'new', receipt: null, items: [{ productId: 'jean', size: '40', color: 'Noir', quantity: 1 }] });
+        const id = o.orders[0].id;
+        // Fetched again: still one (and the status kept in AFUS is not reset)
+        service.setOrderStatus({ id, status: 'shipped' });
+        o = await service.orders();
+        expect(o.orders.map(x => [x.id, x.status])).toEqual([[id, 'shipped']]);
+        expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(0);
+        const r = service.setOrderStatus({ id, status: 'money_received' });
+        expect(r.sale.total).toBe(3000);
+        expect(r.order).toMatchObject({ status: 'money_received', receipt: r.sale.receipt });
+        expect(api.get("SELECT COUNT(*) AS n FROM sales WHERE notes = ?", [`website:${id}`]).n).toBe(1);
+        expect(await codeOf(() => service.setOrderStatus({ id, status: 'money_received' }))).toBe('WEBSITE_ORDER_FINAL');
+        // No internet: the list is AFUS's own
+        await cloud.close();
+        o = await service.orders();
+        expect(o).toMatchObject({ ok: true, synced: false, reason: 'network' });
+        expect(o.orders.map(x => x.status)).toEqual(['money_received']);
+        cloud = await startFakeCloud({ login: 'yasmine-shop', accounts: [{ id: ACCOUNT, name: 'Boutique' }], subdomain: 'yasmine', d1Factory: async () => new SQL.Database() });
+        // Demo shop / training: not changed there
+        mode = 'demo';
+        expect(await codeOf(() => service.setOrderStatus({ id, status: 'new' }))).toBe('WEBSITE_ACCOUNTS_BLOCKED');
+        mode = null;
+        // Owner only
+        expect(ipcGuard.RULES['website:setOrderStatus']).toBe('admin');
+    });
+
     it('a website made before the cart: Update website adds the new order columns, older orders kept', async () => {
         const { service } = makeService();
         service.publishSite();
@@ -246,7 +283,7 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         const columns = db.exec('PRAGMA table_info(orders)')[0].values.map(c => c[1]);
         for (const c of ['commune', 'delivery', 'items']) expect(columns).toContain(c);
         const o = await service.orders();
-        expect(o.orders.find(x => x.id === 'old')).toMatchObject({ customerName: 'Ancien', items: [], delivery: '' });
+        expect(o.orders.find(x => x.id === 'old')).toMatchObject({ customerName: 'Ancien', delivery: '', status: 'new', items: [{ productId: 'jean', quantity: 1 }] });
     });
 
     it('Update website: same repository, Worker and database; the new price published; unchanged pictures not sent again', async () => {

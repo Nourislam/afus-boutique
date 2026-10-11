@@ -75,7 +75,9 @@ describe('website public data: SQLite internal -> website public', () => {
         // Best sellers: article ids in order, no quantity, amount or customer
         expect(internal.bestSellers.every(id => typeof id === 'string')).toBe(true);
         const salesSql = sql.find(q => /sale_items/.test(q));
-        expect(salesSql).toMatch(/SELECT\s+si\.product_id\s+AS\s+id\s+FROM/i);
+        expect(salesSql).toMatch(/SELECT\s+si\.product_id\s+AS\s+id\b/i);
+        expect(Object.keys(internal).sort()).toEqual(['bestSellers', 'categories', 'newProducts', 'products', 'promotions', 'store', 'variants']);
+        expect(internal.newProducts.every(id => typeof id === 'string')).toBe(true);
         // Rows hold no private column: stock counts become "available" inside SQL
         for (const row of [...internal.products, ...internal.variants]) {
             for (const k of Object.keys(row)) expect(k, k).not.toMatch(/cost|wholesale|supplier|sku|barcode|qr|stock|min_/);
@@ -199,7 +201,7 @@ describe('website public data: SQLite internal -> website public', () => {
         expect(codeOf(() => buildPublicData(api, { now: NOW, secrets: ['gho_SECRETTOKEN123'] }))).toBe('WEBSITE_PRIVATE_DATA');
         expect(checkFiles([{ path: 'index.html', content: 'x cf_at_123456789 y' }], { secrets: ['cf_at_123456789'] })).toHaveLength(1);
         // Every public field has a type (the list is the whole truth)
-        expect(Object.keys(PUBLIC_SHAPE).sort()).toEqual(['bestSellers', 'brands', 'builtAt', 'categories', 'products', 'promotions', 'shop', 'version']);
+        expect(Object.keys(PUBLIC_SHAPE).sort()).toEqual(['bestSellers', 'brands', 'builtAt', 'categories', 'newProducts', 'products', 'promotions', 'shop', 'version']);
     });
 
     it('hours, social pages and map: written on the Website screen, cleaned, shown on the website; other links refused', async () => {

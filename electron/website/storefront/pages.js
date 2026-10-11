@@ -58,12 +58,16 @@ function listingPage(ctx, { title, sub, products, search = false, sort = 'new', 
 
 const allProducts = (ctx) => listingPage(ctx, { title: ctx.t('products'), products: byNewest(ctx.snap.products), search: true });
 const searchPage = (ctx) => listingPage(ctx, { title: ctx.t('searchTitle'), products: byNewest(ctx.snap.products), search: true });
-const newPage = (ctx) => listingPage(ctx, { title: ctx.t('newIn'), products: byNewest(ctx.snap.products.filter(p => p.available)).slice(0, 48) });
+/** Added to AFUS in the last 7 days (publicData.newProducts), newest first. */
+function newPage(ctx) {
+    const products = (ctx.snap.newProducts || []).map(id => ctx.snap.products.find(p => p.id === id)).filter(Boolean);
+    return listingPage(ctx, { title: ctx.t('newIn'), sub: ctx.t('newRule'), products, empty: ctx.t('noNew') });
+}
 
 function bestPage(ctx) {
     const order = ctx.snap.bestSellers || [];
     const products = order.map(id => ctx.snap.products.find(p => p.id === id)).filter(Boolean);
-    return listingPage(ctx, { title: ctx.t('best'), products, sort: 'best', empty: ctx.t('noBest') });
+    return listingPage(ctx, { title: ctx.t('best'), sub: ctx.t('bestRule'), products, sort: 'best', empty: ctx.t('noBest') });
 }
 
 function offersPage(ctx) {

@@ -131,7 +131,9 @@ function toPublic(internal, { now = Date.now(), info = {}, preview = false } = {
         shop: shopOf(internal.store, info, pic),
         categories,
         brands: [...new Set(products.map(p => p.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-        // Best sellers: the order only (from the shop's own sales), public articles only
+        // New products (added in the last 7 days) and best sellers (completed sales of the
+        // last 7 days): the order only, public articles only (services/storeRankings.js)
+        newProducts: (internal.newProducts || []).map(String).filter(id => products.some(p => p.id === id)).slice(0, 200),
         bestSellers: (internal.bestSellers || []).map(String).filter(id => products.some(p => p.id === id)).slice(0, 24),
         products,
         // Live automatic promotions only, for the announcement and sale banners
@@ -155,6 +157,7 @@ const PUBLIC_SHAPE = {
     },
     categories: { '*': { id: 'string', name: 'string', count: 'number' } },
     brands: { '*': 'string' },
+    newProducts: { '*': 'string' },
     bestSellers: { '*': 'string' },
     products: {
         '*': {

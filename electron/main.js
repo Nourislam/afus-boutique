@@ -1842,6 +1842,7 @@ const bringBack = () => {
 const website = createWebsiteService({
   api: dbApi, getSetting: getSettingValue, saveSetting: saveSettingValue, codedError: catalog.codedError,
   blockedMode: () => (isDemo() ? 'demo' : isSandbox() ? 'training' : null),
+  currentEmployee: () => session.getEmployee(),
   github: {
     get client() {
       if (!githubClient) {
@@ -1923,6 +1924,7 @@ ipcMain.handle('website:publish', () => website.publishSite());
 ipcMain.handle('website:setPublicInfo', (_, info = {}) => website.setPublicInfo(info));
 ipcMain.handle('website:recheck', () => website.recheckSite());
 ipcMain.handle('website:orders', () => website.orders());
+ipcMain.handle('website:setOrderStatus', (_, args = {}) => website.setOrderStatus(args));
 // The shop's own published website, in the browser (its address comes from GitHub Pages)
 ipcMain.handle('website:openSite', async () => {
   const url = website.view().site.url;

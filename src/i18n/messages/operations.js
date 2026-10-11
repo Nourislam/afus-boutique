@@ -42,6 +42,7 @@ export default {
     'exchange.failed': ["The exchange was not saved", "L'échange n'a pas été enregistré", "لم يتم حفظ التبديل"],
     'exchange.reason': ["Exchange", "Échange", "تبديل"],
     'pay.exchange': ["Exchanged piece", "Pièce échangée", "قطعة مُبدّلة"],
+    'pay.cod': ["Cash on delivery (website)", "Paiement à la livraison (site)", "الدفع عند الاستلام (الموقع)"],
     'pay.deposit': ["Deposit paid", "Acompte versé", "العربون المدفوع"],
     'res.reserve': ["Reserve", "Réserver", "حجز"],
     'res.list': ["Reservations", "Réservations", "الحجوزات"],
