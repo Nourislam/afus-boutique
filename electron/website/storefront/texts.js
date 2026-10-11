@@ -47,6 +47,9 @@ const TEXTS = {
     thanksText: ['سيتصل بك المحل قريبًا لتأكيد الطلب والتوصيل.', 'La boutique vous appelle bientôt pour confirmer et livrer.', 'The shop will call you soon to confirm and deliver.'],
     errorTitle: ['لم يُرسل الطلب', "La commande n'est pas partie", 'The order was not sent'],
     errorText: ['تحقق من الاسم ورقم الهاتف وأعد المحاولة، أو اتصل بالمحل.', 'Vérifiez le nom et le numéro puis réessayez, ou appelez la boutique.', 'Check the name and number and try again, or call the shop.'],
+    hours: ['أوقات العمل', 'Horaires', 'Opening hours'],
+    follow: ['تابعنا', 'Suivez-nous', 'Follow us'],
+    onMap: ['موقعنا على الخريطة', 'Nous trouver sur la carte', 'Find us on the map'],
     backHome: ['العودة إلى المتجر', 'Retour à la boutique', 'Back to the shop'],
 };
 const INDEX = { ar: 0, fr: 1, en: 2 };

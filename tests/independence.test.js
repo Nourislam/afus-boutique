@@ -60,7 +60,9 @@ describe('offline-first core', () => {
         // The shop's own free website address: shown to the shop, never opened by the program
         // The shop's own website / API addresses, built from its names (GitHub Pages, workers.dev)
         const WEBSITE_FILES = ['electron/website/websiteState.js', 'electron/website/publish/deployer.js', 'electron/website/cloudflare.js', 'src/pages/WebsitePage.jsx'];
-        const shopAddress = ([file, url]) => WEBSITE_FILES.includes(file) && (url.startsWith('https://${') || url.startsWith('https://<'));
+        const shopAddress = ([file, url]) => WEBSITE_FILES.includes(file) && (url.startsWith('https://${') || url.startsWith('https://<')
+            // Examples in the empty fields of the shop's own links (Website screen): never opened by the program
+            || (file === 'src/pages/WebsitePage.jsx' && /^https:\/\/(facebook\.com|instagram\.com|tiktok\.com|maps\.app\.goo\.gl)\/(…|@…)$/.test(url)));
         // GitHub's own sign-in page and API, in the GitHub module only
         const github = ([file, url]) => file === 'electron/website/github.js' && ['https://github.com', 'https://api.github.com'].includes(url);
         // Cloudflare's own sign-in and API, in the Cloudflare module only

@@ -1920,6 +1920,7 @@ ipcMain.handle('website:githubManage', async () => {
   return { opened: true };
 });
 ipcMain.handle('website:publish', () => website.publishSite());
+ipcMain.handle('website:setPublicInfo', (_, info = {}) => website.setPublicInfo(info));
 ipcMain.handle('website:recheck', () => website.recheckSite());
 ipcMain.handle('website:orders', () => website.orders());
 // The shop's own published website, in the browser (its address comes from GitHub Pages)

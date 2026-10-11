@@ -250,6 +250,24 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         expect(service.view().site.url).toBe(`${cloud.base}/pages/yasmine-shop/boutique-yasmine-2/`);
     });
 
+    it('private data in what the website would show: stopped at "articles read", nothing sent to GitHub', async () => {
+        api.run("INSERT INTO customers (id, name, phone) VALUES ('k1', 'Client', '0661223344')");
+        api.run("UPDATE products SET description = 'Réservé pour 0661223344' WHERE id = 'belt'");
+        const { service } = makeService();
+        service.publishSite();
+        await service.publishPending();
+        const v = service.view();
+        expect(v.deploy).toMatchObject({ status: 'failed', failedStep: 'data', reason: 'private_data' });
+        // The repository exists (made earlier in the run) but holds only GitHub's first file
+        expect([...cloud.filesOf('boutique-yasmine').keys()]).toEqual(['README.md']);
+        expect(JSON.stringify(logs)).not.toContain('0661223344');
+        // Fixed in the article: Try again publishes
+        api.run("UPDATE products SET description = '' WHERE id = 'belt'");
+        service.publishSite();
+        await service.publishPending();
+        expect(service.view().deploy.status).toBe('done');
+    });
+
     it('GitHub linked before this version (no right to switch Pages on): asked to link again, nothing started', async () => {
         const { service } = makeService({ scopes: ['public_repo'] });
         const v = service.view();

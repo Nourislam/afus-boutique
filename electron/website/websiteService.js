@@ -20,7 +20,8 @@
  */
 const state = require('./websiteState');
 const providers = require('./providers');
-const { buildSnapshot, summarize } = require('./catalogSnapshot');
+const { summarize } = require('./catalogSnapshot');
+const { buildPublicData, checkSiteFiles, publicInfo } = require('./publicData');
 const { registry } = require('./themes/registry');
 const { renderPage } = require('./storefront/render');
 const { createGithubConnector } = require('./githubConnector');
@@ -91,6 +92,19 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         timeoutMs: cloudflare.timeoutMs,
     });
 
+    /** The program's own keys: never in the website (publicData/guard.js checks it). */
+    function secrets() {
+        const out = [];
+        const add = (v) => { if (typeof v === 'string' && v.length >= 8) out.push(v); };
+        for (const item of ['github', 'cloudflare']) {
+            try { const k = JSON.parse(store.get(item) || 'null'); add(k?.token); add(k?.accessToken); add(k?.refreshToken); } catch { /* none */ }
+        }
+        add(store.get('website-key'));
+        return out;
+    }
+    /** The website's public data, from SQLite (publicData/: internal -> public, checked). */
+    const publicData = ({ now, preview = false } = {}) => buildPublicData(api, { now, preview, info: read().publicInfo, secrets: secrets() });
+
     // Create Website / Update website (publish/deployer.js)
     const ping = (url) => publishPing.ping(url, { fetch: publish.fetch });
     const deployer = createDeployer({
@@ -106,7 +120,8 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         store,
         read,
         write: (next) => { if (!blockedMode()) write(next); },
-        snapshot: () => buildSnapshot(api),
+        snapshot: () => publicData(),
+        checkFiles: (files, data) => checkSiteFiles(api, files, { data, secrets: secrets() }),
         theme: (id) => registry.get(id),
         readImage: publish.readImage,
         shopName,
@@ -198,6 +213,14 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return view();
     }
 
+    /** The check found private data: said plainly (how many places), never what. */
+    function withPrivateCheck(fn) {
+        try { return fn(); } catch (error) {
+            if (error.code === 'WEBSITE_PRIVATE_DATA') throw codedError('WEBSITE_PRIVATE_DATA', { n: error.problems.length });
+            throw error;
+        }
+    }
+
     const PAGES = ['home', 'category', 'product'];
     /**
      * A page of the website as it would look with a theme (the chosen one when
@@ -205,11 +228,14 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
      * nothing is saved, the theme is not changed. For the preview of the
      * Website screen (shown in a frame without script).
      */
-    function previewTheme({ theme, page = 'home', id = null } = {}) {
+    function previewTheme(args = {}) {
+        return withPrivateCheck(() => previewPage(args));
+    }
+    function previewPage({ theme, page = 'home', id = null } = {}) {
         const chosen = theme === undefined || theme === null ? read().theme : theme;
         const t = registry.get(chosen);
         if (!t) throw codedError('WEBSITE_THEME_UNKNOWN');
-        const snapshot = buildSnapshot(api);
+        const snapshot = publicData({ preview: true });
         const kind = PAGES.includes(page) ? page : 'home';
         const productId = kind === 'product' ? (snapshot.products.some(p => p.id === id) ? id : (snapshot.products.find(p => p.images.length) || snapshot.products[0])?.id) : id;
         const html = renderPage({
@@ -252,7 +278,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
      */
     async function update({ now = Date.now() } = {}) {
         const s = mustExist(read());
-        const figures = summarize(buildSnapshot(api, { now }));
+        const figures = summarize(publicData({ now }));
         const ready = connector.linked() && cf.linked();
         write({ ...s, lastUpdate: { at: new Date(now).toISOString(), ...figures, published: false }, lastError: null });
         return { ...view(), result: { published: false, reason: ready ? 'publisher_not_available' : 'accounts', figures } };
@@ -396,6 +422,20 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return { ...view(), result };
     }
 
+    /**
+     * What the owner writes for the website only: opening hours (one line
+     * each), Facebook / Instagram / TikTok pages, a map link. Cleaned: a link
+     * to another site is dropped. The shop's other data is not touched.
+     */
+    function setPublicInfo(info = {}) {
+        const s = mustExist(read());
+        const clean = publicInfo(info);
+        write({ ...s, publicInfo: clean });
+        const refused = ['facebook', 'instagram', 'tiktok'].filter(k => String(info.social?.[k] || '').trim() && !clean.social[k]);
+        if (String(info.mapUrl || '').trim() && !clean.mapUrl) refused.push('mapUrl');
+        return { ...view(), result: { refused } };
+    }
+
     /** The address was not answering yet after publishing: look again. */
     async function recheckSite() {
         if (blockedMode()) return { ...view(), result: { checked: false } };
@@ -432,13 +472,16 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
 
     /** What the website would show now (read-only), for the preview figures. */
     function preview({ now = Date.now() } = {}) {
-        return summarize(buildSnapshot(api, { now }));
+        return withPrivateCheck(() => previewFigures({ now }));
+    }
+    function previewFigures({ now }) {
+        return summarize(publicData({ now }));
     }
 
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
-        publishSite, recheckSite, orders,
+        publishSite, recheckSite, orders, setPublicInfo,
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),

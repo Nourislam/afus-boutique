@@ -113,8 +113,24 @@ function header(ctx) {
     );
 }
 
+const SOCIAL_NAMES = { facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok' };
+/** An outside link of the shop (social page, map): nowhere in the program's preview. */
+const outside = (ctx, url, label, cls = '') => `<a class="${cls}" href="${esc(ctx.preview ? '#' : url)}"${ctx.preview ? '' : ' rel="noopener" target="_blank"'}>${esc(label)}</a>`;
+
+/** Opening hours, social pages and map link, when the owner wrote them (Website screen). */
+function shopExtras(ctx) {
+    const shop = ctx.snap.shop;
+    const social = Object.entries(shop.social || {}).filter(([, url]) => url);
+    return {
+        hours: shop.hours?.length ? `<div class="hours"><strong>${esc(ctx.t('hours'))}</strong>${shop.hours.map(l => `<p>${esc(l)}</p>`).join('')}</div>` : '',
+        social: social.length ? `<div class="social"><strong>${esc(ctx.t('follow'))}</strong><div class="social-links">${social.map(([k, url]) => outside(ctx, url, SOCIAL_NAMES[k] || k)).join('')}</div></div>` : '',
+        map: shop.mapUrl ? outside(ctx, shop.mapUrl, ctx.t('onMap'), 'map-link') : '',
+    };
+}
+
 function footer(ctx) {
     const shop = ctx.snap.shop;
+    const extras = shopExtras(ctx);
     const where = [shop.address, shop.city, shop.wilaya].filter(Boolean).join(', ');
     const year = new Date(ctx.snap.builtAt).getFullYear();
     const cats = ctx.snap.categories.slice(0, 6).map(c => `<a href="${esc(ctx.link('category', c.id))}">${esc(c.name)}</a>`).join('');
@@ -122,7 +138,8 @@ function footer(ctx) {
         `<footer class="site-footer ftr-${ctx.theme.footer.style}"><div class="container ftr-grid">`,
         `<div><strong class="ftr-name">${esc(shop.name)}</strong>${shop.description ? `<p>${esc(shop.description)}</p>` : ''}</div>`,
         cats && `<div><strong>${esc(ctx.t('categories'))}</strong><div class="ftr-links">${cats}</div></div>`,
-        (shop.phone || where || shop.email) && `<div><strong>${esc(ctx.t('contact'))}</strong>${shop.phone ? `<p>${phoneHtml(shop.phone)}</p>` : ''}${shop.email ? `<p>${esc(shop.email)}</p>` : ''}${where ? `<p>${esc(where)}</p>` : ''}</div>`,
+        (shop.phone || where || shop.email || shop.mapUrl) && `<div><strong>${esc(ctx.t('contact'))}</strong>${shop.phone ? `<p>${phoneHtml(shop.phone)}</p>` : ''}${shop.email ? `<p>${esc(shop.email)}</p>` : ''}${where ? `<p>${esc(where)}</p>` : ''}${extras.map ? `<p>${extras.map}</p>` : ''}</div>`,
+        (extras.hours || extras.social) && `<div>${extras.hours}${extras.social}</div>`,
         `</div><div class="container ftr-bottom">© ${year} ${esc(shop.name)} · ${esc(ctx.t('rights'))}</div></footer>`,
     );
 }
@@ -237,4 +254,4 @@ function categoryPage(ctx, id) {
     );
 }
 
-module.exports = { messagePage, orderForm, productCard, productGrid, header, footer, productPage, categoryPage, bestPromotion, onSale, optionsOf, navItems, priceOf };
+module.exports = { shopExtras, messagePage, orderForm, productCard, productGrid, header, footer, productPage, categoryPage, bestPromotion, onSale, optionsOf, navItems, priceOf };

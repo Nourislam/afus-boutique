@@ -251,10 +251,15 @@ h1,h2,h3,.logo-text,.hero-title,.section-title,.pdp-name,.promo-title{font-famil
 
 /* Footer */
 .site-footer{margin-top:var(--section-gap);border-top:1px solid var(--border);padding-top:48px;font-size:.92em}
-.ftr-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:32px}
+.ftr-grid{display:grid;grid-template-columns:2fr repeat(auto-fit,minmax(160px,1fr));gap:32px}
 .ftr-grid p{color:var(--muted);margin:6px 0 0}
 .ftr-name{font-family:var(--font-head);font-size:1.3em}
 .ftr-links{display:flex;flex-direction:column;gap:6px;margin-top:8px;color:var(--muted)}
+.hours p{margin:2px 0 0}
+.hours+.social{margin-top:14px}
+.social-links{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:6px}
+.social-links a,.map-link{border-bottom:1px solid currentColor}
+.contact .hours{margin-top:10px}
 .ftr-bottom{color:var(--muted);font-size:.85em;padding-block:24px;margin-top:32px;border-top:1px solid var(--border)}
 .ftr-simple .ftr-grid{grid-template-columns:1fr;text-align:center}
 .ftr-simple .ftr-grid>div:not(:first-child){display:none}

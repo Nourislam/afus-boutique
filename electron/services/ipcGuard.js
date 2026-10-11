@@ -143,6 +143,7 @@ const RULES = {
     'website:update': 'admin',
     'website:connect': 'admin',
     'website:publish': 'admin',
+    'website:setPublicInfo': 'admin',
     'website:recheck': 'admin',
     'website:orders': 'admin',
     'website:openSite': 'admin',

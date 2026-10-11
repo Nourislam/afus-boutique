@@ -120,6 +120,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         githubManage: () => ipcRenderer.invoke('website:githubManage'),
         // Create Website / Update website (on the shop's own accounts, in the background)
         publish: () => ipcRenderer.invoke('website:publish'),
+        // Opening hours, social pages, map link (shown on the website only)
+        setPublicInfo: (info) => ipcRenderer.invoke('website:setPublicInfo', info),
         recheck: () => ipcRenderer.invoke('website:recheck'),
         orders: () => ipcRenderer.invoke('website:orders'),
         openSite: () => ipcRenderer.invoke('website:openSite'),

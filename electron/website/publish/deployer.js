@@ -44,6 +44,8 @@ function reasonOf(error, provider) {
     if (r === 'network') return 'network';
     if (r === 'secure_storage') return 'secure_storage';
     if (r === 'too_large') return 'too_large';
+    // The public-data check found something private: nothing is published
+    if (r === 'private_data') return 'private_data';
     if (r === 'revoked' || r === 'not_connected') return `${provider}_revoked`;
     if (r === 'scope') return `${provider}_permission`;
     if (r) return `${provider}_failed`;
@@ -51,7 +53,7 @@ function reasonOf(error, provider) {
 }
 
 function createDeployer(deps) {
-    const { github, cloudflare, store, read, write, snapshot, theme, readImage = () => null, workerSource, schemaSql, ping } = deps;
+    const { github, cloudflare, store, read, write, snapshot, theme, readImage = () => null, workerSource, schemaSql, ping, checkFiles = () => {} } = deps;
     const now = deps.now || Date.now;
     const sleep = deps.sleep || ((ms) => new Promise(r => setTimeout(r, ms)));
     const log = deps.log || (() => {});
@@ -183,6 +185,8 @@ function createDeployer(deps) {
 
         async build(ctx) {
             ctx.site = buildSite({ snapshot: ctx.snapshot, theme: theme(read().theme), orderUrl: `${ctx.apiUrl}/api/orders`, readImage });
+            // The pages, catalogue and README hold nothing private (keys, customers, tax numbers...)
+            checkFiles(ctx.site.files, ctx.snapshot);
         },
 
         async publish(ctx) {

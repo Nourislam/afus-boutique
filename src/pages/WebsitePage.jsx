@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Globe, Github, Cloud, Copy, RefreshCw, Palette, CheckCircle2, Circle, Link2, Sparkles, Package, Tag, Image as ImageIcon, Shirt, PackageCheck, X,
-    XCircle, Clock, Loader2, ShoppingBag,
+    XCircle, Clock, Loader2, ShoppingBag, Store,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
@@ -351,6 +351,9 @@ function WebsiteDashboard({ site, setSite, preview, busy, run }) {
                     <CloudflareAccount site={site} setSite={setSite} busy={busy} run={run} />
                 </ul>
             </section>
+
+            {/* What the website says about the shop beyond its settings: hours, social pages, map */}
+            <PublicInfoCard site={site} busy={busy} run={run} />
 
             {/* Order requests customers sent from the website */}
             {site.hasOrders && <WebsiteOrders />}
@@ -812,6 +815,50 @@ function WebsiteOrders() {
                     </table>
                 </div>
             )}
+        </section>
+    );
+}
+
+/**
+ * Opening hours, social pages and a map link: shown on the website only
+ * (kept with the website, not in the shop's settings). The shop's name,
+ * phone, address and logo come from Settings.
+ */
+function PublicInfoCard({ site, busy, run }) {
+    const { t } = useT();
+    const saved = site.publicInfo || { hours: [], social: {}, mapUrl: '' };
+    const fromSaved = () => ({ hours: (saved.hours || []).join('\n'), facebook: saved.social?.facebook || '', instagram: saved.social?.instagram || '', tiktok: saved.social?.tiktok || '', mapUrl: saved.mapUrl || '' });
+    const [form, setForm] = useState(fromSaved);
+    useEffect(() => { setForm(fromSaved()); }, [JSON.stringify(saved)]);
+    const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }));
+    const save = () => run('info', () => window.electronAPI.website.setPublicInfo({
+        hours: form.hours, social: { facebook: form.facebook, instagram: form.instagram, tiktok: form.tiktok }, mapUrl: form.mapUrl,
+    }), (next) => {
+        const refused = next?.result?.refused || [];
+        if (refused.length) toast.error(t('website.info.refused', { list: refused.map(k => t(`website.info.${k}`)).join('، ') }), 7000);
+        else toast.success(t('website.info.saved'));
+    });
+    const field = (key, label, placeholder) => (
+        <label className="block space-y-1">
+            <span className="text-xs text-zinc-400">{label}</span>
+            <input className="input w-full" dir="ltr" value={form[key]} onChange={set(key)} placeholder={placeholder} maxLength={300} data-testid={`website-info-${key}`} />
+        </label>
+    );
+    return (
+        <section className="card space-y-3" data-testid="website-info">
+            <h2 className="font-semibold flex items-center gap-2"><Store className="w-4 h-4 text-indigo-300" /> {t('website.info.title')}</h2>
+            <p className="text-xs text-zinc-500 leading-relaxed">{t('website.info.hint')}</p>
+            <label className="block space-y-1">
+                <span className="text-xs text-zinc-400">{t('website.info.hours')}</span>
+                <textarea className="input w-full" rows={3} value={form.hours} onChange={set('hours')} placeholder={t('website.info.hoursPlaceholder')} maxLength={800} data-testid="website-info-hours" />
+            </label>
+            {field('facebook', t('website.info.facebook'), 'https://facebook.com/…')}
+            {field('instagram', t('website.info.instagram'), 'https://instagram.com/…')}
+            {field('tiktok', t('website.info.tiktok'), 'https://tiktok.com/@…')}
+            {field('mapUrl', t('website.info.mapUrl'), 'https://maps.app.goo.gl/…')}
+            <div className="flex justify-end">
+                <Button size="sm" onClick={save} loading={busy === 'info'} data-testid="website-info-save">{t('common.save')}</Button>
+            </div>
         </section>
     );
 }

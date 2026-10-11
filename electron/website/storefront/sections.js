@@ -116,12 +116,15 @@ const SECTION_TYPES = {
             const shop = ctx.snap.shop;
             const where = [shop.address, shop.city, shop.wilaya].filter(Boolean).join(', ');
             const phone = phoneDigits(shop.phone);
-            if (!phone && !where) return '';
+            const extras = C.shopExtras(ctx);
+            if (!phone && !where && !extras.hours && !extras.map) return '';
             return html(
                 `<section class="container section"><div class="contact contact-${o.style}">`,
                 `<div><h2 class="section-title">${esc(ctx.t('contact'))}</h2>`,
                 shop.phone && `<p><strong>${esc(ctx.t('phone'))}:</strong> ${phoneHtml(shop.phone)}</p>`,
                 where && `<p><strong>${esc(ctx.t('address'))}:</strong> ${esc(where)}</p>`,
+                extras.map && `<p>${extras.map}</p>`,
+                extras.hours,
                 `</div>`,
                 o.whatsapp && phone && `<a class="btn btn-primary" href="${esc(ctx.preview ? '#' : `https://wa.me/${phone}`)}">WhatsApp</a>`,
                 `</div></section>`,

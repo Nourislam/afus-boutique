@@ -10,6 +10,7 @@
  * are linked (next phases), from the name below.
  */
 const { registry, DEFAULT_THEME } = require('./themes/registry');
+const { publicInfo } = require('./publicData/public');
 
 // Free address of every shop: GitHub Pages, https://<account>.github.io/<name>/
 const FREE_HOST = 'github.io';
@@ -36,6 +37,8 @@ const DEFAULT_STATE = Object.freeze({
     resources: {}, // { repo: { owner, name }, database: { id, name }, worker: { name, subdomain, url } }
     // The published website: its address and what was published
     site: {}, // { url, commit, hash, builtAt, publishedAt, pending, summary }
+    // What the owner wrote for the website only (opening hours, social links, map)
+    publicInfo: { hours: [], social: {}, mapUrl: '' },
     // The last Create Website / Update website run, step by step
     deploy: { status: 'idle', steps: [], startedAt: null, finishedAt: null, failedStep: null, reason: null },
     // Optional own domain: the website always works on the free address first
@@ -69,6 +72,7 @@ function normalizeState(saved) {
         lastUpdate: s.lastUpdate && typeof s.lastUpdate === 'object' ? s.lastUpdate : null,
         lastError: s.lastError || null,
         resources: resourcesOf(s.resources),
+        publicInfo: publicInfo(s.publicInfo),
         site: siteOf(s.site),
         deploy: deployOf(s.deploy),
     };

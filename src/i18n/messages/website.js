@@ -127,7 +127,20 @@ export default {
     'website.publish.reason.name_taken': ["The website's name is already used on your accounts: change the address name and try again.", "Le nom du site est déjà pris sur vos comptes : changez le nom de l'adresse et réessayez.", "اسم الموقع مستعمل في حساباتك: غيّر اسم الرابط وأعد المحاولة."],
     'website.publish.reason.pages_failed': ["GitHub could not publish the pages. Press Try again.", "GitHub n'a pas pu publier les pages. Appuyez sur Réessayer.", "لم يستطع GitHub نشر الصفحات. اضغط «أعد المحاولة»."],
     'website.publish.reason.interrupted': ["The program was closed during the creation. Press Try again: it goes on where it stopped.", "Le programme a été fermé pendant la création. Appuyez sur Réessayer : il reprend où il s'est arrêté.", "أُغلق البرنامج أثناء الإنشاء. اضغط «أعد المحاولة»: يكمل من حيث توقف."],
+    'website.publish.reason.private_data': ["Publishing stopped: the program found private data in what the website would show (for example a customer's phone in an article description). Remove it from the article and try again.", "Publication arrêtée : le programme a trouvé une donnée privée dans ce que le site montrerait (par exemple le téléphone d'un client dans une description). Retirez-la de l'article et réessayez.", "توقف النشر: وجد البرنامج بيانات خاصة فيما سيعرضه الموقع (مثل رقم زبون في وصف سلعة). احذفها من السلعة وأعد المحاولة."],
     'website.publish.reason.unknown': ["Something went wrong. Press Try again.", "Un problème est survenu. Appuyez sur Réessayer.", "حدث خطأ. اضغط «أعد المحاولة»."],
+    // Shop information shown on the website only
+    'website.info.title': ["Information for customers", "Informations pour les clients", "معلومات للزبائن"],
+    'website.info.hint': ["Shown on your website only. The name, phone, address and logo come from Settings.", "Affichées seulement sur votre site. Le nom, le téléphone, l'adresse et le logo viennent des Réglages.", "تظهر في موقعك فقط. الاسم والهاتف والعنوان والشعار تؤخذ من الإعدادات."],
+    'website.info.hours': ["Opening hours (one line each)", "Horaires (une ligne chacun)", "أوقات العمل (سطر لكل فترة)"],
+    'website.info.hoursPlaceholder': ["Saturday – Thursday: 9:00 – 20:00\nFriday: closed", "Samedi – jeudi : 9 h – 20 h\nVendredi : fermé", "السبت – الخميس: 9:00 – 20:00\nالجمعة: مغلق"],
+    'website.info.facebook': ["Facebook page", "Page Facebook", "صفحة فيسبوك"],
+    'website.info.instagram': ["Instagram", "Instagram", "إنستغرام"],
+    'website.info.tiktok': ["TikTok", "TikTok", "تيك توك"],
+    'website.info.mapUrl': ["Map link (Google Maps)", "Lien de la carte (Google Maps)", "رابط الخريطة (Google Maps)"],
+    'website.info.saved': ["Saved: it shows on the website at the next update", "Enregistré : visible sur le site à la prochaine mise à jour", "حُفظ: يظهر في الموقع عند التحديث القادم"],
+    'website.info.refused': ["Not kept (not a link of that site): {list}", "Non gardé (ce n'est pas un lien de ce site) : {list}", "لم يُحفظ (ليس رابطًا من ذلك الموقع): {list}"],
+
     // Orders from the website
     'website.orders.title': ["Orders from the website", "Commandes du site", "طلبات من الموقع"],
     'website.orders.refresh': ["Refresh", "Actualiser", "تحديث"],
