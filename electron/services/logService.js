@@ -14,7 +14,7 @@ const os = require('os');
 const { BRAND } = require('../brand');
 
 const KEEP_DAYS = 14;
-const SECRET = /pass(word)?|token|secret|api[_-]?key|private|pin\b|smtp_pass|consumer/i;
+const SECRET = /pass(word)?|token|secret|api[_-]?key|private|pin\b|smtp_pass|consumer|verifier/i;
 let folder = null;
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -33,7 +33,12 @@ function redact(value) {
     if (typeof value === 'string') {
         return value
             .replace(/("?(?:pass(?:word)?|token|secret|api[_-]?key)"?\s*[:=]\s*)"[^"]*"/gi, '$1"***"')
-            .replace(/(Bearer\s+)[A-Za-z0-9._-]+/g, '$1***');
+            .replace(/(Bearer\s+)[A-Za-z0-9._-]+/g, '$1***')
+            // GitHub keys, wherever they appear
+            .replace(/\b(gh[opusr]_|github_pat_)[A-Za-z0-9_]{10,}/g, '$1***')
+            // OAuth keys and one-time codes in a query or a form (Cloudflare)
+            .replace(/\b((?:access|refresh|id)_token|code_verifier|code|client_secret)=[^&\s"']+/gi, '$1=***')
+            .replace(/\bory_(at|rt|ac)_[A-Za-z0-9._-]{10,}/g, 'ory_$1_***');
     }
     return value;
 }

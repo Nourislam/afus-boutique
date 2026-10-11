@@ -9,6 +9,7 @@ import ProductsPage from './pages/ProductsPage';
 import InventoryPage from './pages/InventoryPage';
 import EmployeesPage from './pages/EmployeesPage';
 import ReportsPage from './pages/ReportsPage';
+import WebsitePage from './pages/WebsitePage';
 import SettingsPage from './pages/SettingsPage';
 import DashboardPage from './pages/DashboardPage';
 import ManagerApprovalDialog from './components/auth/ManagerApprovalDialog';
@@ -191,6 +192,11 @@ function App() {
                     <Route path="/reports" element={
                         <ProtectedRoute permission={PERMISSIONS.REPORTS_VIEW}>
                             <ReportsPage />
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/website" element={
+                        <ProtectedRoute permission={PERMISSIONS.SETTINGS_VIEW}>
+                            <ModuleGate module="website"><WebsitePage /></ModuleGate>
                         </ProtectedRoute>
                     } />
                     <Route path="/settings" element={

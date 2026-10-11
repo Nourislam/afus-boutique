@@ -12,7 +12,7 @@ import { MODULE_GROUPS, MODULE_REQUIRES, resolveFeatures, offersEnabled } from '
 
 const MODULE_ICONS = {
     credit: CreditCard, customers: Users, promotions: Percent, bundles: PackageOpen, giftCards: Gift,
-    suppliers: Truck, purchaseOrders: FileText, email: Mail, ecommerce: Globe,
+    suppliers: Truck, purchaseOrders: FileText, email: Mail, ecommerce: ShoppingBag, website: Globe,
 };
 const GROUP_ICONS = { sales: ShoppingBag, offers: Percent, stock: Boxes, online: Wifi };
 

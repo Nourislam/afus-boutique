@@ -98,6 +98,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
         cash: (args) => ipcRenderer.invoke('dashboard:cash', args),
     },
     // Decision figures: run-out, sell-through, colour x size, dormant stock, stock worth
+    // Website Manager (the shop's website)
+    website: {
+        getState: () => ipcRenderer.invoke('website:getState'),
+        preview: () => ipcRenderer.invoke('website:preview'),
+        create: (args) => ipcRenderer.invoke('website:create', args),
+        setTheme: (theme) => ipcRenderer.invoke('website:setTheme', theme),
+        setName: (name) => ipcRenderer.invoke('website:setName', name),
+        setDomain: (domain) => ipcRenderer.invoke('website:setDomain', domain),
+        removeDomain: () => ipcRenderer.invoke('website:removeDomain'),
+        update: () => ipcRenderer.invoke('website:update'),
+        connect: (provider) => ipcRenderer.invoke('website:connect', provider),
+        // The shop's GitHub account (the key itself never comes to the window)
+        githubStart: () => ipcRenderer.invoke('website:githubStart'),
+        githubCancel: () => ipcRenderer.invoke('website:githubCancel'),
+        githubDisconnect: () => ipcRenderer.invoke('website:githubDisconnect'),
+        githubCheck: () => ipcRenderer.invoke('website:githubCheck'),
+        githubOpen: () => ipcRenderer.invoke('website:githubOpen'),
+        githubManage: () => ipcRenderer.invoke('website:githubManage'),
+        // The shop's Cloudflare account (its keys never come to the window)
+        cloudflareStart: () => ipcRenderer.invoke('website:cloudflareStart'),
+        cloudflareCancel: () => ipcRenderer.invoke('website:cloudflareCancel'),
+        cloudflareChoose: (accountId) => ipcRenderer.invoke('website:cloudflareChoose', accountId),
+        cloudflareDisconnect: () => ipcRenderer.invoke('website:cloudflareDisconnect'),
+        cloudflareCheck: () => ipcRenderer.invoke('website:cloudflareCheck'),
+        cloudflareOpen: () => ipcRenderer.invoke('website:cloudflareOpen'),
+        cloudflareManage: () => ipcRenderer.invoke('website:cloudflareManage'),
+    },
     insights: {
         runOut: (args) => ipcRenderer.invoke('insights:runOut', args),
         sellThrough: (args) => ipcRenderer.invoke('insights:sellThrough', args),

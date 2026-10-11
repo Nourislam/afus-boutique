@@ -11,6 +11,7 @@ export const DEFAULT_FEATURES = {
     purchaseOrders: true,  // purchase orders (needs suppliers)
     email: false,          // send tickets and purchase orders by e-mail (needs internet)
     ecommerce: false,      // Shopify / WooCommerce connection (needs internet)
+    website: true,         // the shop's own website (Website Manager)
 };
 
 // How the modules are shown in Settings
@@ -18,7 +19,7 @@ export const MODULE_GROUPS = [
     { id: 'sales', modules: ['credit', 'customers'] },
     { id: 'offers', modules: ['promotions', 'bundles', 'giftCards'] },
     { id: 'stock', modules: ['suppliers', 'purchaseOrders'] },
-    { id: 'online', modules: ['email', 'ecommerce'] },
+    { id: 'online', modules: ['email', 'ecommerce', 'website'] },
 ];
 
 // A module that cannot work without another one

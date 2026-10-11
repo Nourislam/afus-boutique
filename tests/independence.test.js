@@ -4,7 +4,8 @@ import path from 'path';
 
 // Afus Boutique is a stand-alone, offline-first product: nothing in its core
 // may need an account, an activation or a server. Only the optional online
-// modules (online store, e-mail) may open a network connection.
+// modules (online store, e-mail, the shop's website accounts) may open a
+// network connection, and only when the shop asks.
 const ROOT = path.resolve(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 
@@ -22,6 +23,10 @@ const NETWORK_ALLOWED = {
     'electron/ecommerce/adapters/ShopifyAdapter.js': 'online store (optional module)',
     'electron/ecommerce/adapters/WooCommerceAdapter.js': 'online store (optional module)',
     'electron/services/emailService.js': 'tickets and purchase orders by e-mail (optional module)',
+    // Only when the owner links GitHub or checks it on the Website screen
+    'electron/website/github.js': "the shop's own GitHub account (Website Manager, optional module)",
+    // Only when the owner links Cloudflare or checks it on the Website screen
+    'electron/website/cloudflare.js': "the shop's own Cloudflare account (Website Manager, optional module)",
     'electron/main.js': 'e-mail sending handlers only (nodemailer), see the next test',
     // Asked by the shop (Settings › About › check), only when the reseller's
     // installer profile gives an https address; nothing is installed by itself
@@ -48,7 +53,21 @@ describe('offline-first core', () => {
             .filter(([, url]) => !/^https?:\/\/(localhost|127\.0\.0\.1|www\.w3\.org)/.test(url));
         // wa.me: the credit reminder only hands a WhatsApp link to the system (the program connects to nothing)
         const allowed = /shopify\.dev|help\.shopify\.com|woocommerce\.(com|github\.io)|your-store\.com|^https:\/\/wa\.me\b/;
-        expect(urls.filter(([, url]) => !allowed.test(url))).toEqual([]);
+        // The shop's own free website address: shown to the shop, never opened by the program
+        const shopAddress = ([file, url]) => file === 'electron/website/websiteState.js' && url === 'https://${name}.${FREE_HOST}';
+        // GitHub's own sign-in page and API, in the GitHub module only
+        const github = ([file, url]) => file === 'electron/website/github.js' && ['https://github.com', 'https://api.github.com'].includes(url);
+        // Cloudflare's own sign-in and API, in the Cloudflare module only
+        const cloudflare = ([file, url]) => file === 'electron/website/cloudflare.js' && /^https:\/\/(dash|api)\.cloudflare\.com(\/|$)/.test(url);
+        expect(urls.filter((entry) => !allowed.test(entry[1]) && !shopAddress(entry) && !github(entry) && !cloudflare(entry))).toEqual([]);
+    });
+
+    it('listens on this computer only for the browser coming back from a sign-in (127.0.0.1)', () => {
+        const servers = CODE.filter(f => /createServer\s*\(|\.listen\s*\(/.test(read(f)));
+        expect(servers).toEqual(['electron/website/oauthLoopback.js']);
+        const text = read('electron/website/oauthLoopback.js');
+        expect(text).toMatch(/server\.listen\(port, '127\.0\.0\.1'\)/);
+        expect(text).not.toMatch(/0\.0\.0\.0|'::'/);
     });
 
     it('needs no account, activation, subscription or plan limit', () => {

@@ -25,6 +25,7 @@ const SETTING_RULES = {
     security: 'admin',
     pos_controls: 'admin',
     loyalty: 'admin',
+    website: 'admin',
 };
 
 const RULES = {
@@ -129,6 +130,30 @@ const RULES = {
     'db:promotions:update': P.PROMOTIONS_MANAGE,
     'db:promotions:delete': P.PROMOTIONS_MANAGE,
     'insights:markdownDecide': P.PROMOTIONS_MANAGE,
+    // The shop's website: the owner's
+    // Reading too: the state may hold the short code of a GitHub sign-in in progress
+    'website:getState': 'admin',
+    'website:preview': 'admin',
+    'website:create': 'admin',
+    'website:setTheme': 'admin',
+    'website:setName': 'admin',
+    'website:setDomain': 'admin',
+    'website:removeDomain': 'admin',
+    'website:update': 'admin',
+    'website:connect': 'admin',
+    'website:githubStart': 'admin',
+    'website:githubCancel': 'admin',
+    'website:githubDisconnect': 'admin',
+    'website:githubCheck': 'admin',
+    'website:githubOpen': 'admin',
+    'website:githubManage': 'admin',
+    'website:cloudflareStart': 'admin',
+    'website:cloudflareCancel': 'admin',
+    'website:cloudflareChoose': 'admin',
+    'website:cloudflareDisconnect': 'admin',
+    'website:cloudflareCheck': 'admin',
+    'website:cloudflareOpen': 'admin',
+    'website:cloudflareManage': 'admin',
     'db:promotions:incrementUse': 'login',
 
     // Selling and the cash drawer

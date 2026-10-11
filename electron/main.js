@@ -1,5 +1,5 @@
 console.log('=== MAIN.JS LOADED ===');
-const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme, Menu, safeStorage, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { BRAND, dataDirectory, databasePath } = require('./brand');
@@ -13,6 +13,11 @@ const loyaltyService = require('./services/loyaltyService');
 const accountingService = require('./services/accountingService');
 const insights = require('./services/insightsService');
 const markdowns = require('./services/markdownService');
+const { createWebsiteService } = require('./website/websiteService');
+const { createGithubClient } = require('./website/github');
+const { createSecureStore } = require('./website/secureStore');
+const { createCloudflareClient } = require('./website/cloudflare');
+const cloudflareCallbackPage = require('./website/callbackPage');
 const { nextReceiptNumber } = require('./services/receiptNumber');
 const pinService = require('./services/pinService');
 const session = require('./services/session');
@@ -1798,6 +1803,126 @@ ipcMain.handle('insights:markdownDecide', (_, args = {}) => {
   logSystemAction(row.status === 'approved' ? 'markdown_approved' : 'markdown_refused',
     `${row.percent}% on ${row.product_id}`, null, actor?.id || null);
   return row;
+});
+
+// Website Manager (electron/website/): the shop's website, kept in the
+// settings table (key "website"); the catalogue is only read. Changes: the
+// owner only (services/ipcGuard.js).
+//
+// GitHub is linked with the shop's own account: the installer profile only
+// holds the public id of the AFUS GitHub app (no secret); the key GitHub
+// gives stays in this process, encrypted by the system (<userData>/secure).
+// In development only, a local test server may stand in for GitHub.
+const githubTestBase = () => {
+  const base = process.env.AFUS_GITHUB_TEST_BASE || '';
+  return !app.isPackaged && /^http:\/\/127\.0\.0\.1:\d+$/.test(base) ? base : null;
+};
+let githubClient = null;
+// Cloudflare: the same, with the public id of the AFUS OAuth client and the
+// local ports registered with it (http://127.0.0.1:<port>/oauth/callback)
+const cloudflareTestBase = () => {
+  const base = process.env.AFUS_CLOUDFLARE_TEST_BASE || '';
+  return !app.isPackaged && /^http:\/\/127\.0\.0\.1:\d+$/.test(base) ? base : null;
+};
+const CLOUDFLARE_PORTS = (Array.isArray(PROFILE.cloudflareRedirectPorts) ? PROFILE.cloudflareRedirectPorts : [47651, 47652, 47653])
+  .map(Number).filter(p => Number.isInteger(p) && p >= 1024 && p <= 65535).slice(0, 5);
+let cloudflareClient = null;
+const websiteSecureStore = createSecureStore({
+  dir: path.join(app.getPath('userData'), 'secure'),
+  safeStorage,
+  // Development tests on a Linux without a secret service only
+  allowWeak: !app.isPackaged && process.env.AFUS_TEST_WEAK_STORAGE === '1',
+});
+const bringBack = () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+};
+const website = createWebsiteService({
+  api: dbApi, getSetting: getSettingValue, saveSetting: saveSettingValue, codedError: catalog.codedError,
+  blockedMode: () => (isDemo() ? 'demo' : isSandbox() ? 'training' : null),
+  github: {
+    get client() {
+      if (!githubClient) {
+        const testBase = githubTestBase();
+        githubClient = createGithubClient({
+          clientId: PROFILE.githubClientId || (!app.isPackaged ? process.env.AFUS_GITHUB_CLIENT_ID : '') || '',
+          ...(testBase ? { webBase: testBase, apiBase: `${testBase}/api` } : {}),
+        });
+      }
+      return githubClient;
+    },
+    store: websiteSecureStore,
+    // GitHub's page in the browser, the short code ready to paste
+    openPage: async (url, userCode) => {
+      if (!String(url).startsWith(`${githubClient.webBase}/`)) return;
+      if (userCode) clipboard.writeText(userCode);
+      await shell.openExternal(url);
+    },
+    // Back to the program once the shop agreed on GitHub
+    onConnected: bringBack,
+  },
+  cloudflare: {
+    get client() {
+      if (!cloudflareClient) {
+        const testBase = cloudflareTestBase();
+        cloudflareClient = createCloudflareClient({
+          clientId: PROFILE.cloudflareClientId || (!app.isPackaged ? process.env.AFUS_CLOUDFLARE_CLIENT_ID : '') || '',
+          scopes: Array.isArray(PROFILE.cloudflareScopes) && PROFILE.cloudflareScopes.length ? PROFILE.cloudflareScopes : undefined,
+          ...(testBase ? { dashBase: testBase, apiBase: `${testBase}/client/v4` } : {}),
+        });
+      }
+      return cloudflareClient;
+    },
+    store: websiteSecureStore,
+    ports: CLOUDFLARE_PORTS,
+    // Cloudflare's page in the browser (only Cloudflare's own address)
+    openPage: async (url) => {
+      if (!String(url).startsWith(`${cloudflareClient.dashBase}/oauth2/auth?`)) return;
+      await shell.openExternal(url);
+    },
+    onConnected: bringBack,
+    // The page the browser shows once it came back, in the shop's language
+    callbackPage: (kind) => cloudflareCallbackPage(kind, (getSettingValue('store_config') || {}).defaultLanguage),
+  },
+});
+ipcMain.handle('website:getState', () => website.view());
+ipcMain.handle('website:preview', () => website.preview());
+ipcMain.handle('website:create', (_, args = {}) => website.create(args));
+ipcMain.handle('website:setTheme', (_, theme) => website.setTheme(theme));
+ipcMain.handle('website:setName', (_, name) => website.setName(name));
+ipcMain.handle('website:setDomain', (_, domain) => website.setDomain(domain));
+ipcMain.handle('website:removeDomain', () => website.removeDomain());
+ipcMain.handle('website:update', () => website.update());
+ipcMain.handle('website:connect', (_, provider) => website.connect(provider));
+ipcMain.handle('website:githubStart', () => website.githubStart());
+ipcMain.handle('website:githubCancel', () => website.githubCancel());
+ipcMain.handle('website:githubDisconnect', () => website.githubDisconnect());
+ipcMain.handle('website:githubCheck', () => website.githubCheck());
+ipcMain.handle('website:githubOpen', async () => {
+  const url = website.githubFlowPage();
+  if (url && url.startsWith(`${website.githubClientBase()}/`)) await shell.openExternal(url);
+  return { opened: !!url };
+});
+// GitHub's own page where the shop sees (and can withdraw) the access given
+ipcMain.handle('website:githubManage', async () => {
+  await shell.openExternal(website.githubManageUrl());
+  return { opened: true };
+});
+ipcMain.handle('website:cloudflareStart', () => website.cloudflareStart());
+ipcMain.handle('website:cloudflareCancel', () => website.cloudflareCancel());
+ipcMain.handle('website:cloudflareChoose', (_, accountId) => website.cloudflareChoose(accountId));
+ipcMain.handle('website:cloudflareDisconnect', () => website.cloudflareDisconnect());
+ipcMain.handle('website:cloudflareCheck', () => website.cloudflareCheck());
+ipcMain.handle('website:cloudflareOpen', async () => {
+  const url = website.cloudflareFlowPage();
+  if (url && url.startsWith(`${website.cloudflareDashBase()}/oauth2/auth?`)) await shell.openExternal(url);
+  return { opened: !!url };
+});
+ipcMain.handle('website:cloudflareManage', async () => {
+  await shell.openExternal(website.cloudflareManageUrl());
+  return { opened: true };
 });
 ipcMain.handle('dashboard:selling', (_, { range, since30 }) => ({
   best: dashboard.bestSellers(dbApi, range),

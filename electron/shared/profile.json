@@ -4,5 +4,9 @@
   "supportEmail": "",
   "supportWebsite": "",
   "updateUrl": "",
-  "licensePublicKey": ""
+  "licensePublicKey": "",
+  "githubClientId": "",
+  "cloudflareClientId": "",
+  "cloudflareScopes": [],
+  "cloudflareRedirectPorts": [47651, 47652, 47653]
 }
