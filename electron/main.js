@@ -1889,6 +1889,7 @@ const website = createWebsiteService({
 });
 ipcMain.handle('website:getState', () => website.view());
 ipcMain.handle('website:preview', () => website.preview());
+ipcMain.handle('website:previewTheme', (_, args = {}) => website.previewTheme(args));
 ipcMain.handle('website:create', (_, args = {}) => website.create(args));
 ipcMain.handle('website:setTheme', (_, theme) => website.setTheme(theme));
 ipcMain.handle('website:setName', (_, name) => website.setName(name));

@@ -9,7 +9,7 @@
  * database and the DNS records are chosen by the program when the accounts
  * are linked (next phases), from the name below.
  */
-const { WEBSITE_THEMES, DEFAULT_THEME, isTheme } = require('../shared/websiteThemes.mjs');
+const { registry, DEFAULT_THEME } = require('./themes/registry');
 
 // Free address of every shop: <name>.<FREE_HOST>. One place to change it.
 const FREE_HOST = 'pages.dev';
@@ -49,7 +49,8 @@ function normalizeState(saved) {
     return {
         created: !!s.created,
         name: typeof s.name === 'string' ? s.name : '',
-        theme: isTheme(s.theme) ? s.theme : DEFAULT_THEME,
+        // An unknown or old theme name reads as a theme that exists (themes/registry.js)
+        theme: registry.resolveId(s.theme),
         createdAt: s.createdAt || null,
         accounts: { github: githubAccount(s.accounts?.github), cloudflare: cloudflareAccount(s.accounts?.cloudflare) },
         repository: repo,
@@ -173,7 +174,7 @@ function statusOf(state) {
 }
 
 module.exports = {
-    FREE_HOST, NAME_MIN, NAME_MAX, DEFAULT_STATE, WEBSITE_THEMES,
+    FREE_HOST, NAME_MIN, NAME_MAX, DEFAULT_STATE,
     GITHUB_STATUSES, GITHUB_REASONS, CLOUDFLARE_STATUSES, CLOUDFLARE_REASONS, cloudflareAccount,
     normalizeState, githubAccount, repositoryName, slugify, suggestName, isValidName, cleanDomain, freeUrl, stepsOf, statusOf,
 };

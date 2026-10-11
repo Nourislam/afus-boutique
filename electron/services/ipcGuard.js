@@ -134,6 +134,7 @@ const RULES = {
     // Reading too: the state may hold the short code of a GitHub sign-in in progress
     'website:getState': 'admin',
     'website:preview': 'admin',
+    'website:previewTheme': 'admin',
     'website:create': 'admin',
     'website:setTheme': 'admin',
     'website:setName': 'admin',

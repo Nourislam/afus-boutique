@@ -27,12 +27,14 @@ function buildSnapshot(api, { now = Date.now() } = {}) {
         wilaya: config.businessWilaya || '',
         description: config.shopDescription || '',
         logo: config.shopLogo || '',
+        currency: config.currency || 'DZD',
+        language: config.defaultLanguage || 'ar',
     };
     const promotions = api.all('SELECT * FROM promotions WHERE is_active = 1');
     const categories = api.all('SELECT id, name, color FROM categories ORDER BY name');
     const products = api.all(`
         SELECT p.id, p.name, p.description, p.category_id, p.brand, p.gender, p.season, p.collection,
-               p.price, p.image_path, p.gallery, COALESCE(p.has_variants, 0) AS has_variants, ${PRODUCT_STOCK} AS stock
+               p.price, p.image_path, p.gallery, p.created_at, COALESCE(p.has_variants, 0) AS has_variants, ${PRODUCT_STOCK} AS stock
         FROM products p WHERE p.is_active = 1 ORDER BY p.name
     `);
     const variants = api.all(`
@@ -55,6 +57,7 @@ function buildSnapshot(api, { now = Date.now() } = {}) {
             price: Number(p.price) || 0, salePrice: sale ?? null, images,
             variants: p.has_variants ? (byProduct.get(p.id) || []) : [],
             available: (Number(p.stock) || 0) > 0,
+            createdAt: p.created_at || null,
         };
     });
     const usedCategories = new Set(items.map(i => i.categoryId).filter(Boolean));

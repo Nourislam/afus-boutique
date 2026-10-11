@@ -13,9 +13,21 @@ export default {
 
     // Theme
     'website.theme': ["Theme", "Thème", "الشكل"],
-    'website.themeName.classic': ["Classic", "Classique", "كلاسيكي"],
-    'website.themeName.modern': ["Modern", "Moderne", "عصري"],
-    'website.themeName.elegant': ["Elegant", "Élégant", "أنيق"],
+    'website.themeHint': ["Pick a theme to see your own website in it, then keep the one you like.", "Choisissez un thème pour voir votre propre site avec, puis gardez celui qui vous plaît.", "اختر شكلًا لترى موقعك به، ثم احتفظ بالذي يعجبك."],
+    'website.themeCurrent': ["In use", "Utilisé", "المستعمل"],
+    'website.themeInUse': ["Your website uses {name}", "Votre site utilise {name}", "موقعك يستعمل شكل «{name}»"],
+    'website.themeUse': ["Use {name}", "Utiliser {name}", "استعمل «{name}»"],
+    'website.themeSafe': ["Changing the theme changes only the look: your articles, pictures, categories, prices, sizes and colours stay exactly the same.", "Changer de thème ne change que l'apparence : vos articles, photos, catégories, prix, tailles et couleurs restent les mêmes.", "تغيير الشكل يغيّر المظهر فقط: سلعك وصورها وأصنافها وأسعارها ومقاساتها وألوانها تبقى كما هي."],
+    'website.previewPage': ["Page", "Page", "الصفحة"],
+    'website.previewPages.home': ["Home", "Accueil", "الرئيسية"],
+    'website.previewPages.category': ["Category", "Catégorie", "صنف"],
+    'website.previewPages.product': ["Article", "Article", "سلعة"],
+    'website.previewDevice': ["Screen", "Écran", "الشاشة"],
+    'website.previewDevices.desktop': ["Computer", "Ordinateur", "حاسوب"],
+    'website.previewDevices.mobile': ["Phone", "Téléphone", "هاتف"],
+    'website.previewTitle': ["Preview of the website in {name}", "Aperçu du site avec {name}", "معاينة الموقع بشكل «{name}»"],
+    'website.previewFailed': ["The preview could not be made.", "L'aperçu n'a pas pu être fait.", "تعذّر إعداد المعاينة."],
+    'website.previewEmpty': ["No article yet: add articles in Products and they appear here.", "Aucun article pour l'instant : ajoutez-en dans Articles, ils apparaîtront ici.", "لا توجد سلع بعد: أضف سلعًا من صفحة السلع وستظهر هنا."],
     'website.themeSaved': ["Theme changed", "Thème changé", "تم تغيير الشكل"],
 
     // Website Status

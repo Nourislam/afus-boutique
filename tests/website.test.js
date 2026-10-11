@@ -41,7 +41,7 @@ describe('website: names, domains, steps', () => {
         expect(ws.statusOf({ ...linked, lastError: 'x' })).toBe('error');
         // Unknown theme or fields are dropped
         expect(ws.normalizeState({ theme: 'neon', hacker: 1 })).not.toHaveProperty('hacker');
-        expect(ws.normalizeState({ theme: 'neon' }).theme).toBe('modern');
+        expect(ws.normalizeState({ theme: 'neon' }).theme).toBe('fashion-modern');
     });
 });
 
@@ -65,7 +65,7 @@ describe('website service (settings key "website", catalogue read only)', () => 
         expect(before.suggestedName).toBe('boutique-yasmine');
         expect(await codeOf(() => service.create({ name: 'x' }))).toBe('WEBSITE_NAME_INVALID');
         const v = service.create({ name: 'Boutique-Yasmine', theme: 'elegant' });
-        expect(v).toMatchObject({ created: true, name: 'boutique-yasmine', theme: 'elegant', status: 'accounts', freeUrl: `https://boutique-yasmine.${ws.FREE_HOST}` });
+        expect(v).toMatchObject({ created: true, name: 'boutique-yasmine', theme: 'luxury', status: 'accounts', freeUrl: `https://boutique-yasmine.${ws.FREE_HOST}` });
         expect(v.providers).toEqual({ github: { available: false }, cloudflare: { available: false } });
         expect(JSON.stringify(v)).not.toMatch(/token|secret|api_key|account_id/i);
         expect(await codeOf(() => service.create({ name: 'other-name' }))).toBe('WEBSITE_EXISTS');

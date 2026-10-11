@@ -21,6 +21,8 @@
 const state = require('./websiteState');
 const providers = require('./providers');
 const { buildSnapshot, summarize } = require('./catalogSnapshot');
+const { registry } = require('./themes/registry');
+const { renderPage } = require('./storefront/render');
 const { createGithubConnector } = require('./githubConnector');
 const { createGithubClient } = require('./github');
 const { createCloudflareConnector } = require('./cloudflareConnector');
@@ -115,7 +117,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             githubBlocked: blocked || null,
             accountsBlocked: blocked || null,
             secureStorage: store.available() && cfStore.available(),
-            themes: state.WEBSITE_THEMES,
+            themes: registry.describe(),
         };
     }
 
@@ -124,15 +126,38 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         if (s.created) throw codedError('WEBSITE_EXISTS');
         const clean = String(name || '').trim().toLowerCase();
         if (!state.isValidName(clean)) throw codedError('WEBSITE_NAME_INVALID', { min: state.NAME_MIN, max: state.NAME_MAX });
-        write({ ...s, created: true, name: clean, theme: theme && state.WEBSITE_THEMES.some(t => t.id === theme) ? theme : s.theme, createdAt: new Date().toISOString(), lastError: null });
+        write({ ...s, created: true, name: clean, theme: registry.has(theme) ? registry.resolveId(theme) : s.theme, createdAt: new Date().toISOString(), lastError: null });
         return view();
     }
 
     function setTheme(theme) {
         const s = mustExist(read());
-        if (!state.WEBSITE_THEMES.some(t => t.id === theme)) throw codedError('WEBSITE_THEME_UNKNOWN');
-        write({ ...s, theme });
+        if (!registry.has(theme)) throw codedError('WEBSITE_THEME_UNKNOWN');
+        // Only the theme's name is kept: the shop's data stays as it is
+        write({ ...s, theme: registry.resolveId(theme) });
         return view();
+    }
+
+    const PAGES = ['home', 'category', 'product'];
+    /**
+     * A page of the website as it would look with a theme (the chosen one when
+     * none is given), made from the shop's own data as it is now. Read only:
+     * nothing is saved, the theme is not changed. For the preview of the
+     * Website screen (shown in a frame without script).
+     */
+    function previewTheme({ theme, page = 'home', id = null } = {}) {
+        const chosen = theme === undefined || theme === null ? read().theme : theme;
+        const t = registry.get(chosen);
+        if (!t) throw codedError('WEBSITE_THEME_UNKNOWN');
+        const snapshot = buildSnapshot(api);
+        const kind = PAGES.includes(page) ? page : 'home';
+        const productId = kind === 'product' ? (snapshot.products.some(p => p.id === id) ? id : (snapshot.products.find(p => p.images.length) || snapshot.products[0])?.id) : id;
+        const html = renderPage({
+            snapshot, theme: t, page: kind, id: kind === 'category' ? (id || 'all') : productId,
+            lang: snapshot.shop.language, preview: true,
+            assetUrl: (path) => `app://${encodeURIComponent(path)}`,
+        });
+        return { theme: t.id, page: kind, html, products: snapshot.products.length };
     }
 
     /** The name of the free address can change until the website is published. */
@@ -313,7 +338,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     }
 
     return {
-        view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview,
+        view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),
