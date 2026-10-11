@@ -30,7 +30,7 @@ export function SystemLogs() {
     setLoading(true);
     try {
       if (window.electronAPI?.logs) {
-        const data = await window.electronAPI.logs.getAll({ type: filter, limit: 100 });
+        const data = await window.electronAPI.logs.getAll({ type: filter });
         setLogs(data);
       }
     } catch (error) {

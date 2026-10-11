@@ -9,6 +9,7 @@ const LABEL_KEYS = {
     credit: 'pay.credit',
     gift_card: 'pay.giftCard',
     exchange: 'pay.exchange',
+    deposit: 'pay.deposit',
     split: 'pay.split',
     mixed: 'pay.split',
 };

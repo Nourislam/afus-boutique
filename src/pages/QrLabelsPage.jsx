@@ -41,7 +41,7 @@ export default function QrLabelsPage() {
             setVariantResults([]);
             return undefined;
         }
-        window.electronAPI.catalog.searchVariants(query, 30).then((rows) => {
+        window.electronAPI.catalog.searchVariants(query).then((rows) => {
             if (!cancelled) setVariantResults(rows);
         });
         return () => { cancelled = true; };
@@ -52,7 +52,7 @@ export default function QrLabelsPage() {
         const q = query.toLowerCase();
         return products.filter(p => (perArticle || !(p.variant_count > 0)) && (
             p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.barcode?.toLowerCase().includes(q) || p.brand?.toLowerCase().includes(q)
-        )).slice(0, 12);
+        ));
     }, [query, products, perArticle]);
 
     const pushLine = (line) => setQueue(prev => {

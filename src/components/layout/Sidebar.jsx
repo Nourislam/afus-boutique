@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import {
     LayoutDashboard, ShoppingCart, Package, Boxes, UserCog, BarChart3, Settings, LogOut, Percent, QrCode,
-    History, CreditCard, FileText, LibraryBig, Users, Truck, PanelLeftClose, PanelLeftOpen,
+    History, CreditCard, FileText, LibraryBig, Users, Truck,
     GraduationCap,
 } from 'lucide-react';
 import { useAuthStore, PERMISSIONS } from '../../stores/authStore';
@@ -16,6 +16,7 @@ import { toast } from '../ui/Toast';
 import { SIMPLE_PATHS } from '../../lib/uiMode';
 import { offerTabs } from '../../lib/modules';
 import { useTrainingStore } from '../../stores/trainingStore';
+import { useTrialStore } from '../../stores/trialStore';
 
 // Grouped menu. Brands, categories, suppliers and customers live together in
 // "Catalogue"; promotions and packs together in "Offers".
@@ -37,8 +38,8 @@ const NAV_GROUPS = [
             { path: '/labels', icon: QrCode, label: 'nav.labels', permission: PERMISSIONS.PRODUCTS_VIEW },
             { path: '/catalog', icon: LibraryBig, label: 'nav.catalog', permission: PERMISSIONS.PRODUCTS_VIEW },
             { path: '/customers', icon: Users, label: 'nav.customers', permission: PERMISSIONS.CUSTOMERS_VIEW, feature: 'customers' },
-            { path: '/suppliers', icon: Truck, label: 'nav.suppliers', permission: PERMISSIONS.INVENTORY_VIEW, feature: 'suppliers' },
-            { path: '/purchase-orders', icon: FileText, label: 'nav.purchases', permission: PERMISSIONS.INVENTORY_VIEW, feature: 'purchaseOrders' },
+            { path: '/suppliers', icon: Truck, label: 'nav.suppliers', permission: PERMISSIONS.INVENTORY_ADJUST, feature: 'suppliers' },
+            { path: '/purchase-orders', icon: FileText, label: 'nav.purchases', permission: PERMISSIONS.INVENTORY_ADJUST, feature: 'purchaseOrders' },
         ],
     },
     {
@@ -105,6 +106,10 @@ export function Sidebar() {
     const tooltip = useTooltip(collapsed);
     const trainingActive = useTrainingStore(state => state.active);
     const startTraining = useTrainingStore(state => state.start);
+    // Training is offered for 7 days from the install date
+    const trainingTrial = useTrialStore(state => state.training);
+    const loadTrial = useTrialStore(state => state.load);
+    useEffect(() => { loadTrial(); }, [loadTrial]);
     const [startingTraining, setStartingTraining] = useState(false);
 
     // Training: a copy of the shop in memory (a cashier needs a manager's PIN)
@@ -167,11 +172,14 @@ export function Sidebar() {
 
     return (
         <aside className={`${collapsed ? 'w-16' : 'w-56'} flex-none bg-dark-secondary border-e border-dark-border flex flex-col transition-[width] duration-200`}>
-            {/* The shop and who is working. A click opens or closes the menu. */}
+            {/* The shop and who is working. A click on it opens or closes the menu
+                (the only way: no separate button). Keyboard: Tab then Enter / Space. */}
             <button
                 type="button"
                 onClick={toggleCollapsed}
                 aria-expanded={!collapsed}
+                aria-label={`${who} · ${collapsed ? t('nav.expand') : t('nav.collapse')}`}
+                data-testid="sidebar-toggle"
                 title={collapsed ? undefined : t('nav.collapse')}
                 className="group relative px-3 py-3 border-b border-dark-border text-start hover:bg-dark-tertiary/50 transition-colors"
                 {...tooltip.props(`${who} · ${t('nav.expand')}`)}
@@ -215,10 +223,10 @@ export function Sidebar() {
             </nav>
 
             <div className="p-2 border-t border-dark-border space-y-1">
-                {!trainingActive && (
+                {!trainingActive && trainingTrial.available && (
                     <button type="button" onClick={enterTraining} disabled={startingTraining} data-testid="nav-training"
                         className={`sidebar-item w-full text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 ${collapsed ? 'justify-center !px-0' : ''}`}
-                        {...tooltip.props(t('training.startHint'))}>
+                        {...tooltip.props(`${t('training.startHint')} · ${t('trial.trainingLeft', { n: trainingTrial.daysLeft })}`)}>
                         <GraduationCap className="w-[18px] h-[18px] flex-none" />
                         <span className={collapsed ? 'sr-only' : 'truncate'}>{t('training.mode')}</span>
                     </button>
@@ -230,17 +238,6 @@ export function Sidebar() {
                     <LogOut className="w-[18px] h-[18px] flip-rtl flex-none" />
                     <span className={collapsed ? 'sr-only' : 'truncate'}>{logoutLabel}</span>
                 </button>
-                {/* Open / close the menu (a click on the shop does it too) */}
-                {collapsed ? (
-                    <button type="button" onClick={toggleCollapsed} className="sidebar-item w-full justify-center !px-0 text-zinc-500" {...tooltip.props(t('nav.expand'))}>
-                        <PanelLeftOpen className="w-[18px] h-[18px] flip-rtl" />
-                    </button>
-                ) : (
-                    <button type="button" onClick={toggleCollapsed} className="sidebar-item w-full text-zinc-500" data-testid="nav-collapse">
-                        <PanelLeftClose className="w-[18px] h-[18px] flip-rtl flex-none" />
-                        <span className="truncate">{t('nav.collapse')}</span>
-                    </button>
-                )}
             </div>
 
             {tooltip.node}

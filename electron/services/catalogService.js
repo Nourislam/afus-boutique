@@ -624,6 +624,11 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
             `, [...fields, product.id]);
         }
+        // Wholesale price (for wholesale customers), when the form sends it
+        if (product.wholesale_price !== undefined) {
+            const wholesale = Number(product.wholesale_price);
+            api.run('UPDATE products SET wholesale_price = ? WHERE id = ?', [wholesale > 0 ? wholesale : null, product.id]);
+        }
 
         // Simple product: stock is kept on the product itself
         if (!hasVariants) {
@@ -778,7 +783,7 @@ function regenerateQrCode(api, variantId) {
 }
 
 /** Search active variants by product name, colour, size, SKU or codes. */
-function searchVariants(api, query, limit = 50) {
+function searchVariants(api, query, limit = -1) {
     const term = `%${String(query || '').trim()}%`;
     return api.all(`
         SELECT v.*, p.name AS product_name, p.price AS product_price, p.brand, p.image_path
@@ -788,7 +793,7 @@ function searchVariants(api, query, limit = 50) {
           AND (p.name LIKE ? OR v.sku LIKE ? OR v.qr_code LIKE ? OR v.barcode LIKE ? OR v.color LIKE ? OR v.size LIKE ?)
         ORDER BY p.name, v.sort_order
         LIMIT ?
-    `, [term, term, term, term, term, term, limit]);
+    `, [term, term, term, term, term, term, Number.isInteger(limit) && limit > 0 ? limit : -1]);
 }
 
 /** Low-stock rows at the most specific level: variants for variant products, products otherwise. */

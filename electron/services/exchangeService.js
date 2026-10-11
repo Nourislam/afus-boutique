@@ -21,16 +21,8 @@ const { nextReceiptNumber } = require('./receiptNumber');
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const PAY_METHODS = ['cash', 'card', 'transfer'];
 
-/** What the customer paid for one piece of the line (ticket discount and TVA of that day included). */
-function paidPerPiece(sale, line) {
-    const quantity = Number(line.quantity) || 0;
-    if (quantity <= 0) return 0;
-    const subtotal = Number(sale.subtotal) || 0;
-    const lineTotal = Number(line.total) || 0;
-    if (subtotal <= 0) return 0;
-    const paidForGoods = (Number(sale.total) || 0) - (Number(sale.service_charge) || 0);
-    return (lineTotal / quantity) * (paidForGoods / subtotal);
-}
+// What the customer paid for one piece of the line: shared/refund.mjs
+const { paidPerPiece } = require('../shared/refund.mjs');
 
 /** Today's price and TVA of `quantity` new pieces. tax: { enabled, rate, inclusive } */
 function newPiecesPrice(product, variant, quantity, tax = {}) {
@@ -97,6 +89,7 @@ function createExchange(api, input, tax = {}) {
         total_refund: p.credit,
         reason: input.reason || 'exchange',
         employee_id: employeeId,
+        exchange: true,
         items: [{
             sale_item_id: p.line.id, product_id: p.line.product_id, variant_id: p.line.variant_id,
             quantity: p.quantity, refund_amount: p.credit, condition: input.condition === 'damaged' ? 'damaged' : 'sellable',

@@ -33,11 +33,18 @@ describe('discount and return rights, checked by the main process', () => {
         for (const [id, pin] of [['cash1', '1111'], ['boss', '9999'], ['owner', '0000']]) api.run('UPDATE employees SET pin = ? WHERE id = ?', [pins.hashPin(pin), id]);
     });
     const setRules = (rules) => api.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('security', ?)", [JSON.stringify(rules)]);
+    // The discount and its limit: Settings › Sales screen (pos_controls)
+    const setControls = (value) => api.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('pos_controls', ?)", [JSON.stringify(value)]);
 
-    it('defaults: cashier without discount, returns need a manager', () => {
-        expect(guard.readRules(api)).toEqual({ cashierMaxDiscount: 0, cashierReturns: false });
-        setRules({ cashierMaxDiscount: 250, cashierReturns: 'yes' });
+    it('defaults: cashier gives a discount alone, returns need a manager', () => {
         expect(guard.readRules(api)).toEqual({ cashierMaxDiscount: 100, cashierReturns: false });
+        // An old limit in settings.security is not read: one setting only
+        setRules({ cashierMaxDiscount: 0, cashierReturns: 'yes' });
+        expect(guard.readRules(api)).toEqual({ cashierMaxDiscount: 100, cashierReturns: false });
+        setControls({ cashierMaxDiscount: 250 });
+        expect(guard.readRules(api).cashierMaxDiscount).toBe(100);
+        setControls({ cashierMaxDiscount: -5 });
+        expect(guard.readRules(api).cashierMaxDiscount).toBe(0);
     });
 
     it('a sale at the normal price is fine for everybody; nobody logged in is refused', () => {
@@ -46,7 +53,7 @@ describe('discount and return rights, checked by the main process', () => {
     });
 
     it('within the limit the cashier sells; above it a manager PIN is needed', () => {
-        setRules({ cashierMaxDiscount: 10 });
+        setControls({ cashierMaxDiscount: 10 });
         // 10% off the line: allowed
         expect(guard.checkSale(api, CASHIER, ticket(v, [['J-N-38', 2700]])).discount).toEqual({ amount: 300, base: 3000, percent: 10 });
         // 500 DA typed on the ticket = 16.67%: refused without a manager
@@ -60,7 +67,12 @@ describe('discount and return rights, checked by the main process', () => {
         expect(guard.checkSale(api, ADMIN, ticket(v, [['J-N-38', 1000]])).approvedBy).toBeNull();
     });
 
-    it('with the default limit (0) any hand discount needs a manager, a promotion does not', () => {
+    it('discount allowed: the cashier gives it alone, no manager PIN (even with an old limit of 0 saved)', () => {
+        setRules({ cashierMaxDiscount: 0 });
+        expect(guard.checkSale(api, CASHIER, ticket(v, [['J-N-38', 2900]])).approvedBy).toBeNull();
+        expect(guard.checkSale(api, CASHIER, ticket(v, [['J-N-38', 3000]], { manual: 1500 })).discount.percent).toBe(50);
+        // Limit 0 set on purpose in the Sales screen: every hand discount needs a manager
+        setControls({ cashierMaxDiscount: 0 });
         expect(code(() => guard.checkSale(api, CASHIER, ticket(v, [['J-N-38', 2900]])))).toBe('DISCOUNT_NEEDS_MANAGER');
         api.run(`INSERT INTO promotions (id, name, type, value, is_active, applies_to, auto_apply) VALUES ('soldes', 'Soldes', 'percentage', 20, 1, 'all', 1)`);
         expect(guard.checkSale(api, CASHIER, ticket(v, [['J-N-38', 3000]], { promotion: 'soldes', promoAmount: 600 })).approvedBy).toBeNull();
@@ -94,5 +106,53 @@ describe('discount and return rights, checked by the main process', () => {
         expect(code(() => guard.checkReturn(api, null))).toBe('LOGIN_REQUIRED');
         setRules({ cashierReturns: true });
         expect(guard.checkReturn(api, CASHIER)).toBeNull();
+    });
+
+    it('kridi: allowed customers only, under their limit unless a manager agrees', () => {
+        api.run("INSERT INTO customers (id, name, credit_enabled, credit_limit, credit_balance) VALUES ('k1', 'Karima', 1, 10000, 8000), ('k2', 'Nadia', 0, 0, 0), ('k3', 'Sara', 1, 0, 50000)");
+        const onCredit = (customer, amount) => ({ customer_id: customer, payments: [{ method: 'credit', amount }] });
+        expect(guard.checkCredit(api, CASHIER, { payments: [{ method: 'cash', amount: 500 }] })).toBeNull();
+        expect(code(() => guard.checkCredit(api, CASHIER, { payments: [{ method: 'credit', amount: 500 }] }))).toBe('CREDIT_NEEDS_CUSTOMER');
+        expect(code(() => guard.checkCredit(api, CASHIER, onCredit('k2', 500)))).toBe('CREDIT_NOT_ALLOWED');
+        // 8 000 owed + 2 000 = the limit: fine
+        expect(guard.checkCredit(api, CASHIER, onCredit('k1', 2000)).owedAfter).toBe(10000);
+        expect(code(() => guard.checkCredit(api, CASHIER, onCredit('k1', 2500)))).toBe('CREDIT_LIMIT_NEEDS_MANAGER');
+        expect(code(() => guard.checkCredit(api, CASHIER, onCredit('k1', 2500), { employeeId: 'boss', pin: '1234' }))).toBe('CREDIT_LIMIT_NEEDS_MANAGER');
+        expect(guard.checkCredit(api, CASHIER, onCredit('k1', 2500), { employeeId: 'boss', pin: '9999' }).approvedBy.id).toBe('boss');
+        expect(guard.checkCredit(api, MANAGER, onCredit('k1', 2500)).approvedBy).toBeNull();
+        // Limit 0: no limit
+        expect(guard.checkCredit(api, CASHIER, onCredit('k3', 90000)).owedAfter).toBe(140000);
+    });
+
+    it('sales screen controls: discount per role and payment methods, refused by the main process', () => {
+        const set = (value) => api.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('pos_controls', ?)", [JSON.stringify(value)]);
+        setRules({ cashierMaxDiscount: 50 });
+        const bargained = ticket(v, [['J-N-38', 2700]]);
+        expect(guard.checkSale(api, CASHIER, bargained).approvedBy).toBeNull();
+        set({ discountCashier: false });
+        expect(code(() => guard.checkSale(api, CASHIER, bargained))).toBe('DISCOUNT_OFF');
+        // A sale at the normal price is still fine
+        expect(guard.checkSale(api, CASHIER, ticket(v, [['J-N-38', 3000]])).approvedBy).toBeNull();
+        expect(guard.checkSale(api, MANAGER, bargained).approvedBy).toBeNull();
+        set({ discountCashier: false, discountManager: false });
+        expect(code(() => guard.checkSale(api, MANAGER, bargained))).toBe('DISCOUNT_OFF');
+        // The owner always may
+        expect(guard.checkSale(api, ADMIN, bargained).approvedBy).toBeNull();
+        set({ payCard: false });
+        const byCard = { ...ticket(v, [['J-N-38', 3000]]), payments: [{ method: 'card', amount: 3000 }] };
+        expect(code(() => guard.checkSale(api, ADMIN, byCard))).toBe('PAYMENT_METHOD_OFF');
+        expect(guard.checkSale(api, CASHIER, { ...byCard, payments: [{ method: 'cash', amount: 3000 }] }).approvedBy).toBeNull();
+    });
+
+    it('wholesale customer: the wholesale price is not a discount', () => {
+        api.run("UPDATE products SET wholesale_price = 2400 WHERE id = 'jean'");
+        api.run("INSERT INTO customers (id, name, is_wholesale) VALUES ('w1', 'Grossiste', 1), ('r1', 'Retail', 0)");
+        const at2400 = (customer) => ({ ...ticket(v, [['J-N-38', 2400]]), customer_id: customer });
+        expect(guard.manualDiscount(api, at2400('w1')).amount).toBe(0);
+        expect(guard.checkSale(api, CASHIER, at2400('w1')).approvedBy).toBeNull();
+        // The same price for another customer is a 20% discount: above a 10% limit, refused for a cashier
+        setControls({ cashierMaxDiscount: 10 });
+        expect(guard.checkSale(api, CASHIER, at2400('w1')).approvedBy).toBeNull();
+        expect(code(() => guard.checkSale(api, CASHIER, at2400('r1')))).toBe('DISCOUNT_NEEDS_MANAGER');
     });
 });

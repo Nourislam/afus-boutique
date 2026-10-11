@@ -37,7 +37,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete, 
             setVariantResults([]);
             return undefined;
         }
-        window.electronAPI.catalog.searchVariants(searchQuery, 20)
+        window.electronAPI.catalog.searchVariants(searchQuery)
             .then(rows => { if (!cancelled) setVariantResults(rows); })
             .catch(() => { if (!cancelled) setVariantResults([]); });
         return () => { cancelled = true; };
@@ -188,7 +188,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete, 
     const filteredProducts = products.filter(p => !(p.variant_count > 0) && (
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.sku?.toLowerCase().includes(searchQuery.toLowerCase())
-    )).slice(0, 5);
+    ));
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={t('po.newTitle')} size="xl">

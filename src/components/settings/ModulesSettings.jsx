@@ -17,7 +17,7 @@ const MODULE_ICONS = {
 const GROUP_ICONS = { sales: ShoppingBag, offers: Percent, stock: Boxes, online: Wifi };
 
 /** On / off switch with its label (a real checkbox, for the keyboard and screen readers). */
-function Switch({ checked, disabled, onChange, label }) {
+export function Switch({ checked, disabled, onChange, label }) {
     return (
         <span className="relative inline-flex flex-none">
             <input type="checkbox" className="peer sr-only" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} aria-label={label} />

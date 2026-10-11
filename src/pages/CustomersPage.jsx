@@ -1,13 +1,14 @@
-import { t } from '../i18n';
+import { t, LANGUAGES } from '../i18n';
 import { translateError } from '../i18n/errors';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Users, Phone, Mail, MapPin, Wallet, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, Phone, Mail, MapPin, Wallet, AlertCircle, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Input, SearchInput, TextArea } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader, EmptyState } from '../components/ui/Table';
 import { toast } from '../components/ui/Toast';
@@ -17,6 +18,7 @@ import { FileSpreadsheet } from 'lucide-react';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore, PERMISSIONS } from '../stores/authStore';
 import { paymentLabel } from '../lib/payments';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 // Phone numbers are compared by their digits only ("0555 12 34 56" = "0555123456")
 const digits = (v) => String(v || '').replace(/\D/g, '');
@@ -45,6 +47,26 @@ export default function CustomersPage() {
     const creditOn = useSettingsStore(state => state.settings.features?.credit !== false);
     const canSeeCredit = useAuthStore(state => state.hasPermission(PERMISSIONS.CUSTOMERS_VIEW));
     const showCredit = creditOn && canSeeCredit;
+    // Loyalty points: what one point is worth (0 = only counted)
+    const pointValue = Number(useSettingsStore(state => state.settings.loyalty?.pointValue)) || 0;
+    const canConvert = useAuthStore(state => state.hasPermission(PERMISSIONS.GIFT_CARDS_CREATE));
+    const [toConvert, setToConvert] = useState(false);
+    const [voucher, setVoucher] = useState(null);
+
+    const convertPoints = async () => {
+        const points = Number(selectedCustomer?.loyalty_points) || 0;
+        try {
+            const card = await window.electronAPI.loyalty.redeem({ customer_id: selectedCustomer.id, points });
+            setVoucher(card);
+            setSelectedCustomer({ ...selectedCustomer, loyalty_points: card.left });
+            toast.success(t('loyalty.converted', { code: card.code, amount: formatMoney(card.amount) }), 10000);
+            loadData();
+        } catch (error) {
+            toast.error(translateError(error));
+        } finally {
+            setToConvert(false);
+        }
+    };
 
     useEffect(() => { loadData(); }, []);
 
@@ -71,15 +93,18 @@ export default function CustomersPage() {
     const owing = customers.filter(c => c.owed > 0.004);
     const totalOwed = owing.reduce((sum, c) => sum + c.owed, 0);
 
-    const handleDelete = async (customer) => {
-        if (confirm(t('common.deleteConfirm', { name: customer.name }))) {
-            try {
-                await window.electronAPI.customers.delete(customer.id);
-                toast.success(t('customers.deleted'));
-                loadData();
-            } catch {
-                toast.error(t('customers.deleteFailed'));
-            }
+    const [toDelete, setToDelete] = useState(null);
+    // A customer who still owes money: the amount is shown before putting them aside
+    const handleDelete = (customer) => setToDelete(customer);
+    const confirmDelete = async () => {
+        const customer = toDelete;
+        setToDelete(null);
+        try {
+            await window.electronAPI.customers.delete(customer.id, { confirmOwed: customer.owed > 0.004 });
+            toast.success(t('customers.deleted'));
+            loadData();
+        } catch (error) {
+            toast.error(translateError(error) || t('customers.deleteFailed'));
         }
     };
 
@@ -108,6 +133,7 @@ export default function CustomersPage() {
 
     const openDetails = async (customer) => {
         setSelectedCustomer(customer);
+        setVoucher(null);
         setHistory(null);
         try {
             setHistory(await window.electronAPI.customers.history(customer.id));
@@ -301,6 +327,20 @@ export default function CustomersPage() {
                                 </div>
                             </div>
 
+                            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3" data-testid="customer-loyalty">
+                                <Star className="w-5 h-5 text-amber-300 flex-none" />
+                                <div className="flex-1 min-w-[12rem]">
+                                    <p className="font-semibold tabular"><bdi>{t('loyalty.points', { n: Number(selectedCustomer.loyalty_points) || 0 })}</bdi>
+                                        {pointValue > 0 && <span className="ms-2 text-sm font-normal text-zinc-400"><bdi>{t('loyalty.worth', { amount: formatMoney((Number(selectedCustomer.loyalty_points) || 0) * pointValue) })}</bdi></span>}
+                                    </p>
+                                    <p className="text-xs text-zinc-500">{t('loyalty.rule')}</p>
+                                    {voucher && <p className="mt-1 text-sm text-emerald-300" data-testid="loyalty-voucher"><bdi dir="ltr">{voucher.code}</bdi> · <bdi>{formatMoney(voucher.amount)}</bdi></p>}
+                                </div>
+                                {pointValue > 0 && canConvert && (Number(selectedCustomer.loyalty_points) || 0) > 0 && (
+                                    <Button size="sm" variant="secondary" onClick={() => setToConvert(true)} data-testid="loyalty-convert">{t('loyalty.convert')}</Button>
+                                )}
+                            </div>
+
                             {!history ? (
                                 <p className="text-sm text-zinc-500">{t('common.loading')}</p>
                             ) : (
@@ -392,6 +432,27 @@ export default function CustomersPage() {
                     </Button>
                 </ModalFooter>
             </Modal>
+
+            <ConfirmDialog
+                isOpen={toConvert && !!selectedCustomer}
+                onClose={() => setToConvert(false)}
+                onConfirm={convertPoints}
+                title={t('loyalty.convert')}
+                message={selectedCustomer ? t('loyalty.confirm', { n: Number(selectedCustomer.loyalty_points) || 0, amount: `\u2068${formatMoney((Number(selectedCustomer.loyalty_points) || 0) * pointValue)}\u2069` }) : ''}
+                confirmText={t('loyalty.convert')}
+            />
+
+            <ConfirmDialog
+                isOpen={!!toDelete}
+                onClose={() => setToDelete(null)}
+                onConfirm={confirmDelete}
+                title={t('common.confirmTitle')}
+                message={toDelete ? (toDelete.owed > 0.004
+                    ? t('customers.deleteOwes', { name: `\u2068${toDelete.name}\u2069`, amount: `\u2068${formatMoney(toDelete.owed)}\u2069` })
+                    : t('common.deleteConfirm', { name: toDelete.name })) : ''}
+                confirmText={t('common.delete')}
+                variant="danger"
+            />
         </div>
     );
 }
@@ -418,6 +479,8 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
                 address: customer.address || '',
                 notes: customer.notes || '',
                 credit_enabled: !!customer.credit_enabled,
+                is_wholesale: !!customer.is_wholesale,
+                receipt_language: customer.receipt_language || '',
                 credit_limit: customer.credit_limit || 0,
             });
         } else {
@@ -429,6 +492,8 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
                 notes: '',
                 credit_enabled: false,
                 credit_limit: 0,
+                is_wholesale: false,
+                receipt_language: '',
             });
         }
     }, [customer, isOpen]);
@@ -451,6 +516,7 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
                 credit_enabled: formData.credit_enabled ? 1 : 0,
                 credit_limit: parseFloat(formData.credit_limit) || 0,
                 credit_balance: customer?.credit_balance || 0,
+                is_wholesale: formData.is_wholesale ? 1 : 0,
             };
 
             if (customer) {
@@ -500,6 +566,13 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
                             onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                             placeholder={t('customers.addressPlaceholder')}
                         />
+                        {/* Tickets and invoices of this customer in their language */}
+                        <Select
+                            label={t('customers.receiptLanguage')}
+                            value={formData.receipt_language || ''}
+                            onChange={(v) => setFormData({ ...formData, receipt_language: v })}
+                            options={[{ value: '', label: t('customers.receiptLanguageShop') }, ...LANGUAGES.map(l => ({ value: l.value, label: l.label }))]}
+                        />
                         <TextArea
                             label={t('customers.notes')}
                             value={formData.notes}
@@ -540,6 +613,21 @@ function CustomerFormModal({ isOpen, onClose, customer, onSave }) {
                                         placeholder="0.00"
                                     />
                                 )}
+
+                                {/* Wholesale customer: pays the wholesale price of the articles that have one */}
+                                {canManageCredit ? (
+                                    <label className="flex items-start gap-3 cursor-pointer">
+                                        <input type="checkbox" checked={!!formData.is_wholesale} data-testid="customer-wholesale"
+                                            onChange={(e) => setFormData({ ...formData, is_wholesale: e.target.checked })}
+                                            className="mt-0.5 w-5 h-5 rounded border-dark-border bg-dark-tertiary accent-accent-primary" />
+                                        <span>
+                                            <span className="block">{t('wholesale.customer')}</span>
+                                            <span className="block text-xs text-zinc-500">{t('wholesale.customerHint')}</span>
+                                        </span>
+                                    </label>
+                                ) : formData.is_wholesale ? (
+                                    <div className="p-3 rounded-lg bg-dark-tertiary text-sm">{t('wholesale.customer')}</div>
+                                ) : null}
 
                                 {customer && customer.credit_balance > 0 && (
                                     <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">

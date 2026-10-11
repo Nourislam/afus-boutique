@@ -81,3 +81,18 @@ describe('PIN security', () => {
         expect(session.isManager()).toBe(false);
     });
 });
+
+describe('wrong PINs', () => {
+    it('after 5 wrong PINs the account waits 60 s; a right PIN after that works', async () => {
+        const db = await createLegacyDb();
+        applyMigrations(db);
+        const api = createApi(db);
+        pins.resetPinTries();
+        api.run("INSERT INTO employees (id, name, pin, role) VALUES ('e1', 'Samir', ?, 'cashier')", [pins.hashPin('4321')]);
+        const t0 = 1_000_000;
+        for (let i = 0; i < 5; i++) expect(pins.checkEmployeePin(api, 'e1', '0000', t0 + i)).toBeNull();
+        // Locked, even with the right PIN
+        expect(() => pins.checkEmployeePin(api, 'e1', '4321', t0 + 10)).toThrow(/PIN_LOCKED/);
+        expect(pins.checkEmployeePin(api, 'e1', '4321', t0 + 61_000)).toMatchObject({ id: 'e1' });
+    });
+});

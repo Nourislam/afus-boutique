@@ -9,6 +9,7 @@ import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { NumPad } from '../ui/NumPad';
 import { DatePicker } from '../ui/DatePicker';
 import { paymentLabel, quickCashAmounts } from '../../lib/payments';
+import { methodAllowed } from '../../lib/posControls';
 import { formatMoney } from '../../i18n/format';
 import { t } from '../../i18n';
 
@@ -18,6 +19,8 @@ import { t } from '../../i18n';
  */
 export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
     const features = useSettingsStore(state => state.settings.features);
+    // Card, transfer and kridi can be turned off by the owner (Settings › Sales screen)
+    const posControls = useSettingsStore(state => state.settings.pos_controls);
     const [paymentMethod, setPaymentMethod] = useState('cash');
     const [cashAmount, setCashAmount] = useState('');
     const [loading, setLoading] = useState(false);
@@ -47,6 +50,11 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
 
     useEffect(() => {
         if (isOpen) {
+            // Reservation picked up: its deposit is already paid
+            const reservation = useCartStore.getState().reservation;
+            setSplitPayments(reservation && reservation.deposit > 0
+                ? [{ method: 'deposit', amount: Math.min(reservation.deposit, total), reference: reservation.number }]
+                : []);
             loadCustomers();
             // If cart already has a customer selected, use that
             if (cart.customer) {
@@ -125,14 +133,13 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
         c.name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
         c.phone?.includes(customerSearch) ||
         c.email?.toLowerCase().includes(customerSearch.toLowerCase())
-    ).slice(0, 5);
+    );
 
     const canProcessCredit = () => {
         if (!selectedCustomer) return false;
         if (!creditInfo) return false;
-        if (!creditInfo.credit_enabled) return false;
-        if (creditInfo.available_credit < remainingDue) return false;
-        return true;
+        // Above the limit the sale still goes on, with a manager's PIN
+        return !!creditInfo.credit_enabled;
     };
 
     const handlePayment = async () => {
@@ -180,10 +187,7 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
                 toast.error(t('pos.noCreditEnabled'));
                 return;
             }
-            if (creditInfo.available_credit < remainingDue) {
-                toast.error(t('pos.creditLimit'));
-                return;
-            }
+            // Above the limit: the main process asks a manager's PIN
         }
 
         setLoading(true);
@@ -228,7 +232,7 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
         { id: 'transfer', icon: Smartphone, label: t('pay.transferShort'), active: 'border-accent-primary bg-accent-primary/10' },
         ...(features?.credit !== false ? [{ id: 'credit', icon: FileText, label: t('pay.credit'), active: 'border-amber-500 bg-amber-500/10' }] : []),
         ...(features?.giftCards ? [{ id: 'gift_card', icon: Gift, label: t('pay.giftCard'), active: 'border-purple-500 bg-purple-500/10' }] : []),
-    ];
+    ].filter(m => methodAllowed(posControls, m.id));
 
     const amountBox = (value, tone = 'text-white') => <bdi className={`tabular ${tone}`}>{formatCurrency(value)}</bdi>;
 
@@ -398,7 +402,7 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                                             <>
                                                                 <div className="flex justify-between items-center">
                                                                     <span className="text-sm text-zinc-400">{t('pos.creditLimitLabel')}</span>
-                                                                    <span className="font-medium">{formatCurrency(creditInfo.credit_limit)}</span>
+                                                                    <span className="font-medium">{creditInfo.credit_limit > 0 ? formatCurrency(creditInfo.credit_limit) : t('partners.creditAllowedNoLimit')}</span>
                                                                 </div>
                                                                 <div className="flex justify-between items-center">
                                                                     <span className="text-sm text-zinc-400">{t('pos.currentBalance')}</span>
@@ -406,8 +410,8 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                                                 </div>
                                                                 <div className="flex justify-between items-center pt-2 border-t border-dark-border">
                                                                     <span className="text-sm font-medium">{t('pos.availableCredit')}</span>
-                                                                    <span className={`font-bold ${creditInfo.available_credit >= total ? 'text-green-400' : 'text-red-400'}`}>
-                                                                        {formatCurrency(creditInfo.available_credit)}
+                                                                    <span className={`font-bold ${creditInfo.credit_limit <= 0 || creditInfo.available_credit >= total ? 'text-green-400' : 'text-red-400'}`}>
+                                                                        {creditInfo.credit_limit > 0 ? formatCurrency(Math.max(0, creditInfo.available_credit)) : '—'}
                                                                     </span>
                                                                 </div>
 
@@ -421,7 +425,7 @@ export default function PaymentModal({ isOpen, onClose, total, onComplete }) {
                                                                         />
                                                                     </div>
                                                                 </div>
-                                                                {creditInfo.available_credit < total && (
+                                                                {creditInfo.credit_limit > 0 && creditInfo.available_credit < total && (
                                                                     <p className="text-xs text-red-400 mt-2">
                                                                         {t('pos.insufficientCredit')}
                                                                     </p>

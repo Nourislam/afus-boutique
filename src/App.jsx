@@ -160,12 +160,12 @@ function App() {
                         </ProtectedRoute>
                     } />
                     <Route path="/suppliers" element={
-                        <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
+                        <ProtectedRoute permission={PERMISSIONS.INVENTORY_ADJUST}>
                             <ModuleGate module="suppliers"><SuppliersPage /></ModuleGate>
                         </ProtectedRoute>
                     } />
                     <Route path="/purchase-orders" element={
-                        <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
+                        <ProtectedRoute permission={PERMISSIONS.INVENTORY_ADJUST}>
                             <ModuleGate module="purchaseOrders"><PurchaseOrdersPage /></ModuleGate>
                         </ProtectedRoute>
                     } />

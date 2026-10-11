@@ -88,7 +88,7 @@ function getClothingDashboard(api, range) {
         topSizes: topSizes(api, range),
         topColors: topColors(api, range),
         stockValue: stockValue(api),
-        lowStock: catalog.getLowStock(api).slice(0, 12),
+        lowStock: catalog.getLowStock(api),
     };
 }
 

@@ -26,6 +26,7 @@ export default function InventoryPage() {
     const [inventoryLogs, setInventoryLogs] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [showAdjustModal, setShowAdjustModal] = useState(false);
+    const [showAllLow, setShowAllLow] = useState(false);
     const [showLogsModal, setShowLogsModal] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -55,7 +56,7 @@ export default function InventoryPage() {
                 window.electronAPI.products.getAll(),
                 window.electronAPI.inventory.getLowStock(),
                 window.electronAPI.inventory.getLogs(),
-                window.electronAPI.catalog.searchVariants('', 10000),
+                window.electronAPI.catalog.searchVariants(''),
             ]);
             const byProduct = {};
             for (const v of allVariants) (byProduct[v.product_id] = byProduct[v.product_id] || []).push(v);
@@ -173,7 +174,7 @@ export default function InventoryPage() {
                             <span className="font-semibold">{t('inventory.lowAlert')}</span>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {lowStockProducts.slice(0, 8).map(row => (
+                            {(showAllLow ? lowStockProducts : lowStockProducts.slice(0, 8)).map(row => (
                                 <div
                                     key={row.variant_id || row.product_id}
                                     className="p-3 rounded-lg bg-dark-tertiary/50"
@@ -188,8 +189,11 @@ export default function InventoryPage() {
                                 </div>
                             ))}
                         </div>
-                        {lowStockProducts.length > 8 && (
-                            <p className="text-xs text-amber-400 mt-2">{t('inventory.moreLow', { n: lowStockProducts.length - 8 })}</p>
+                        {/* A summary of 8; the whole list on demand */}
+                        {lowStockProducts.length > 8 && !showAllLow && (
+                            <button type="button" onClick={() => setShowAllLow(true)} className="text-xs text-amber-400 mt-2 hover:underline" data-testid="inventory-more-low">
+                                {t('inventory.moreLow', { n: lowStockProducts.length - 8 })}
+                            </button>
                         )}
                     </div>
                 )}
@@ -252,14 +256,16 @@ export default function InventoryPage() {
                                     <TableCell>{formatCurrency(product.stock_quantity * product.cost)}</TableCell>
                                     <TableCell>
                                         <div className="flex items-center gap-2">
-                                            <Button
-                                                variant="secondary"
-                                                size="sm"
-                                                onClick={() => { setSelectedProduct(product); setShowAdjustModal(true); }}
-                                            >
-                                                <ArrowUpDown className="w-3 h-3" />
-                                                {t('inventory.adjustShort')}
-                                            </Button>
+                                            {canCount && (
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    onClick={() => { setSelectedProduct(product); setShowAdjustModal(true); }}
+                                                >
+                                                    <ArrowUpDown className="w-3 h-3" />
+                                                    {t('inventory.adjustShort')}
+                                                </Button>
+                                            )}
                                             <Button
                                                 variant="ghost"
                                                 size="sm"

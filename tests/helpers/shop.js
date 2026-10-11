@@ -16,6 +16,8 @@ export function addInitColumns(api) {
         if (!api.all(`PRAGMA table_info(${table})`).some(c => c.name === column)) api.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     };
     add('customers', 'credit_enabled', 'INTEGER DEFAULT 0');
+    add('customers', 'credit_limit', 'REAL DEFAULT 0');
+    add('customers', 'credit_balance', 'REAL DEFAULT 0');
     add('customers', 'is_active', 'INTEGER DEFAULT 1');
     add('sales', 'service_charge', 'REAL DEFAULT 0');
     add('sales', 'tax_exempt', 'INTEGER DEFAULT 0');

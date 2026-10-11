@@ -218,7 +218,7 @@ class EcommerceSyncManager {
         }));
 
         // Get sync logs
-        ipcMain.handle('ecommerce:getSyncLogs', async (_, connectionId, limit = 50) => {
+        ipcMain.handle('ecommerce:getSyncLogs', async (_, connectionId, limit = -1) => {
             return this.getSyncLogs(connectionId, limit);
         });
 
@@ -715,14 +715,14 @@ class EcommerceSyncManager {
     /**
      * Get sync logs for a connection
      */
-    getSyncLogs(connectionId, limit = 50) {
+    getSyncLogs(connectionId, limit = -1) {
         const { runQuery } = this.store();
         return runQuery(`
             SELECT * FROM ecommerce_sync_logs 
             WHERE connection_id = ? 
             ORDER BY started_at DESC 
             LIMIT ?
-        `, [connectionId, limit]);
+        `, [connectionId, Number.isInteger(limit) && limit > 0 ? limit : -1]);
     }
 
     // ==========================================

@@ -31,7 +31,9 @@ function salesStats(api, { startDate, endDate, employeeId } = {}) {
     const returns = api.get(`
         SELECT
           COUNT(DISTINCT r.id) AS count,
-          COALESCE(SUM(r.total_refund), 0) AS refunds
+          COALESCE(SUM(r.total_refund), 0) AS refunds,
+          -- The TVA inside what was given back (same share as on the ticket)
+          COALESCE(SUM(CASE WHEN s.total > 0 THEN r.total_refund * COALESCE(s.tax_amount, 0) / s.total ELSE 0 END), 0) AS refund_tax
         FROM returns r
         LEFT JOIN sales s ON s.id = r.sale_id
         WHERE datetime(r.created_at) BETWEEN datetime(?) AND datetime(?)${employeeId ? ' AND r.employee_id = ?' : ''} AND ${countedSale('s')}
@@ -49,12 +51,15 @@ function salesStats(api, { startDate, endDate, employeeId } = {}) {
     const refunds = returns.refunds || 0;
     const netRevenue = revenue - refunds;
     const cost = (sales.total_cost || 0) - (returnedCost.cost || 0);
-    const profit = (revenue - (sales.total_tax || 0)) - refunds - cost;
+    // Both sides without TVA: what the pieces brought back paid in TVA is not profit lost
+    const refundTax = returns.refund_tax || 0;
+    const profit = (revenue - (sales.total_tax || 0)) - (refunds - refundTax) - cost;
     return {
         total_transactions: sales.total_transactions || 0,
         total_revenue: r2(revenue),
         average_sale: r2(sales.average_sale || 0),
         total_tax: r2(sales.total_tax || 0),
+        net_tax: r2((sales.total_tax || 0) - refundTax),
         total_discount: r2(sales.total_discount || 0),
         items_sold: sales.items_sold || 0,
         total_refunds: r2(refunds),

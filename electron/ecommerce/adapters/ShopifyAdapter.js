@@ -49,6 +49,8 @@ class ShopifyAdapter extends EcommerceAdapter {
             const fetch = (await import('node-fetch')).default;
             const response = await fetch(url, options);
             
+            // Next page of a list (Shopify paginates with a Link header)
+            this.lastLink = response.headers.get('link') || response.headers.get('Link') || '';
             // Track rate limits
             this.rateLimitRemaining = parseInt(response.headers.get('X-Shopify-Shop-Api-Call-Limit')?.split('/')[0] || '40');
             
@@ -149,10 +151,11 @@ class ShopifyAdapter extends EcommerceAdapter {
             }
         }
 
+        const nextCursor = ShopifyAdapter.nextPageInfo(this.lastLink);
         return {
             products: mappedProducts,
-            nextCursor: null, // Would parse from Link header in production
-            hasMore: products.length === 50
+            nextCursor,
+            hasMore: !!nextCursor
         };
     }
 
@@ -172,16 +175,22 @@ class ShopifyAdapter extends EcommerceAdapter {
             }
         }
 
-        const ids = inventoryItemIds.slice(0, 50).join(','); // Max 50 per request
-        const data = await this.makeRequest('GET', 
-            `/inventory_levels.json?inventory_item_ids=${ids}&location_ids=${this.locationId}`
-        );
-
-        return (data.inventory_levels || []).map(level => ({
-            inventoryItemId: level.inventory_item_id.toString(),
-            locationId: level.location_id.toString(),
-            quantity: level.available || 0
-        }));
+        // Shopify takes at most 50 items per request: every item, 50 at a time
+        const levels = [];
+        for (let i = 0; i < inventoryItemIds.length; i += 50) {
+            const ids = inventoryItemIds.slice(i, i + 50).join(',');
+            const data = await this.makeRequest('GET',
+                `/inventory_levels.json?inventory_item_ids=${ids}&location_ids=${this.locationId}`
+            );
+            for (const level of (data.inventory_levels || [])) {
+                levels.push({
+                    inventoryItemId: level.inventory_item_id.toString(),
+                    locationId: level.location_id.toString(),
+                    quantity: level.available || 0
+                });
+            }
+        }
+        return levels;
     }
 
     /**
@@ -256,6 +265,13 @@ class ShopifyAdapter extends EcommerceAdapter {
      */
     sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /** page_info of the rel="next" link of a Shopify Link header, or null. */
+    static nextPageInfo(link) {
+        const next = String(link || '').split(',').find(part => /rel="?next"?/.test(part));
+        const m = next && /[?&]page_info=([^&>]+)/.exec(next);
+        return m ? m[1] : null;
     }
 }
 

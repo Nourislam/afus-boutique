@@ -58,6 +58,13 @@ export const useLanguageStore = create((set) => ({
     },
 }));
 
+// "7 000" inside an Arabic sentence is drawn "000 7" by the bidi algorithm;
+// an amount (digits grouped by spaces) is isolated so it stays in one piece
+const GROUPED = /\d[\u00a0\u202f ]\d/;
+function inSentence(value, rtl) {
+    return rtl && GROUPED.test(value) && !value.includes('\u2068') ? `\u2068${value}\u2069` : value;
+}
+
 export function translate(lang, key, params) {
     const entry = MESSAGES[key];
     let text;
@@ -68,7 +75,8 @@ export function translate(lang, key, params) {
     }
     if (params) {
         if (normalizeLanguage(lang) === 'ar') text = arabicCounted(text, params);
-        text = text.replace(/\{(\w+)\}/g, (m, name) => (params[name] !== undefined && params[name] !== null ? String(params[name]) : m));
+        const rtl = normalizeLanguage(lang) === 'ar';
+        text = text.replace(/\{(\w+)\}/g, (m, name) => (params[name] !== undefined && params[name] !== null ? inSentence(String(params[name]), rtl) : m));
     }
     return text;
 }

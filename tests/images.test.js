@@ -37,3 +37,24 @@ describe('no native image library in the application', () => {
         expect(pkg.build.asarUnpack).toBeUndefined();
     });
 });
+
+describe('picture names from the window cannot reach other files', () => {
+    it('refuses "../", absolute paths and sub-folders', async () => {
+        const { createRequire } = await import('module');
+        const req = createRequire(import.meta.url);
+        const os = await import('os');
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'afus-img-'));
+        const electronPath = req.resolve('electron');
+        if (!req.cache[electronPath]?.exports?.app) req.cache[electronPath] = { id: electronPath, filename: electronPath, loaded: true, exports: { app: { getPath: () => dir }, nativeImage: {} } };
+        const images = req('../electron/services/imageService');
+        expect(images.safeImagePath('../afus-boutique.db')).toBeNull();
+        expect(images.safeImagePath('..')).toBeNull();
+        expect(images.safeImagePath('/etc/passwd')).toBeNull();
+        expect(images.safeImagePath('sub/x.jpg')).toBeNull();
+        expect(images.safeImagePath('..\\\\afus-boutique.db')).toBeNull();
+        expect(images.deleteImage('../afus-boutique.db').success).toBe(false);
+        expect(images.getImagePath('../afus-boutique.db')).toBeNull();
+        expect((await images.saveImageFromPath(path.join(dir, 'afus-boutique.db'))).success).toBe(false);
+        expect(images.safeImagePath('img-123.jpg')).toMatch(/images[\\\\/]img-123\.jpg$/);
+    });
+});

@@ -569,6 +569,8 @@ export function LabelPrinterForm({ printers, onPrintersChange, labels, onLabelsC
                     label={t('labels.showVariant')} hint={perArticle ? t('labels.variantOffArticle') : null} />
                 <Toggle checked={layout.showSku} onChange={(v) => setLayout({ showSku: v })} label={t('labels.showCodeText')} />
                 <Toggle checked={layout.showPrice} onChange={(v) => setLayout({ showPrice: v })} label={t('labels.showPrice')} />
+                <Toggle checked={layout.showPrice && layout.showSalePrice !== false} disabled={!layout.showPrice} onChange={(v) => setLayout({ showSalePrice: v })}
+                    label={t('labels.showSalePrice')} hint={t('labels.showSalePriceHint')} />
                 {qrSide && (
                     <Toggle checked={layout.showBarcode && barsOk} disabled={!barsOk} onChange={(v) => setLayout({ showBarcode: v })}
                         label={t('labels.showBarcode')} hint={!barsOk ? t('printing.barsTooSmall') : t('printing.barsHint')} />

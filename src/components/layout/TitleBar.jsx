@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { WifiOff } from 'lucide-react';
 import { AfusLogo } from '../brand/AfusLogo';
+import { HelpButton } from './HelpButton';
 import { useT } from '../../i18n';
 import { formatDate as formatLocalDate } from '../../i18n/format';
 
@@ -12,7 +13,7 @@ const PLATFORM = typeof window !== 'undefined' ? window.electronAPI?.platform : 
  * this bar, so they never appear twice. Their space is kept free with a
  * physical padding that does not flip in Arabic.
  */
-export function TitleBar({ bare = false }) {
+export function TitleBar({ bare = false, loggedIn = true }) {
     const [time, setTime] = useState(new Date());
     const { t } = useT();
 
@@ -38,7 +39,7 @@ export function TitleBar({ bare = false }) {
 
     return (
         <div
-            className="h-10 flex-none bg-dark-secondary border-b border-dark-border flex items-center gap-4 titlebar-drag select-none"
+            className="relative h-10 flex-none bg-dark-secondary border-b border-dark-border flex items-center gap-4 titlebar-drag select-none"
             style={reserved}
             onDoubleClick={() => window.electronAPI?.maximize()}
         >
@@ -50,13 +51,16 @@ export function TitleBar({ bare = false }) {
 
             <div className="flex-1" />
 
-            <div className="flex items-center gap-3 text-xs text-zinc-400 whitespace-nowrap">
-                <span className="hidden lg:inline">{formatLocalDate(time, 'long')}</span>
+            <HelpButton loggedIn={loggedIn} />
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-dark-tertiary text-xs text-zinc-400 whitespace-nowrap" title={t('settings.db.localText')}>
+                <WifiOff className="w-3 h-3" />
+                {t('titlebar.local')}
+            </span>
+
+            {/* Date and time in the middle of the window, whatever the language and the window buttons */}
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 flex items-center gap-3 text-xs text-zinc-400 whitespace-nowrap pointer-events-none" data-testid="titlebar-clock">
+                <span className="hidden md:inline">{formatLocalDate(time, 'long')}</span>
                 <span className="font-medium tabular text-zinc-300">{formatLocalDate(time, 'time')}</span>
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-dark-tertiary text-zinc-400" title={t('settings.db.localText')}>
-                    <WifiOff className="w-3 h-3" />
-                    {t('titlebar.local')}
-                </span>
             </div>
         </div>
     );

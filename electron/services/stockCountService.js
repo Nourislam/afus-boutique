@@ -185,7 +185,7 @@ function confirmCount(api, countId, { reason, employeeId = null } = {}) {
 }
 
 /** Past counts, newest first. */
-function listCounts(api, limit = 20) {
+function listCounts(api, limit = -1) {
     return api.all(`
         SELECT sc.*, c.name AS category_name, e.name AS employee_name,
                (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = sc.id) AS lines,
@@ -194,7 +194,7 @@ function listCounts(api, limit = 20) {
         LEFT JOIN categories c ON c.id = sc.category_id
         LEFT JOIN employees e ON e.id = sc.employee_id
         ORDER BY sc.created_at DESC LIMIT ?
-    `, [limit]);
+    `, [Number.isInteger(limit) && limit > 0 ? limit : -1]);
 }
 
 module.exports = { currentCount, startCount, scan, setCounted, removeLine, cancelCount, confirmCount, summary, countLines, listCounts, getCount };

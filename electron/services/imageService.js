@@ -94,6 +94,8 @@ async function saveImage(base64Data, originalName = 'image.jpg') {
 // Save image from file path (copy file)
 async function saveImageFromPath(sourcePath) {
     try {
+        // Only a picture file is taken (never the database or any other file)
+        if (!/\.(jpe?g|png|webp|gif|bmp)$/i.test(String(sourcePath || ''))) return { success: false, error: 'Not a picture' };
         const imagesDir = getImagesDir();
         const fileName = generateFileName(path.basename(sourcePath));
         const filePath = path.join(imagesDir, fileName);
@@ -124,10 +126,23 @@ async function saveImageFromPath(sourcePath) {
 }
 
 // Delete image
+/**
+ * The file of a picture inside the images folder, or null for anything else
+ * ("../afus-boutique.db", an absolute path, a sub-folder): a picture name
+ * from the window can never reach another file.
+ */
+function safeImagePath(fileName) {
+    const name = String(fileName || '');
+    if (!name || /[\\/]/.test(name) || name !== path.basename(name) || name === '.' || name === '..') return null;
+    const imagesDir = getImagesDir();
+    const filePath = path.resolve(imagesDir, name);
+    return path.dirname(filePath) === path.resolve(imagesDir) ? filePath : null;
+}
+
 function deleteImage(fileName) {
     try {
-        const imagesDir = getImagesDir();
-        const filePath = path.join(imagesDir, fileName);
+        const filePath = safeImagePath(fileName);
+        if (!filePath) return { success: false, error: 'Invalid image name' };
 
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
@@ -143,9 +158,8 @@ function deleteImage(fileName) {
 
 // Get image path for display
 function getImagePath(fileName) {
-    if (!fileName) return null;
-    const imagesDir = getImagesDir();
-    const filePath = path.join(imagesDir, fileName);
+    const filePath = safeImagePath(fileName);
+    if (!filePath) return null;
 
     if (fs.existsSync(filePath)) {
         return filePath;
@@ -203,6 +217,7 @@ async function saveLogo(base64Data, originalName = 'logo.png') {
 }
 
 module.exports = {
+    safeImagePath,
     fitWithin,
     getImagesDir,
     saveImage,

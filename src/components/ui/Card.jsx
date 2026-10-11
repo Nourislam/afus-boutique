@@ -1,7 +1,8 @@
 import { t } from '../../i18n';
-export function Card({ children, className = '', onClick }) {
+export function Card({ children, className = '', onClick, ...rest }) {
     return (
         <div
+            {...rest}
             className={`card ${onClick ? 'cursor-pointer hover:border-accent-primary transition-colors' : ''} ${className}`}
             onClick={onClick}
         >

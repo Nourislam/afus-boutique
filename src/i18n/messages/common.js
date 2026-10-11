@@ -115,6 +115,7 @@ export default {
     'status.completed': ['Completed', 'Terminée', 'مكتملة'],
     'status.pending': ['Pending', 'En attente', 'معلّقة'],
     'status.cancelled': ['Cancelled', 'Annulée', 'ملغاة'],
+    'status.voided': ['Voided', 'Annulée', 'ملغاة'],
     'status.refunded': ['Refunded', 'Remboursée', 'مسترجعة'],
     'status.partially_refunded': ['Partly refunded', 'Remboursée en partie', 'مسترجعة جزئياً'],
     'status.paid': ['Paid', 'Payée', 'مدفوعة'],

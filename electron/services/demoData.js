@@ -336,8 +336,9 @@ function buildShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20261
         const id = `demo-cus-${i + 1}`;
         api.run('INSERT INTO customers (id, name, phone, credit_enabled, credit_limit, credit_balance, is_active, created_at) VALUES (?, ?, ?, ?, ?, 0, 1, ?)',
             [id, lang === 'ar' ? ar : latin, phone, credit ? 1 : 0, limit, sqlTime(at(DAYS + 5 - i, 11))]);
-        return { id, credit };
+        return { id, credit, limit, owed: 0 };
     });
+    const customerById = new Map(customers.map(c => [c.id, c]));
     const creditCustomers = customers.filter(c => c.credit);
 
     // ---- Plan three months of tickets first, to know how much stock each piece needed
@@ -473,13 +474,18 @@ function buildShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20261
             const receipt = nextReceiptNumber(api, ticket.time);
             // Kridi for a few tickets, when a customer may buy on kridi
             const methodRoll = random();
-            const credit = methodRoll < 0.08 && day.daysAgo > 0;
-            const method = credit ? 'credit' : methodRoll < 0.78 ? 'cash' : methodRoll < 0.9 ? 'card' : 'transfer';
+            let credit = methodRoll < 0.08 && day.daysAgo > 0;
+            let method = credit ? 'credit' : methodRoll < 0.78 ? 'cash' : methodRoll < 0.9 ? 'card' : 'transfer';
             const customer = credit ? pick(random, creditCustomers) : (random() < 0.15 ? pick(random, customers) : null);
             // Some bargaining: a round amount off
             const subtotal = ticket.lines.reduce((s, l) => s + l.quantity * l.article.price, 0);
             const discount = random() < 0.12 ? Math.min(500, Math.round(subtotal * 0.05 / 100) * 100) : 0;
             const total = subtotal - discount;
+            // Kridi stays under the customer's limit (as the till checks it): else paid cash
+            if (credit && customer.limit > 0 && customer.owed + total > customer.limit) {
+                credit = false;
+                method = 'cash';
+            }
             const created = sqlTime(ticket.time);
             const logsBefore = lastLogRow(api);
             api.run(`INSERT INTO sales (id, receipt_number, employee_id, customer_id, subtotal, tax_amount, discount_amount, total, status, created_at)
@@ -508,6 +514,7 @@ function buildShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20261
                          VALUES (?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
                     [creditId, saleId, customer.id, `INV-${yymmdd}-${String(creditCount).padStart(4, '0')}`, total, due.toISOString(), created]);
                 api.run('UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?', [total, customer.id]);
+                customer.owed += total;
                 creditOpen.push({ id: creditId, customer: customer.id, total, time: ticket.time, paid: 0 });
             }
         }
@@ -525,11 +532,14 @@ function buildShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20261
             drawer += amount;
             api.run('UPDATE credit_sales SET amount_paid = ?, status = ? WHERE id = ?', [debt.paid, debt.paid >= debt.total ? 'paid' : 'partial', debt.id]);
             api.run('UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?', [amount, debt.customer]);
+            customerById.get(debt.customer).owed -= amount;
         }
 
         // A piece brought back now and then (a few days after the sale)
         if (day.daysAgo > 0 && random() < 0.35) {
-            const candidates = soldLines.filter(s => !s.credit && !s.returned && (at(day.daysAgo, 12) - s.time) / 86400000 >= 1 && (at(day.daysAgo, 12) - s.time) / 86400000 < 8);
+            // Refunded from the drawer: only when it holds enough cash (a real drawer cannot go below 0)
+            const candidates = soldLines.filter(s => !s.credit && !s.returned && s.line.article.price <= drawer
+                && (at(day.daysAgo, 12) - s.time) / 86400000 >= 1 && (at(day.daysAgo, 12) - s.time) / 86400000 < 8);
             if (candidates.length) {
                 const s = pick(random, candidates);
                 s.returned = true;
@@ -537,24 +547,29 @@ function buildShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20261
                 const returnId = api.uuid();
                 const sellable = random() < 0.8;
                 const logsBefore = lastLogRow(api);
-                returnService.createReturn(api, {
+                const saved = returnService.createReturn(api, {
                     id: returnId, sale_id: s.saleId, return_number: `RET-DEMO-${String(returnCount).padStart(3, '0')}`,
                     total_refund: s.line.article.price, reason: sellable ? 'size' : 'defect', employee_id: cashier,
                     items: [{ sale_item_id: s.lineId, quantity: 1, refund_amount: s.line.article.price, condition: sellable ? 'sellable' : 'damaged' }],
                 });
                 const when = sqlTime(at(day.daysAgo, 15, Math.floor(random() * 50)));
                 api.run('UPDATE returns SET created_at = ? WHERE id = ?', [when, returnId]);
-                drawer -= s.line.article.price;
+                // What was really given back (the ticket's discount taken off)
+                drawer -= saved.total_refund;
                 api.run('UPDATE inventory_logs SET created_at = ? WHERE rowid > ?', [when, logsBefore]);
             }
         }
 
         // Money taken out for the shop
         if (random() < 0.3) {
-            const amount = (2 + Math.floor(random() * 12)) * 100;
-            api.run('INSERT INTO cash_expenses (id, shift_id, employee_id, amount, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                [api.uuid(), shiftId, cashier, amount, pick(random, expenseReasons), sqlTime(at(day.daysAgo, 13, Math.floor(random() * 50)))]);
-            drawer -= amount;
+            const amount = Math.min((2 + Math.floor(random() * 12)) * 100, Math.max(0, Math.floor(drawer / 100) * 100));
+            const reason = pick(random, expenseReasons);
+            const when = sqlTime(at(day.daysAgo, 13, Math.floor(random() * 50)));
+            if (amount > 0) {
+                api.run('INSERT INTO cash_expenses (id, shift_id, employee_id, amount, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                    [api.uuid(), shiftId, cashier, amount, reason, when]);
+                drawer -= amount;
+            }
         }
 
         // Closing, except today's drawer which is still open

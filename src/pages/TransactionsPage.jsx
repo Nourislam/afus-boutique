@@ -1,7 +1,9 @@
 import { t } from '../i18n';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { parseTicketCode } from '../lib/ticketCode';
 import { useAuthStore } from '../stores/authStore';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -14,9 +16,16 @@ import ExchangeModal from '../components/modals/ExchangeModal';
 import ReturnDetailsModal from '../components/modals/ReturnDetailsModal';
 import { toast } from '../components/ui/Toast';
 
+// The whole history is loaded; rows are drawn a page at a time while scrolling
+const PAGE = 200;
+const STATUS_KEYS = {
+    completed: 'status.completed', refunded: 'status.refunded', partially_refunded: 'status.partially_refunded',
+    cancelled: 'status.cancelled', voided: 'status.voided', pending: 'status.pending',
+};
+const statusLabel = (status) => (STATUS_KEYS[status] ? t(STATUS_KEYS[status]) : status);
+
 export default function TransactionsPage() {
     const { currentEmployee: user } = useAuthStore();
-    const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedSale, setSelectedSale] = useState(null);
@@ -28,27 +37,45 @@ export default function TransactionsPage() {
     const [selectedReturn, setSelectedReturn] = useState(null);
     const [activeTab, setActiveTab] = useState('sales');
     const [returnsList, setReturnsList] = useState([]);
+    const [shown, setShown] = useState(PAGE);
+    const moreRef = useRef(null);
+    // ?ticket=<number>: a ticket QR scanned on the sales screen
+    const [params, setParams] = useSearchParams();
+    useEffect(() => {
+        const ticket = params.get('ticket');
+        if (!ticket) return;
+        setSearchQuery(ticket);
+        setParams({}, { replace: true });
+    }, [params, setParams]);
+    // A ticket QR scanned in the search box gives its number
+    const search = (value) => setSearchQuery(parseTicketCode(value) || value);
 
-    // Pagination or filtered loading could be added here
+    // Sales come from the main process a page at a time (3 years of tickets
+    // stay fast); the search runs there on the whole history
     const [filteredTransactions, setFilteredTransactions] = useState([]);
+    const [salesTotal, setSalesTotal] = useState(0);
     const [filteredReturns, setFilteredReturns] = useState([]);
+    const loadingMore = useRef(false);
+    const searchRef = useRef('');
+
+    const loadSales = async (offset = 0) => {
+        const search = searchRef.current.trim();
+        const [rows, total] = await Promise.all([
+            window.electronAPI.sales.getAll({ search, limit: PAGE, offset }),
+            offset === 0 ? window.electronAPI.sales.count({ search }) : Promise.resolve(null),
+        ]);
+        // An answer for an older search is dropped
+        if (search !== searchRef.current.trim()) return;
+        if (total !== null) setSalesTotal(total);
+        setFilteredTransactions(prev => (offset === 0 ? rows : [...prev, ...rows]));
+    };
 
     const loadTransactions = async () => {
         setLoading(true);
         try {
-            // Sales
-            const params = {};
-            // if (user?.role !== 'admin') params.employeeId = user?.id; // Allow everyone to see all for now
-            const salesData = await window.electronAPI.sales.getAll(params);
-            setTransactions(salesData);
-            setFilteredTransactions(salesData);
-
-            // Returns
-            // const returnsData = await window.electronAPI.returns.getAll(params);
-            const returnsData = await window.electronAPI.returns.getAll(); // Show all returns
-            // Filter returns by employee if needed? Usually returns are global or filtered by permission.
+            await loadSales(0);
+            const returnsData = await window.electronAPI.returns.getAll();
             setReturnsList(returnsData);
-            setFilteredReturns(returnsData);
         } catch (error) {
             console.error('Failed to load data:', error);
             toast.error(t('tx.loadFailed'));
@@ -59,34 +86,39 @@ export default function TransactionsPage() {
 
     useEffect(() => {
         loadTransactions();
-    }, [user, activeTab]); // Reload when tab changes just in case, or just user
+    }, [user, activeTab]);
 
+    // A new search: the first page again, a moment after the last key
     useEffect(() => {
-        if (!searchQuery) {
-            setFilteredTransactions(transactions);
-            setFilteredReturns(returnsList);
-            return;
-        }
-
-        const query = searchQuery.toLowerCase();
-
-        // Filter Sales
-        const filteredSales = transactions.filter(tx =>
-            tx.receipt_number.toLowerCase().includes(query) ||
-            (tx.customer_name && tx.customer_name.toLowerCase().includes(query)) ||
-            (tx.employee_name && tx.employee_name.toLowerCase().includes(query))
-        );
-        setFilteredTransactions(filteredSales);
-
-        // Filter Returns
-        const filteredRet = returnsList.filter(r =>
+        searchRef.current = searchQuery;
+        const timer = setTimeout(() => { loadSales(0).catch(() => toast.error(t('tx.loadFailed'))); }, 250);
+        const query = searchQuery.trim().toLowerCase();
+        setFilteredReturns(!query ? returnsList : returnsList.filter(r =>
             r.return_number.toLowerCase().includes(query) ||
             r.receipt_number?.toLowerCase().includes(query) ||
             (r.employee_name && r.employee_name.toLowerCase().includes(query))
-        );
-        setFilteredReturns(filteredRet);
+        ));
+        return () => clearTimeout(timer);
+    }, [searchQuery, returnsList]);
 
-    }, [searchQuery, transactions, returnsList]);
+    // A new search or tab starts again from the top
+    useEffect(() => { setShown(PAGE); }, [searchQuery, activeTab]);
+
+    const salesMore = filteredTransactions.length < salesTotal;
+    // Next rows when the end of the table comes into view
+    useEffect(() => {
+        const node = moreRef.current;
+        if (!node) return undefined;
+        const observer = new IntersectionObserver((entries) => {
+            if (!entries.some(e => e.isIntersecting)) return;
+            if (activeTab !== 'sales') { setShown(n => n + PAGE); return; }
+            if (loadingMore.current || !salesMore) return;
+            loadingMore.current = true;
+            loadSales(filteredTransactions.length).finally(() => { loadingMore.current = false; });
+        }, { rootMargin: '400px' });
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, [filteredTransactions, filteredReturns, activeTab, shown, salesMore]);
 
     const handleViewReceipt = async (saleId) => {
         try {
@@ -148,7 +180,7 @@ export default function TransactionsPage() {
                         <Input
                             placeholder={activeTab === 'sales' ? t('tx.searchSales') : t('tx.searchReturns')}
                             value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onChange={(e) => search(e.target.value)}
                             className="ps-10"
                         />
                     </div>
@@ -189,7 +221,7 @@ export default function TransactionsPage() {
                                                             sale.status === 'partially_refunded' ? 'bg-orange-500/10 text-orange-400' :
                                                                 'bg-zinc-500/10 text-zinc-400'
                                                     }`}>
-                                                    {sale.status.toUpperCase().replace('_', ' ')}
+                                                    {statusLabel(sale.status)}
                                                 </span>
                                             </td>
                                             <td className="p-4 text-end">
@@ -233,7 +265,7 @@ export default function TransactionsPage() {
                                 ) : filteredReturns.length === 0 ? (
                                     <tr><td colSpan="7" className="p-8 text-center text-zinc-500">{t('tx.noReturns')}</td></tr>
                                 ) : (
-                                    filteredReturns.map((ret) => (
+                                    filteredReturns.slice(0, shown).map((ret) => (
                                         <tr key={ret.id} className="hover:bg-dark-tertiary/50 transition-colors">
                                             <td className="p-4 font-mono text-red-400">{ret.return_number}</td>
                                             <td className="p-4 font-mono text-zinc-400">{ret.receipt_number}</td>
@@ -251,6 +283,12 @@ export default function TransactionsPage() {
                                 )}
                             </tbody>
                         </table>
+                    )}
+                    {/* More rows load here as the list is scrolled (nothing is left out) */}
+                    {(activeTab === 'sales' ? salesMore : filteredReturns.length > shown) && (
+                        <div ref={moreRef} className="p-4 text-center text-sm text-zinc-500" data-testid="tx-more">
+                            {t('tx.showing', activeTab === 'sales' ? { n: filteredTransactions.length, total: salesTotal } : { n: shown, total: filteredReturns.length })}
+                        </div>
                     )}
                 </div>
             </Card>

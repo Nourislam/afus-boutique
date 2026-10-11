@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { translateError } from '../../i18n/errors';
 import { Banknote, Receipt, AlertCircle, Clock, Shirt, Calculator, LogOut, CheckCircle2 } from 'lucide-react';
 import { toast } from '../ui/Toast';
 import { Button } from '../ui/Button';
@@ -32,6 +33,8 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
     const [revealed, setRevealed] = useState(false);
     const [notes, setNotes] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    // Closing report (Z) printed on the ticket printer once the drawer is closed
+    const [printZ, setPrintZ] = useState(true);
     const currentEmployee = useAuthStore(state => state.currentEmployee);
     const settings = useSettingsStore(state => state.settings);
 
@@ -65,6 +68,9 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                 cashCount: showCounter ? counts : null,
             });
             toast.success(t('shift.closed'));
+            if (printZ) {
+                try { await window.electronAPI.shifts.printZ(shiftId); } catch (error) { toast.error(t('z.printFailed', { error: translateError(error) })); }
+            }
             window.dispatchEvent(new Event('pos:shift-changed'));
             onLogout();
         } catch {
@@ -200,6 +206,11 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                             <label className="block text-sm text-zinc-400 mb-2">{t('shift.notesOptional')}</label>
                             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="input h-20 resize-none py-2" placeholder={t('shift.notesPlaceholder')} />
                         </div>
+
+                        <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer select-none">
+                            <input type="checkbox" checked={printZ} onChange={(e) => setPrintZ(e.target.checked)} className="w-4 h-4" data-testid="shift-print-z" />
+                            {t('z.printOnClose')}
+                        </label>
 
                         <div className="flex flex-col gap-2">
                             <Button onClick={handleCloseShift} loading={submitting} disabled={closingCash === ''} className="w-full" data-testid="shift-close">

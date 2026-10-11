@@ -1,3 +1,4 @@
+import { translateError } from '../../i18n/errors';
 import { useEffect, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
@@ -36,8 +37,10 @@ export default function ManagerApprovalDialog() {
             const result = await window.electronAPI.auth.approve({ employeeId, pin });
             if (result?.ok) finish({ employeeId, pin });
             else { setError(t('approval.wrongPin')); setPin(''); }
-        } catch {
-            setError(t('approval.wrongPin'));
+        } catch (err) {
+            // Too many wrong PINs: say how long to wait
+            setError(/PIN_LOCKED/.test(String(err?.message)) ? translateError(err) : t('approval.wrongPin'));
+            setPin('');
         } finally {
             setChecking(false);
         }

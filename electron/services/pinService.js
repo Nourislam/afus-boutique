@@ -39,13 +39,31 @@ function verifyPin(stored, pin) {
  * The active employee whose PIN this is, or null. A PIN still stored in clear
  * is replaced by its hash on the first right login.
  */
-function checkEmployeePin(api, employeeId, pin) {
+// Wrong PINs: after 5 in a row an account waits 60 seconds (a 4-digit PIN
+// cannot be tried 10 000 times in a few seconds)
+const MAX_TRIES = 5;
+const LOCK_MS = 60 * 1000;
+const tries = new Map();
+
+function checkEmployeePin(api, employeeId, pin, now = Date.now()) {
+    const state = tries.get(employeeId);
+    if (state && state.until > now) {
+        const error = new Error(`PIN_LOCKED|${JSON.stringify({ seconds: Math.ceil((state.until - now) / 1000) })}`);
+        throw error;
+    }
     const employee = api.get('SELECT * FROM employees WHERE id = ? AND is_active = 1', [employeeId]);
-    if (!employee || !verifyPin(employee.pin, pin)) return null;
+    if (!employee || !verifyPin(employee.pin, pin)) {
+        const count = (state && state.until <= now && state.until ? 0 : (state?.count || 0)) + 1;
+        tries.set(employeeId, { count: count >= MAX_TRIES ? 0 : count, until: count >= MAX_TRIES ? now + LOCK_MS : 0 });
+        return null;
+    }
+    tries.delete(employeeId);
     if (!isHashed(employee.pin)) {
         api.run('UPDATE employees SET pin = ? WHERE id = ?', [hashPin(pin), employee.id]);
     }
     return { id: employee.id, name: employee.name, role: employee.role };
 }
 
-module.exports = { hashPin, verifyPin, isHashed, checkEmployeePin };
+const resetPinTries = () => tries.clear();
+
+module.exports = { hashPin, verifyPin, isHashed, checkEmployeePin, resetPinTries, MAX_TRIES };

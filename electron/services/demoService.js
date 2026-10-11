@@ -8,6 +8,7 @@
  *   enter()  open the demo shop (created and filled the first time)
  *   reset()  throw the demo shop away and build it again as at the start
  *   exit()   back to the shop's own data; nothing is copied over
+ *   discard() remove the demo shop's folder (the owner's explicit choice)
  *
  * The program always starts on the shop's own data.
  */
@@ -73,6 +74,16 @@ async function reset({ lang = 'ar' } = {}) {
     return { summary: build(lang) };
 }
 
+/** Remove the demo shop's folder, when the owner asks. The shop's data is not touched. */
+async function discard() {
+    if (init.isDemo()) throw new Error('DEMO_ACTIVE|{}');
+    const folder = demoFolder();
+    const { app } = require('electron');
+    if (path.resolve(folder) === path.resolve(app.getPath('userData')) || path.basename(folder) !== init.DEMO_FOLDER) throw new Error('Refused: not the demo folder');
+    fs.rmSync(folder, { recursive: true, force: true });
+    return true;
+}
+
 /** Back to the shop's own data. Nothing from the demo is carried over. */
 async function exit() {
     if (!init.isDemo()) return { exited: false };
@@ -82,4 +93,4 @@ async function exit() {
     return { exited: true };
 }
 
-module.exports = { enter, reset, exit, isFilled, demoFolder };
+module.exports = { enter, reset, exit, discard, isFilled, demoFolder };

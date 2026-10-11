@@ -2,7 +2,9 @@ import { t } from '../i18n';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { BarChart3, TrendingUp, Banknote, ShoppingCart, Shirt, RotateCcw, Percent } from 'lucide-react';
+import { BarChart3, TrendingUp, Banknote, ShoppingCart, Shirt, RotateCcw, Percent, FileSpreadsheet } from 'lucide-react';
+import { Button } from '../components/ui/Button';
+import { translateError } from '../i18n/errors';
 import { Select } from '../components/ui/Select';
 import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -42,6 +44,26 @@ export default function ReportsPage() {
     useEffect(() => {
         loadReportData();
     }, [dateRange]);
+
+    // Sales journal for the accountant (Excel): tickets and returns of the period
+    const [exporting, setExporting] = useState(false);
+    const exportJournal = async () => {
+        setExporting(true);
+        try {
+            const columns = ['date', 'type', 'number', 'customer', 'employee', 'amount_ht', 'tva', 'amount_ttc', 'cash', 'card', 'transfer', 'credit', 'gift_card', 'other']
+                .map(key => ({ key, label: t(`journal.${key}`) }));
+            const range = getDateRange();
+            const saved = await window.electronAPI.accounting.exportSalesJournal({
+                range, columns, fileName: `${t('journal.file')}-${range.startDate.slice(0, 10)}.xlsx`,
+                labels: { sale: t('journal.sale'), return: t('journal.return'), total: t('journal.total'), sheet: t('journal.file') },
+            });
+            if (saved) toast.success(t('reports.journalSaved', { n: saved.rows }));
+        } catch (error) {
+            toast.error(translateError(error));
+        } finally {
+            setExporting(false);
+        }
+    };
 
     const getDateString = (date) => {
         return date.toISOString().replace('T', ' ').slice(0, 19);
@@ -92,7 +114,7 @@ export default function ReportsPage() {
             // Top Products
             let topData = [];
             try {
-                topData = await window.electronAPI.reports.topProducts({ ...range, limit: 10 });
+                topData = await window.electronAPI.reports.topProducts({ ...range });
             } catch (e) { console.error('Error fetching topProducts:', e); }
 
             // Category Data
@@ -157,7 +179,14 @@ export default function ReportsPage() {
                 icon={BarChart3}
                 title={t('reports.title')}
                 subtitle={t('reports.subtitle')}
-                actions={<Select value={dateRange} onChange={setDateRange} options={dateRanges()} className="w-48" />}
+                actions={(
+                    <>
+                        <Button variant="secondary" onClick={exportJournal} loading={exporting} data-testid="reports-journal" title={t('reports.journalHint')}>
+                            <FileSpreadsheet className="w-4 h-4" /> {t('reports.journal')}
+                        </Button>
+                        <Select value={dateRange} onChange={setDateRange} options={dateRanges()} className="w-48" />
+                    </>
+                )}
             >
                 <div className="segmented">
                     {[['overview', t('reports.overview')], ['articles', t('reports.articlesTab')], ['shifts', t('reports.shifts')]].map(([id, label]) => (

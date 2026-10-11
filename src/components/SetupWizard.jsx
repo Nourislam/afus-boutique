@@ -13,6 +13,7 @@ import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { ShopLogo } from './shop/ShopLogo';
 import { TitleBar } from './layout/TitleBar';
 import { useDemoStore } from '../stores/demoStore';
+import { useTrialStore } from '../stores/trialStore';
 import { LANGUAGES, setLanguage, useT } from '../i18n';
 import { CATEGORY_SUGGESTIONS, DEFAULT_CATEGORY_CODES, categoryName } from '../lib/clothing';
 import {
@@ -89,6 +90,9 @@ export default function SetupWizard({ onComplete }) {
 
     // The demo shop: its own database, the real shop stays to be set up
     const [openingDemo, setOpeningDemo] = useState(false);
+    const demoTrial = useTrialStore(state => state.demo);
+    const loadTrial = useTrialStore(state => state.load);
+    useEffect(() => { loadTrial(); }, [loadTrial]);
     const tryDemo = async () => {
         setOpeningDemo(true);
         try {
@@ -194,18 +198,21 @@ export default function SetupWizard({ onComplete }) {
                         </div>
 
                         {/* Real shop or the demo shop (its own data, never mixed with the real shop) */}
-                        <p className="form-label mt-8 mb-3">{t('demo.choiceTitle')}</p>
-                        <div className="grid gap-3 sm:grid-cols-2">
+                        {demoTrial.available && <p className="form-label mt-8 mb-3">{t('demo.choiceTitle')}</p>}
+                        <div className={`grid gap-3 ${demoTrial.available ? 'sm:grid-cols-2' : 'mt-8'}`}>
                             <button type="button" onClick={handleNext} data-testid="setup-start-real"
                                 className="rounded-xl border-2 border-indigo-500 bg-indigo-500/10 p-4 text-start hover:bg-indigo-500/20">
                                 <span className="flex items-center gap-2 font-semibold"><Store className="w-5 h-5 shrink-0" /> {t('demo.startReal')}</span>
                                 <span className="block text-sm text-zinc-400 mt-1">{t('demo.startRealHint')}</span>
                             </button>
-                            <button type="button" onClick={tryDemo} disabled={openingDemo} data-testid="setup-try-demo"
-                                className="rounded-xl border-2 border-orange-500/50 p-4 text-start hover:bg-orange-500/10 disabled:opacity-60">
-                                <span className="flex items-center gap-2 font-semibold text-orange-300"><Sparkles className="w-5 h-5 shrink-0" /> {openingDemo ? t('demo.opening') : t('demo.try')}</span>
-                                <span className="block text-sm text-zinc-400 mt-1">{t('demo.tryHint')}</span>
-                            </button>
+                            {/* The demo shop: 3 months from the install date */}
+                            {demoTrial.available && (
+                                <button type="button" onClick={tryDemo} disabled={openingDemo} data-testid="setup-try-demo"
+                                    className="rounded-xl border-2 border-orange-500/50 p-4 text-start hover:bg-orange-500/10 disabled:opacity-60">
+                                    <span className="flex items-center gap-2 font-semibold text-orange-300"><Sparkles className="w-5 h-5 shrink-0" /> {openingDemo ? t('demo.opening') : t('demo.try')}</span>
+                                    <span className="block text-sm text-zinc-400 mt-1">{t('demo.tryHint')}</span>
+                                </button>
+                            )}
                         </div>
                         </div>
 

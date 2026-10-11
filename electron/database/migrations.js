@@ -308,6 +308,75 @@ const MIGRATIONS = [
             }
         },
     },
+    {
+        version: '2026_10_store_credit_reservations_wholesale',
+        description: 'Store credit (avoir) for returns, wholesale price and customers, reservations with a deposit',
+        up(db) {
+            // Only new columns and tables: existing data keeps its meaning
+            addColumnIfMissing(db, 'returns', 'refund_method', 'TEXT');
+            if (tableExists(db, 'gift_cards')) {
+                addColumnIfMissing(db, 'gift_cards', 'kind', "TEXT DEFAULT 'gift'");
+                addColumnIfMissing(db, 'gift_cards', 'return_id', 'TEXT');
+            }
+            addColumnIfMissing(db, 'products', 'wholesale_price', 'REAL');
+            if (tableExists(db, 'customers')) {
+                addColumnIfMissing(db, 'customers', 'is_wholesale', 'INTEGER DEFAULT 0');
+                // Language of this customer's tickets (empty = the shop's)
+                addColumnIfMissing(db, 'customers', 'receipt_language', 'TEXT');
+            }
+            addColumnIfMissing(db, 'sales', 'reservation_id', 'TEXT');
+            db.run(`
+                CREATE TABLE IF NOT EXISTS reservations (
+                    id TEXT PRIMARY KEY,
+                    number TEXT UNIQUE NOT NULL,
+                    customer_id TEXT REFERENCES customers(id),
+                    employee_id TEXT REFERENCES employees(id),
+                    shift_id TEXT,
+                    total REAL NOT NULL DEFAULT 0,
+                    deposit REAL NOT NULL DEFAULT 0,
+                    deposit_method TEXT DEFAULT 'cash',
+                    status TEXT NOT NULL DEFAULT 'open',
+                    expires_at DATETIME,
+                    notes TEXT,
+                    sale_id TEXT,
+                    refunded REAL DEFAULT 0,
+                    closed_at DATETIME,
+                    closed_by TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            db.run(`
+                CREATE TABLE IF NOT EXISTS reservation_items (
+                    id TEXT PRIMARY KEY,
+                    reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+                    product_id TEXT NOT NULL,
+                    variant_id TEXT,
+                    product_name TEXT,
+                    variant_label TEXT,
+                    quantity INTEGER NOT NULL,
+                    unit_price REAL NOT NULL
+                )
+            `);
+            db.run('CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status)');
+            db.run('CREATE INDEX IF NOT EXISTS idx_reservation_items_res ON reservation_items(reservation_id)');
+        },
+    },
+    {
+        version: '2026_10_return_credit_reduced',
+        description: 'A return on a kridi sale lowers the debt first (returns.credit_reduced)',
+        up(db) {
+            // Empty on older returns: the drawer keeps reading them as before
+            addColumnIfMissing(db, 'returns', 'credit_reduced', 'REAL');
+        },
+    },
+    {
+        version: '2026_10_loyalty_base',
+        description: 'Amount of a sale that earned loyalty points (sales.loyalty_base)',
+        up(db) {
+            // Empty on older sales: their whole total earned points
+            addColumnIfMissing(db, 'sales', 'loyalty_base', 'REAL');
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

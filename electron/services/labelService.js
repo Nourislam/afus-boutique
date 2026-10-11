@@ -64,6 +64,8 @@ const DEFAULT_LABEL_SETTINGS = {
     showVariant: true,
     showSku: true,
     showPrice: true,
+    // Article on sale: old price struck out next to the sale price
+    showSalePrice: true,
     // Optional Code 128 barcode of the SKU, for shops whose scanners read only 1D codes
     showBarcode: false,
     extraText: '',
@@ -157,6 +159,12 @@ function getPageSize(layout) {
     return { width: layout.widthMm, height: layout.heightMm };
 }
 
+/** Old price struck out before the sale price (article on sale), or ''. */
+function oldPriceHtml(label, shop) {
+    if (label.oldPrice === null || label.oldPrice === undefined || !(Number(label.oldPrice) > Number(label.price))) return '';
+    return `<s class="old-price">${escapeHtml(formatMoney(label.oldPrice, shop.lang, label.currency))}</s> `;
+}
+
 function qrSvg(text, eclevel = 'M') {
     if (!text) throw new Error('QR content is empty');
     // Quiet zone is added by the label layout, so no padding here
@@ -240,7 +248,9 @@ function renderLabel(label, layout, shop, report) {
     }
     if (layout.showPrice && label.price !== null && label.price !== undefined) {
         const price = formatMoney(label.price, shop.lang, label.currency);
-        lines.push(`<div class="price" style="font-size:${fit(price, base * 1.25, 0.6)}mm">${escapeHtml(price)}</div>`);
+        // Sized for both prices when the old one is shown (article on sale)
+        const old = oldPriceHtml(label, shop) ? `${formatMoney(label.oldPrice, shop.lang, label.currency)} ` : '';
+        lines.push(`<div class="price" style="font-size:${fit(old.length ? `${old.slice(0, Math.ceil(old.length * 0.7))}${price}` : price, base * 1.25, 0.6)}mm">${oldPriceHtml(label, shop)}${escapeHtml(price)}</div>`);
     }
     if (layout.extraText) lines.push(`<div class="extra">${escapeHtml(layout.extraText)}</div>`);
 
@@ -290,7 +300,7 @@ function renderCodeLabel(label, layout, shop, report) {
     if (layout.showVariant && label.variantLabel) top.push(`<div class="variant c">${escapeHtml(label.variantLabel)}</div>`);
     const bottom = [];
     if (layout.showPrice && label.price !== null && label.price !== undefined && label.price !== '') {
-        bottom.push(`<div class="price c">${escapeHtml(formatMoney(label.price, shop.lang, label.currency))}</div>`);
+        bottom.push(`<div class="price c">${oldPriceHtml(label, shop)}${escapeHtml(formatMoney(label.price, shop.lang, label.currency))}</div>`);
     }
     if (layout.extraText) bottom.push(`<div class="extra c">${escapeHtml(layout.extraText)}</div>`);
     // A 2D code needs its value printed under it; 1D codes carry the digits
@@ -424,6 +434,7 @@ function buildLabelsHtml(labels, settings = {}, shop = {}) {
     .bars svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
     .sku { font-family: "Courier New", monospace; font-size: 0.8em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .price { font-weight: 800; font-size: 1.25em; white-space: nowrap; overflow: hidden; }
+    .old-price { font-weight: 400; font-size: 0.7em; text-decoration: line-through; }
     .extra { font-size: 0.7em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .code-label { flex-direction: column; justify-content: center; gap: 0.15em; text-align: center; }
     .code-label .c { width: 100%; text-align: center; }

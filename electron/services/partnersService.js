@@ -49,7 +49,7 @@ function customersOverview(api) {
 }
 
 /** One customer: what is still owed per credit sale, the payments, the last purchases. */
-function customerHistory(api, customerId, { salesLimit = 20 } = {}) {
+function customerHistory(api, customerId, { salesLimit = -1 } = {}) {
     const credits = api.all(`
         SELECT cs.id, cs.invoice_number, cs.amount_due, COALESCE(cs.amount_paid, 0) AS amount_paid,
             MAX(cs.amount_due - COALESCE(cs.amount_paid, 0), 0) AS remaining,

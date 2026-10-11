@@ -159,13 +159,19 @@ class ShiftService {
             WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'gift_card' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
-        // Refunds handed back in cash (a return on a kridi sale lowers the debt instead)
+        // Refunds handed back in cash: what a return on a kridi sale took off
+        // the debt is not money out (credit_reduced; older returns, saved
+        // before it existed, keep the old rule), a store credit (avoir) gives
+        // a card, not money
         const cashRefunds = getOne(`
-            SELECT COALESCE(SUM(r.total_refund), 0) AS total
+            SELECT COALESCE(SUM(CASE WHEN r.credit_reduced IS NULL THEN r.total_refund
+                                     ELSE r.total_refund - r.credit_reduced END), 0) AS total
             FROM returns r
             WHERE r.employee_id = ? AND datetime(r.created_at) BETWEEN datetime(?) AND datetime(?)
-              AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.sale_id = r.sale_id AND LOWER(p.method) = 'credit')
+              AND (r.credit_reduced IS NOT NULL
+                   OR NOT EXISTS (SELECT 1 FROM payments p WHERE p.sale_id = r.sale_id AND LOWER(p.method) = 'credit'))
               AND NOT EXISTS (SELECT 1 FROM exchanges x WHERE x.return_id = r.id)
+              AND COALESCE(r.refund_method, '') != 'store_credit'
         `, [shift.employee_id, shift.start_time, endTime]);
 
         // An exchange only moves the difference: given back in cash when the new piece costs less
@@ -197,7 +203,18 @@ class ShiftService {
         const totalCreditCollected = creditCollected.total || 0;
         // Cash taken out for expenses during this drawer
         const totalExpenses = round2(getOne('SELECT COALESCE(SUM(amount), 0) AS total FROM cash_expenses WHERE shift_id = ?', [shift.id])?.total || 0);
-        const expectedCash = round2(openingCash + totalCashSales + totalCreditCollected - totalCashRefunds - totalExpenses);
+        // Reservation deposits taken in cash by this employee, and deposits given back
+        let depositsCash = 0;
+        let depositRefunds = 0;
+        try {
+            depositsCash = round2(getOne(`SELECT COALESCE(SUM(deposit), 0) AS total FROM reservations
+                WHERE employee_id = ? AND deposit_method = 'cash' AND datetime(created_at) BETWEEN datetime(?) AND datetime(?)`,
+            [shift.employee_id, shift.start_time, endTime])?.total || 0);
+            depositRefunds = round2(getOne(`SELECT COALESCE(SUM(refunded), 0) AS total FROM reservations
+                WHERE closed_by = ? AND status = 'cancelled' AND datetime(closed_at) BETWEEN datetime(?) AND datetime(?)`,
+            [shift.employee_id, shift.start_time, endTime])?.total || 0);
+        } catch { /* database before reservations */ }
+        const expectedCash = round2(openingCash + totalCashSales + totalCreditCollected + depositsCash - totalCashRefunds - totalExpenses - depositRefunds);
         const durationMinutes = Math.max(0, Math.round((new Date(endTime) - new Date(shift.start_time)) / 60000));
 
         return {
@@ -213,6 +230,8 @@ class ShiftService {
             total_cash_refunds: totalCashRefunds,
             credit_collected_cash: totalCreditCollected,
             total_expenses: totalExpenses,
+            deposits_cash: depositsCash,
+            deposit_refunds: depositRefunds,
             opening_cash: openingCash,
             expected_cash: expectedCash,
             closing_cash: shift.closing_cash,

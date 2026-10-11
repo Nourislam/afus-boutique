@@ -157,6 +157,8 @@ export function buildAlerts(home, { access, features = {}, user = {}, now = new 
         const days = last === null ? null : Math.floor((now.getTime() - last) / DAY);
         if (last === null) add({ id: 'backup', tone: 'warning', icon: 'backup', text: ['dash.alert.noBackup'], action: { label: 'dash.do.backupNow', to: '/settings?tab=backup' } });
         else if (days >= BACKUP_OLD_DAYS) add({ id: 'backup', tone: 'warning', icon: 'backup', text: ['dash.alert.oldBackup', { n: days }], action: { label: 'dash.do.backupNow', to: '/settings?tab=backup' } });
+        // The copy on the USB key / other folder did not work last time
+        else if (home.externalBackup && home.externalBackup.ok === false) add({ id: 'backupExternal', tone: 'warning', icon: 'backup', text: ['dash.alert.externalBackup'], action: { label: 'dash.do.checkBackup', to: '/settings?tab=backup' } });
     }
 
     if (access.shop && access.inventory && home.lowCount > 0) {

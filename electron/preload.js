@@ -24,8 +24,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
         stop: () => ipcRenderer.invoke('training:stop'),
         progress: () => ipcRenderer.invoke('training:progress'),
     },
+    // Support, licence, updates (Settings › About)
+    support: {
+        bundle: () => ipcRenderer.invoke('support:bundle'),
+        openLogs: () => ipcRenderer.invoke('support:openLogs'),
+        log: (level, message) => ipcRenderer.invoke('log:write', { level, message }),
+        about: () => ipcRenderer.invoke('about:info'),
+        setLicense: (key) => ipcRenderer.invoke('license:set', key),
+        checkUpdate: () => ipcRenderer.invoke('update:check'),
+        openUpdate: (url) => ipcRenderer.invoke('update:open', url),
+    },
+    // Reservations with a deposit
+    reservations: {
+        list: (params) => ipcRenderer.invoke('reservations:list', params),
+        create: (data) => ipcRenderer.invoke('reservations:create', data),
+        cancel: (data) => ipcRenderer.invoke('reservations:cancel', data),
+    },
+    // Training (7 days) and demo shop (3 months) from the install date
+    trial: {
+        status: () => ipcRenderer.invoke('trial:status'),
+    },
     demo: {
         status: () => ipcRenderer.invoke('demo:status'),
+        data: () => ipcRenderer.invoke('demo:data'),
+        discard: () => ipcRenderer.invoke('demo:discard'),
         enter: (data) => ipcRenderer.invoke('demo:enter', data),
         reset: (data) => ipcRenderer.invoke('demo:reset', data),
         exit: () => ipcRenderer.invoke('demo:exit'),
@@ -43,6 +65,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         getActivity: (range) => ipcRenderer.invoke('db:shifts:getActivity', range),
         addExpense: (data) => ipcRenderer.invoke('db:shifts:addExpense', data),
         getExpenses: (shiftId) => ipcRenderer.invoke('db:shifts:getExpenses', shiftId),
+        // Closing report (Z), printed on the ticket printer
+        printZ: (shiftId) => ipcRenderer.invoke('shifts:printZ', shiftId),
+        zReportHtml: (shiftId) => ipcRenderer.invoke('shifts:zReportHtml', shiftId),
     },
 
 
@@ -96,7 +121,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.invoke('catalog:checkIdentifier', { code, excludeVariantId, excludeProductId }),
         lookupCode: (code) => ipcRenderer.invoke('catalog:lookupCode', code),
         missingCodes: () => ipcRenderer.invoke('catalog:missingCodes'),
-        searchVariants: (query, limit = 50) => ipcRenderer.invoke('catalog:searchVariants', { query, limit }),
+        searchVariants: (query, limit) => ipcRenderer.invoke('catalog:searchVariants', { query, limit }),
         regenerateQr: (variantId) => ipcRenderer.invoke('catalog:regenerateQr', variantId),
     },
 
@@ -109,7 +134,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         search: (query) => ipcRenderer.invoke('db:customers:search', query),
         create: (customer) => ipcRenderer.invoke('db:customers:create', customer),
         update: (customer) => ipcRenderer.invoke('db:customers:update', customer),
-        delete: (id) => ipcRenderer.invoke('db:customers:delete', id),
+        delete: (id, options) => ipcRenderer.invoke('db:customers:delete', id, options),
     },
 
     // Employees
@@ -126,6 +151,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sales: {
         create: (sale) => ipcRenderer.invoke('db:sales:create', sale),
         getAll: (params) => ipcRenderer.invoke('db:sales:getAll', params),
+        count: (params) => ipcRenderer.invoke('db:sales:count', params),
         getById: (id) => ipcRenderer.invoke('db:sales:getById', id),
         getToday: (params) => ipcRenderer.invoke('db:sales:getToday', params),
         getStats: (params) => ipcRenderer.invoke('db:sales:getStats', params),
@@ -197,6 +223,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Backup
     backup: {
         list: () => ipcRenderer.invoke('backup:list'),
+        status: () => ipcRenderer.invoke('backup:status'),
         create: () => ipcRenderer.invoke('backup:create'),
         inspect: (name) => ipcRenderer.invoke('backup:inspect', name),
         restore: (name) => ipcRenderer.invoke('backup:restore', name),
@@ -205,6 +232,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         import: () => ipcRenderer.invoke('backup:import'),
         openFolder: () => ipcRenderer.invoke('backup:openFolder'),
         reset: () => ipcRenderer.invoke('backup:reset'),
+        chooseExternal: () => ipcRenderer.invoke('backup:chooseExternal'),
+        clearExternal: () => ipcRenderer.invoke('backup:clearExternal'),
     },
 
 
@@ -223,6 +252,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         salesByCategory: (params) => ipcRenderer.invoke('db:reports:salesByCategory', params),
         paymentMethods: (params) => ipcRenderer.invoke('db:reports:paymentMethods', params),
         getLowStock: () => ipcRenderer.invoke('db:reports:getLowStock'),
+        reorderSuggestions: (params) => ipcRenderer.invoke('reorder:suggestions', params),
         getSupplierStats: () => ipcRenderer.invoke('db:reports:getSupplierStats'),
     },
 
@@ -390,6 +420,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Dialog
     dialog: {
         selectImage: () => ipcRenderer.invoke('dialog:selectImage'),
+    },
+
+    // Sales journal for the accountant
+    accounting: {
+        salesJournal: (range) => ipcRenderer.invoke('reports:salesJournal', range),
+        exportSalesJournal: (data) => ipcRenderer.invoke('reports:exportSalesJournal', data),
+    },
+
+    // Loyalty points turned into an avoir card
+    loyalty: {
+        redeem: (data) => ipcRenderer.invoke('loyalty:redeem', data),
     },
 
     // Credit Sales

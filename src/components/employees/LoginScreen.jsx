@@ -7,6 +7,7 @@ import { TitleBar } from '../layout/TitleBar';
 import TrainingBanner from '../training/TrainingBanner';
 import DemoBanner from '../demo/DemoBanner';
 import { useDemoStore } from '../../stores/demoStore';
+import { useTrialStore } from '../../stores/trialStore';
 import { translateError } from '../../i18n/errors';
 import { Store } from 'lucide-react';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -25,6 +26,10 @@ export default function LoginScreen() {
     // Re-render when the language changes (t comes from the module)
     const { lang } = useT();
     const demo = useDemoStore();
+    // The demo shop is offered for 3 months from the install date
+    const demoTrial = useTrialStore(state => state.demo);
+    const loadTrial = useTrialStore(state => state.load);
+    useEffect(() => { loadTrial(); }, [loadTrial]);
     const [openingDemo, setOpeningDemo] = useState(false);
     const demoPin = (employee) => demo.staff.find(s => s.id === employee.id)?.pin;
 
@@ -118,12 +123,9 @@ export default function LoginScreen() {
     if (selectedEmployee) {
         return (
             <div className="h-screen w-screen flex flex-col bg-dark-primary">
-                <TitleBar />
-            <DemoBanner />
-            <TrainingBanner compact />
+                <TitleBar loggedIn={false} />
                 <DemoBanner />
-                <DemoBanner />
-            <TrainingBanner compact />
+                <TrainingBanner compact />
                 <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6">
                     <div className="w-full max-w-3xl">
                         <button
@@ -182,7 +184,7 @@ export default function LoginScreen() {
 
     return (
         <div className="h-screen w-screen flex flex-col bg-dark-primary">
-            <TitleBar />
+            <TitleBar loggedIn={false} />
             <DemoBanner />
             <TrainingBanner compact />
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center p-6 lg:p-8">
@@ -230,12 +232,13 @@ export default function LoginScreen() {
                         </div>
                     )}
                     {/* The demo shop, kept apart from this shop */}
-                    {!demo.active && (
+                    {!demo.active && demoTrial.available && (
                         <div className="mt-10 text-center">
                             <button type="button" onClick={tryDemo} disabled={openingDemo} data-testid="login-try-demo"
                                 className="inline-flex items-center gap-2 rounded-lg border border-orange-500/40 px-4 py-2 text-sm text-orange-300 hover:bg-orange-500/10 disabled:opacity-60">
                                 <Store className="w-4 h-4" /> {openingDemo ? t('demo.opening') : t('demo.try')}
                             </button>
+                            <p className="mt-1.5 text-xs text-zinc-500" data-testid="demo-days-left">{t('trial.demoLeft', { n: demoTrial.daysLeft })}</p>
                         </div>
                     )}
                 </div>

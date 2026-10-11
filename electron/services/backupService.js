@@ -8,6 +8,11 @@
  *   afus-boutique-2026-10-05_08-00-03-auto.db            daily automatic copy
  *   afus-boutique-2026-10-05_14-31-40-before-restore.db  taken just before a restore
  *   afus-boutique-2026-10-05_14-29-00-imported.db        copied in from a USB key…
+ *
+ * Article pictures are kept beside them in Backups/images (each picture once,
+ * whatever the number of backups), and come back with a restore. A second
+ * copy can go to another folder (USB key, other disk, a synced folder):
+ * <folder>/afus-boutique-backups, with its own images folder.
  */
 const fs = require('fs');
 const path = require('path');
@@ -16,8 +21,20 @@ const { BRAND } = require('../brand');
 const KINDS = ['auto', 'before-restore', 'imported'];
 const NAME_RE = new RegExp(`^${BRAND.fileSlug}-(\\d{4}-\\d{2}-\\d{2})_(\\d{2})-(\\d{2})-(\\d{2})(?:-(${KINDS.join('|')}))?(?:-\\d+)?\\.db$`);
 
-// Daily automatic backup (off unless the shop turns it on in Settings)
-const DEFAULT_BACKUP_SETTINGS = { autoDaily: false, keepAuto: 7 };
+// Daily automatic backup: on unless the shop turns it off in Settings.
+// version 2: settings saved before (when it was off by default) are turned on.
+const SETTINGS_VERSION = 2;
+const DEFAULT_BACKUP_SETTINGS = { autoDaily: true, keepAuto: 7, externalFolder: '', version: SETTINGS_VERSION };
+
+/** The backup settings to use, from what is saved (or nothing). */
+function resolveSettings(saved) {
+    const value = saved && typeof saved === 'object' ? saved : {};
+    if (value.version !== SETTINGS_VERSION) return { ...DEFAULT_BACKUP_SETTINGS, ...value, autoDaily: true, version: SETTINGS_VERSION };
+    return { ...DEFAULT_BACKUP_SETTINGS, ...value };
+}
+
+const IMAGES = 'images';
+const EXTERNAL_FOLDER = `${BRAND.fileSlug}-backups`;
 
 function backupDir(userDataPath) {
     return path.join(userDataPath, 'Backups');
@@ -160,8 +177,91 @@ function autoBackupsToPrune(backups, keep = DEFAULT_BACKUP_SETTINGS.keepAuto) {
     return auto.slice(Math.max(1, parseInt(keep, 10) || DEFAULT_BACKUP_SETTINGS.keepAuto));
 }
 
+/**
+ * Copy the pictures of `from` that `to` does not have yet (or has with
+ * another size). Nothing is deleted. Returns the number of files copied.
+ */
+function mirrorFiles(from, to) {
+    let names;
+    try { names = fs.readdirSync(from); } catch { return 0; }
+    let copied = 0;
+    for (const name of names) {
+        const source = path.join(from, name);
+        let stat;
+        try { stat = fs.statSync(source); } catch { continue; }
+        if (!stat.isFile()) continue;
+        const target = path.join(to, name);
+        try { if (fs.statSync(target).size === stat.size) continue; } catch { /* not there yet */ }
+        fs.mkdirSync(to, { recursive: true });
+        fs.copyFileSync(source, `${target}.tmp`);
+        fs.renameSync(`${target}.tmp`, target);
+        copied++;
+    }
+    return copied;
+}
+
+/** The pictures kept with the backups (Backups/images). */
+const imagesBackupDir = (dir) => path.join(dir, IMAGES);
+
+/** Keep the article pictures with the backups. */
+function backupImages(dir, imagesDir) {
+    return mirrorFiles(imagesDir, imagesBackupDir(dir));
+}
+
+/** After a restore: the pictures the restored data uses, put back (none removed). */
+function restoreImages(dir, imagesDir) {
+    return mirrorFiles(imagesBackupDir(dir), imagesDir);
+}
+
+/**
+ * The second copy, in another folder: <folder>/afus-boutique-backups gets the
+ * backup file and the pictures; the oldest automatic copies there are removed
+ * as in the main folder. Throws when the folder cannot be reached (USB key
+ * not plugged in…), so the shop can be told.
+ */
+function copyToExternal(dir, name, externalFolder, imagesDir, keep) {
+    if (!externalFolder) return null;
+    if (!fs.existsSync(externalFolder)) {
+        const error = new Error('External folder not found');
+        error.code = 'EXTERNAL_MISSING';
+        throw error;
+    }
+    const target = path.join(externalFolder, EXTERNAL_FOLDER);
+    fs.mkdirSync(target, { recursive: true });
+    const file = path.join(target, name);
+    fs.copyFileSync(backupPath(dir, name), `${file}.tmp`);
+    fs.renameSync(`${file}.tmp`, file);
+    mirrorFiles(imagesDir, path.join(target, IMAGES));
+    for (const old of autoBackupsToPrune(listBackups(target), keep)) deleteBackup(target, old.name);
+    return { folder: target, name };
+}
+
+/** Pictures brought with an imported file (an export or an external copy). */
+function importImages(file, dir) {
+    const near = path.dirname(file);
+    let copied = 0;
+    for (const folder of [path.join(near, IMAGES), path.join(near, `${BRAND.fileSlug}-${IMAGES}`)]) {
+        copied += mirrorFiles(folder, imagesBackupDir(dir));
+    }
+    return copied;
+}
+
+/** An exported copy takes its pictures with it, in <folder>/afus-boutique-images. */
+function exportImages(dir, targetFile) {
+    return mirrorFiles(imagesBackupDir(dir), path.join(path.dirname(targetFile), `${BRAND.fileSlug}-${IMAGES}`));
+}
+
 module.exports = {
     DEFAULT_BACKUP_SETTINGS,
+    EXTERNAL_FOLDER,
+    resolveSettings,
+    mirrorFiles,
+    imagesBackupDir,
+    backupImages,
+    restoreImages,
+    copyToExternal,
+    importImages,
+    exportImages,
     backupDir,
     backupName,
     isBackupName,

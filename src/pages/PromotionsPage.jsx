@@ -517,7 +517,7 @@ function ArticlePicker({ products, selected, query, onQuery, onChange }) {
     const chosen = selected.map(id => products.find(p => p.id === id) || { id, name: '?' });
     const q = query.trim().toLowerCase();
     const results = q
-        ? products.filter(p => !selected.includes(p.id) && (p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.barcode?.toLowerCase().includes(q))).slice(0, 30)
+        ? products.filter(p => !selected.includes(p.id) && (p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.barcode?.toLowerCase().includes(q)))
         : [];
     return (
         <div className="space-y-2">

@@ -45,7 +45,7 @@ export default function StockCountModal({ isOpen, onClose, onConfirmed }) {
         setReport(null); setReason(''); setLastError(''); setCode('');
         refresh().catch(() => setSummary(null));
         window.electronAPI.categories.getAll().then(rows => setCategories(rows || [])).catch(() => setCategories([]));
-        window.electronAPI.stockCount.list(10).then(rows => setHistory(rows || [])).catch(() => setHistory([]));
+        window.electronAPI.stockCount.list().then(rows => setHistory(rows || [])).catch(() => setHistory([]));
     }, [isOpen, refresh]);
 
     const count = summary?.count?.status === 'open' ? summary.count : null;

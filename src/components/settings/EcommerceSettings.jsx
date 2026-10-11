@@ -477,7 +477,7 @@ export function EcommerceSettings() {
                                 </p>
                             ) : (
                                 <div className="space-y-2">
-                                    {mappings.slice(0, 10).map(mapping => (
+                                    {mappings.map(mapping => (
                                         <div key={mapping.id} className="flex items-center justify-between p-3 bg-dark-tertiary rounded-lg">
                                             <div>
                                                 <div className="font-medium">{mapping.product_name}</div>
@@ -499,11 +499,6 @@ export function EcommerceSettings() {
                                             </div>
                                         </div>
                                     ))}
-                                    {mappings.length > 10 && (
-                                        <p className="text-sm text-zinc-500 text-center">
-                                            {t('ecom.andMore', { n: mappings.length - 10 })}
-                                        </p>
-                                    )}
                                 </div>
                             )}
                         </div>
@@ -520,7 +515,7 @@ export function EcommerceSettings() {
                                 </p>
                             ) : (
                                 <div className="space-y-2">
-                                    {unmappedProducts.slice(0, 10).map(product => (
+                                    {unmappedProducts.map(product => (
                                         <div key={product.id} className="flex items-center justify-between p-3 bg-dark-tertiary rounded-lg">
                                             <div>
                                                 <div className="font-medium">{product.name}</div>
@@ -533,11 +528,6 @@ export function EcommerceSettings() {
                                             </span>
                                         </div>
                                     ))}
-                                    {unmappedProducts.length > 10 && (
-                                        <p className="text-sm text-zinc-500 text-center">
-                                            {t('ecom.andMore', { n: unmappedProducts.length - 10 })}
-                                        </p>
-                                    )}
                                 </div>
                             )}
                         </div>

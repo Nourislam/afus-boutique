@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
     Building, Receipt, Percent, Database, Save, Upload, Mail, CheckCircle, Printer, ScanLine, Hash,
-    Languages, Tags, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor, Eye, FlaskConical,
+    Languages, Tags, ToggleRight, Globe, ScrollText, Settings as SettingsIcon, Palette, Moon, Sun, Monitor, Eye, FlaskConical, ShoppingCart, Info,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, TextArea } from '../components/ui/Input';
@@ -24,6 +24,8 @@ import { colorName } from '../lib/clothing';
 import { useSettingsStore } from '../stores/settingsStore';
 import { SystemLogs } from '../components/settings/SystemLogs';
 import { EcommerceSettings } from '../components/settings/EcommerceSettings';
+import { PosControlsSettings } from '../components/settings/PosControlsSettings';
+import { AboutSettings } from '../components/settings/AboutSettings';
 import { LANGUAGES, setLanguage, useT } from '../i18n';
 import { formatMoney } from '../i18n/format';
 import { getThemePreference, setThemePreference } from '../lib/theme';
@@ -34,15 +36,16 @@ import { getThemePreference, setThemePreference } from '../lib/theme';
 const SECTION_GROUPS = [
     { id: 'shop', ids: ['business', 'language', 'appearance'] },
     { id: 'devices', ids: ['receipt', 'labelPrinter', 'scanner'] },
+    { id: 'sales', ids: ['posScreen'] },
     { id: 'catalog', ids: ['sku'] },
     { id: 'modules', ids: ['modules'] },
     { id: 'online', ids: ['mail', 'ecommerce'] },
-    { id: 'system', ids: ['backup', 'logs'] },
+    { id: 'system', ids: ['backup', 'logs', 'about'] },
 ];
 
 const SECTION_ICONS = {
     business: Building, language: Languages, appearance: Palette, receipt: Receipt, labelPrinter: Tags, scanner: ScanLine,
-    sku: Hash, modules: ToggleRight, mail: Mail, ecommerce: Globe, backup: Database, logs: ScrollText,
+    sku: Hash, posScreen: ShoppingCart, modules: ToggleRight, mail: Mail, ecommerce: Globe, backup: Database, logs: ScrollText, about: Info,
 };
 
 // Old links (?tab=features, ?tab=printers) still open the right section
@@ -93,11 +96,15 @@ export default function SettingsPage() {
 
     const { isAdmin } = useAuthStore();
     const tabIds = [
-        'business', 'language', 'appearance', 'receipt', 'labelPrinter', 'scanner', 'sku', 'modules',
+        'business', 'language', 'appearance', 'receipt', 'labelPrinter', 'scanner',
+        // What the sales screen offers: the owner's choice
+        ...(isAdmin() ? ['posScreen'] : []),
+        'sku', 'modules',
         ...(features.email ? ['mail'] : []),
         ...(features.ecommerce ? ['ecommerce'] : []),
         'backup',
         ...(isAdmin() ? ['logs'] : []),
+        'about',
     ];
     // A section that is not available (module turned off, old link) opens the shop section
     const currentTab = tabIds.includes(activeTab) ? activeTab : 'business';
@@ -252,7 +259,7 @@ export default function SettingsPage() {
         businessName: settings.businessName, businessAddress: settings.businessAddress, businessCity: settings.businessCity,
         businessWilaya: settings.businessWilaya, businessPhone: settings.businessPhone, businessRc: settings.businessRc,
         businessTaxId: settings.businessTaxId, businessNis: settings.businessNis, businessAi: settings.businessAi,
-        receiptHeader: settings.receiptHeader, receiptFooter: settings.receiptFooter, receiptShowBrand: settings.receiptShowBrand !== false,
+        receiptHeader: settings.receiptHeader, receiptFooter: settings.receiptFooter, receiptShowBrand: settings.receiptShowBrand !== false, receiptTicketQr: settings.receiptTicketQr !== false,
         taxName: settings.taxName, taxType: settings.taxType, taxEnabled: isTaxEnabled(settings), taxRate: settings.taxRate,
     };
 
@@ -469,6 +476,15 @@ export default function SettingsPage() {
                                                 <span className="block text-xs text-zinc-500 mt-0.5">{t('printing.showBrandHint')}</span>
                                             </span>
                                         </label>
+                                        <label className="flex items-start gap-3 cursor-pointer select-none rounded-lg border border-dark-border px-3 py-2.5 hover:border-zinc-600">
+                                            <input type="checkbox" checked={settings.receiptTicketQr !== false} data-testid="receipt-ticket-qr"
+                                                onChange={(e) => handleChange('receiptTicketQr', e.target.checked)}
+                                                className="mt-0.5 w-4 h-4 rounded bg-dark-tertiary border-dark-border flex-none" />
+                                            <span className="min-w-0">
+                                                <span className="text-sm">{t('printing.ticketQr')}</span>
+                                                <span className="block text-xs text-zinc-500 mt-0.5">{t('printing.ticketQrHint')}</span>
+                                            </span>
+                                        </label>
                                         <p className="form-hint">{t('printing.shopDataHint')}</p>
                                     </Panel>
 
@@ -568,6 +584,9 @@ export default function SettingsPage() {
                                 </div>
                             </Card>
                         )}
+
+                        {currentTab === 'posScreen' && <PosControlsSettings />}
+                        {currentTab === 'about' && <AboutSettings />}
 
                         {currentTab === 'modules' && (
                             <ModulesSettings features={features} onFeaturesChange={setFeatures} />

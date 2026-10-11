@@ -139,3 +139,22 @@ export function promotionPreset(kind, today = new Date()) {
             return {};
     }
 }
+
+/**
+ * Price on the shelf label during a sale: the best live automatic
+ * percentage / fixed promotion for one piece of this article (no minimum
+ * purchase), or null when the article is not on sale. Coupons, packs (BOGO)
+ * and thresholds are left to the till.
+ */
+export function labelSalePrice(promotions, { productId, categoryId = null, price }, now = Date.now()) {
+    const unit = Number(price) || 0;
+    if (unit <= 0) return null;
+    const line = [{ product_id: productId, category_id: categoryId, quantity: 1, unit_price: unit }];
+    let best = 0;
+    for (const promo of promotions || []) {
+        if (!promo.auto_apply || !isPromotionLive(promo, now)) continue;
+        if (!['percentage', 'fixed'].includes(promo.type) || (Number(promo.min_purchase) || 0) > 0) continue;
+        best = Math.max(best, promotionDiscount(promo, line));
+    }
+    return best > 0 ? round(unit - best) : null;
+}

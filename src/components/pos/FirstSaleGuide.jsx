@@ -6,6 +6,7 @@ import { toast } from '../ui/Toast';
 import { useT } from '../../i18n';
 import { translateError } from '../../i18n/errors';
 import { useTrainingStore } from '../../stores/trainingStore';
+import { useTrialStore } from '../../stores/trialStore';
 
 /**
  * A shop that has never sold: how the first sale goes, in three short steps,
@@ -17,6 +18,8 @@ export default function FirstSaleGuide() {
     const navigate = useNavigate();
     const trainingActive = useTrainingStore(state => state.active);
     const startTraining = useTrainingStore(state => state.start);
+    const trainingTrial = useTrialStore(state => state.training);
+    const loadTrial = useTrialStore(state => state.load);
     const [steps, setSteps] = useState(null);
     const [starting, setStarting] = useState(false);
 
@@ -25,8 +28,9 @@ export default function FirstSaleGuide() {
         window.electronAPI.dashboard.firstSteps()
             .then(data => { if (!cancelled) setSteps(data); })
             .catch(() => { if (!cancelled) setSteps(null); });
+        loadTrial();
         return () => { cancelled = true; };
-    }, []);
+    }, [loadTrial]);
 
     // Only before the first real sale (training has its own guide)
     if (!steps || steps.sales > 0 || trainingActive) return null;
@@ -53,11 +57,14 @@ export default function FirstSaleGuide() {
                 {steps.products === 0 && (
                     <Button size="sm" onClick={() => navigate('/products')}><PackagePlus className="w-4 h-4" /> {t('dash.first.product')}</Button>
                 )}
-                <Button size="sm" variant="secondary" onClick={practise} loading={starting} data-testid="first-sale-training">
-                    <GraduationCap className="w-4 h-4" /> {t('pos.first.practise')}
-                </Button>
+                {/* Training: 7 days from the install date */}
+                {trainingTrial.available && (
+                    <Button size="sm" variant="secondary" onClick={practise} loading={starting} data-testid="first-sale-training">
+                        <GraduationCap className="w-4 h-4" /> {t('pos.first.practise')}
+                    </Button>
+                )}
             </div>
-            <p className="mt-2 text-xs text-zinc-500">{t('training.startHint')}</p>
+            {trainingTrial.available && <p className="mt-2 text-xs text-zinc-500">{t('training.startHint')}</p>}
         </div>
     );
 }

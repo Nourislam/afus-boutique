@@ -385,6 +385,16 @@ class ExcelService {
     }
 
     /**
+     * A sheet from rows already in order: [headers, ...rows] (numbers stay numbers).
+     */
+    exportRows(headers, rows, sheetName = 'Sheet1') {
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, String(sheetName).slice(0, 31));
+        return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    }
+
+    /**
      * Export data to Excel buffer
      */
     exportData(data, dataType) {

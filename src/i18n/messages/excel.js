@@ -29,7 +29,6 @@ export default {
     'excel.imported': ["{n} records imported", "{n} lignes importées", "تم استيراد {n} سطر"],
     'excel.importFailed': ["Import failed: {error}", "Échec de l'import : {error}", "فشل الاستيراد: {error}"],
     'excel.column': ["Column {n}", "Colonne {n}", "العمود {n}"],
-    'excel.moreErrors': ["…and {n} more errors", "…et {n} autres erreurs", "…و{n} أخطاء أخرى"],
     'excel.found': ["{n} rows in sheet \"{sheet}\"", "{n} lignes dans la feuille « {sheet} »", "{n} سطر في الورقة «{sheet}»"],
     'excel.autoDetect': ["Auto-detect", "Détection auto", "كشف تلقائي"],
     'excel.selectFile': ["Please select an Excel file (.xlsx or .xls)", "Choisissez un fichier Excel (.xlsx ou .xls)", "اختر ملف Excel (.xlsx أو .xls)"],

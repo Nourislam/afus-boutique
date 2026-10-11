@@ -101,6 +101,8 @@ describe('demo shop: its own database, never the shop\'s', () => {
         expect(stats.total_refunds).toBeGreaterThan(0);
         expect(dashboard.bestSellers(api, RANGE).products.length).toBeGreaterThan(3);
         // Kridi: each customer's balance is what is still owed on their tickets
+        // Kridi stays under each customer's limit, as the till checks it
+        for (const c of api.all('SELECT credit_limit, credit_balance FROM customers WHERE credit_limit > 0')) expect(c.credit_balance).toBeLessThanOrEqual(c.credit_limit);
         for (const c of api.all('SELECT id, credit_balance FROM customers')) {
             const owed = api.get('SELECT COALESCE(SUM(amount_due - amount_paid), 0) AS n FROM credit_sales WHERE customer_id = ?', [c.id]).n;
             expect(Math.round(c.credit_balance)).toBe(Math.round(owed));
@@ -112,9 +114,12 @@ describe('demo shop: its own database, never the shop\'s', () => {
         const closed = api.all('SELECT id FROM shifts WHERE end_time IS NOT NULL');
         expect(closed.length).toBe(90);
         for (const s of closed) {
-            const d = shifts.getShiftStats(s.id).cash_difference;
+            const st = shifts.getShiftStats(s.id);
+            const d = st.cash_difference;
+            // A drawer never holds less than nothing
+            expect(st.expected_cash).toBeGreaterThanOrEqual(0);
             expect(d).toBeGreaterThanOrEqual(-100);
-            expect(d).toBeLessThanOrEqual(50);
+            expect(d, JSON.stringify(st)).toBeLessThanOrEqual(50);
         }
         // Demo staff: an owner and a cashier with the PINs shown on the login screen
         const staff = api.all('SELECT id, role, pin FROM employees ORDER BY role');

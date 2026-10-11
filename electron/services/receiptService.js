@@ -5,6 +5,17 @@ const { BrowserWindow } = require('electron');
 const { translator, formatMoney, formatDate, variantLabel, paymentLabel } = require('../i18n');
 const { loadHtml, hiddenWindow, printContents } = require('./printDocument');
 const { BRAND } = require('../brand');
+const { ticketCode } = require('../shared/ticketCode.mjs');
+
+/** QR of the ticket (scanned later for a return or an exchange), or ''. */
+function ticketQr(receiptNumber) {
+    if (!receiptNumber) return '';
+    try {
+        return require('bwip-js').toSVG({ bcid: 'qrcode', text: ticketCode(receiptNumber), eclevel: 'M', paddingwidth: 0, paddingheight: 0 });
+    } catch {
+        return '';
+    }
+}
 
 // A sale keeps only its TVA amount (not the rate, the name or "included / added"
 // at the time), so documents name it plainly instead of using today's settings
@@ -718,8 +729,88 @@ class ReceiptService {
      */
     async print(sale, storeSettings = {}, printer = {}) {
         const paperWidthMm = parseInt(printer.paperWidthMm || storeSettings.receiptPaperWidthMm, 10) === 58 ? 58 : 80;
-        const html = this.generateHtml(sale, { ...storeSettings, receiptPaperWidthMm: paperWidthMm });
+        return this.printRoll(this.generateHtml(sale, { ...storeSettings, receiptPaperWidthMm: paperWidthMm }), paperWidthMm, printer);
+    }
 
+    /** Closing report (Z) of a cash drawer, on the ticket printer. */
+    async printZ(report, storeSettings = {}, printer = {}) {
+        const paperWidthMm = parseInt(printer.paperWidthMm || storeSettings.receiptPaperWidthMm, 10) === 58 ? 58 : 80;
+        return this.printRoll(this.zReportHtml(report, { ...storeSettings, receiptPaperWidthMm: paperWidthMm }), paperWidthMm, printer);
+    }
+
+    /**
+     * Z report: what the drawer did from its opening to its closing, by
+     * payment method, with the cash expected, counted and the difference.
+     * report = shift stats (shiftService.getShiftStats) + { z_number, employee_name }
+     */
+    zReportHtml(report, storeSettings = {}) {
+        const esc = (v) => this.escapeHtml(v);
+        const T = translator(storeSettings.defaultLanguage);
+        const money = (v) => formatMoney(v, T.lang, storeSettings.currency);
+        const paperWidthMm = parseInt(storeSettings.receiptPaperWidthMm, 10) === 58 ? 58 : 80;
+        const contentWidthMm = paperWidthMm === 58 ? 48 : 72;
+        const row = (label, value, strong = false) => `<div class="row${strong ? ' strong' : ''}"><span>${esc(label)}</span><span class="ltr">${value}</span></div>`;
+        const methods = [
+            ['cash', report.total_cash_sales], ['card', report.total_card_sales], ['transfer', report.total_transfer_sales],
+            ['credit', report.total_credit_sales], ['gift_card', report.total_gift_card_sales],
+        ].filter(([, v]) => Number(v) > 0);
+        const diff = report.cash_difference;
+        return `<!DOCTYPE html>
+<html lang="${T.lang}" dir="${T.dir}"><head><meta charset="UTF-8">
+<style>
+    @page { margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+    body { width: ${contentWidthMm}mm; margin: 0 auto; padding: 3mm 0; font-family: ${T.lang === 'ar' ? 'Tahoma, Arial, sans-serif' : '"Courier New", monospace'}; font-size: ${paperWidthMm === 58 ? 10 : 11.5}px; }
+    .center { text-align: center; }
+    .title { font-size: 1.5em; font-weight: bold; margin: 1mm 0; }
+    .sep { border-top: 1px dashed #000; margin: 2mm 0; }
+    .row { display: flex; justify-content: space-between; gap: 2mm; }
+    .row span:last-child { white-space: nowrap; }
+    .row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+    .strong { font-weight: bold; font-size: 1.1em; }
+    .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+    .mark { margin: 2mm 0; padding: 1.5mm; border: 2px solid #000; text-align: center; font-weight: bold; }
+</style></head>
+<body>
+    <div class="center">
+        ${storeSettings.businessName ? `<div class="strong">${esc(storeSettings.businessName)}</div>` : ''}
+        <div class="title">${esc(T('z.title'))}</div>
+        ${report.z_number ? `<div>${esc(T('z.number'))} <span class="ltr">${esc(report.z_number)}</span></div>` : ''}
+        ${storeSettings.training ? `<div class="mark">${esc(T('receipt.training'))}</div>` : ''}
+        ${storeSettings.demo && !storeSettings.training ? `<div class="mark">${esc(T('receipt.demo'))}</div>` : ''}
+    </div>
+    <div class="sep"></div>
+    ${report.employee_name ? row(T('receipt.cashier'), esc(report.employee_name)) : ''}
+    ${row(T('z.opened'), esc(formatDate(report.start_time, T.lang)))}
+    ${row(T('z.closed'), esc(formatDate(report.end_time || new Date().toISOString(), T.lang)))}
+    <div class="sep"></div>
+    ${row(T('z.tickets'), esc(report.total_transactions || 0))}
+    ${row(T('z.pieces'), esc(report.items_sold || 0))}
+    ${row(T('z.sales'), money(report.total_sales), true)}
+    ${Number(report.total_discount) > 0 ? row(T('receipt.discount'), `-${money(report.total_discount)}`) : ''}
+    ${Number(report.total_refunds) > 0 ? row(T('z.refunds'), `-${money(report.total_refunds)}`) : ''}
+    <div class="sep"></div>
+    ${methods.map(([m, v]) => row(paymentLabel(m, T.lang), money(v))).join('')}
+    <div class="sep"></div>
+    ${row(T('z.openingCash'), money(report.opening_cash))}
+    ${row(T('z.cashSales'), money(report.total_cash_sales))}
+    ${Number(report.credit_collected_cash) > 0 ? row(T('z.creditCollected'), money(report.credit_collected_cash)) : ''}
+    ${Number(report.total_cash_refunds) > 0 ? row(T('z.cashRefunds'), `-${money(report.total_cash_refunds)}`) : ''}
+    ${Number(report.deposits_cash) > 0 ? row(T('z.deposits'), money(report.deposits_cash)) : ''}
+    ${Number(report.deposit_refunds) > 0 ? row(T('z.depositRefunds'), `-${money(report.deposit_refunds)}`) : ''}
+    ${Number(report.total_expenses) > 0 ? row(T('z.expenses'), `-${money(report.total_expenses)}`) : ''}
+    ${row(T('z.expected'), money(report.expected_cash), true)}
+    ${report.closing_cash !== null && report.closing_cash !== undefined ? row(T('z.counted'), money(report.closing_cash), true) : ''}
+    ${diff !== null && diff !== undefined ? row(T('z.difference'), `${diff > 0 ? '+' : ''}${money(diff)}`, true) : ''}
+    <div class="sep"></div>
+    <div class="center">${esc(T('z.signature'))}</div>
+    <div style="height:12mm"></div>
+</body></html>`;
+    }
+
+    /** Print a roll document (58 / 80 mm), page as long as the content. */
+    async printRoll(html, paperWidthMm, printer = {}) {
         const win = hiddenWindow(BrowserWindow);
         try {
             await loadHtml(win, html);
@@ -844,6 +935,8 @@ class ReceiptService {
         // The TVA of this sale as it was saved, whatever the shop's setting is
         // today: an old ticket keeps its TVA line; a sale made with TVA off has 0
         const showTax = (parseFloat(data.tax_amount) || 0) > 0;
+        // Ticket QR (Settings › tickets can turn it off)
+        const qr = storeSettings.receiptTicketQr === false ? '' : ticketQr(data.receipt_number);
 
         return `<!DOCTYPE html>
 <html lang="${T.lang}" dir="${T.dir}"><head><meta charset="UTF-8">
@@ -870,6 +963,8 @@ class ReceiptService {
     .grand { font-size: 1.35em; font-weight: bold; border-top: 1px solid #000; margin-top: 1mm; padding-top: 1mm; }
     .footer { text-align: center; margin-top: 2mm; white-space: pre-line; }
     .brand { text-align: center; margin-top: 2mm; font-size: 0.8em; color: #444; letter-spacing: 0.03em; }
+    .ticket-qr { text-align: center; margin-top: 2mm; }
+    .ticket-qr svg { width: 18mm; height: 18mm; display: block; margin: 0 auto 1mm; }
     /* Long names and words without spaces wrap inside the roll instead of being cut */
     .row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
     .shop-name, .item-name, .item-variant, .muted, .footer, .header { overflow-wrap: anywhere; }
@@ -906,6 +1001,7 @@ class ReceiptService {
     ${change > 0.004 ? `<div class="row" style="font-weight:bold"><span>${T('receipt.change')}</span><span class="ltr">${money(change)}</span></div>` : ''}
     <div class="sep"></div>
     <div class="footer">${esc(shop.footer)}</div>
+    ${qr ? `<div class="ticket-qr">${qr}<div class="small">${esc(T('receipt.scanForReturn'))}</div></div>` : ''}
     ${storeSettings.receiptShowBrand !== false ? `<div class="brand">${esc(BRAND.productName)}</div>` : ''}
 </body></html>`;
     }

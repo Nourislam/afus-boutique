@@ -46,7 +46,7 @@ export default function ProductsPage() {
     useEffect(() => {
         if (!noCostOnly) return undefined;
         let cancelled = false;
-        window.electronAPI.catalog.searchVariants('', 10000).then(rows => {
+        window.electronAPI.catalog.searchVariants('').then(rows => {
             if (cancelled) return;
             const byProduct = {};
             for (const v of rows) (byProduct[v.product_id] = byProduct[v.product_id] || []).push(v);
