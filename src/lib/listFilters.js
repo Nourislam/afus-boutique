@@ -6,10 +6,28 @@
 export const DASHBOARD_LINKS = {
     stockOut: '/inventory?stock=out',
     stockLow: '/inventory?stock=low',
+    stockRunOut: '/?tab=stock',
     productsNoCost: '/products?filter=noCost',
     creditLate: '/credit-sales?status=overdue',
     orderSoldOut: '/purchase-orders?order=soldOut',
 };
+
+/**
+ * The promotion form opened prefilled (end-of-season clearance, a markdown):
+ * a percentage on these articles. It only fills the form, the shop saves it.
+ */
+export function clearanceLink({ ids = [], name = '', percent = 30 } = {}) {
+    const params = new URLSearchParams({ tab: 'promotions', discountProducts: ids.join(','), discountName: name, discountValue: String(percent) });
+    return `/offers?${params.toString()}`;
+}
+
+/** What the promotion form reads from such a link, or null. */
+export function readClearance(params) {
+    const ids = String(params?.get?.('discountProducts') || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!ids.length) return null;
+    const value = Number(params.get('discountValue'));
+    return { ids, name: params.get('discountName') || '', value: value > 0 && value <= 100 ? value : '' };
+}
 
 export const STOCK_FILTERS = ['all', 'out', 'low'];
 export const CREDIT_FILTERS = ['all', 'pending', 'partial', 'paid', 'overdue'];
@@ -47,6 +65,25 @@ export function isLateCredit(sale, today) {
     const owed = (Number(sale.amount_due) || 0) - (Number(sale.amount_paid) || 0);
     if (!(owed > 0.004) || !sale.due_date) return false;
     return String(sale.due_date).slice(0, 10) < today;
+}
+
+/**
+ * What is still owed on kridi, by how late it is: not due yet (or no due
+ * date), late by 30 days or less, late by more than 30 days. today: local
+ * "YYYY-MM-DD".
+ */
+export function creditAging(sales = [], today) {
+    const out = { notDue: 0, late: 0, veryLate: 0, total: 0 };
+    const day = (text) => Date.parse(`${String(text).slice(0, 10)}T00:00:00Z`);
+    for (const sale of sales) {
+        const owed = Math.round(((Number(sale.amount_due) || 0) - (Number(sale.amount_paid) || 0)) * 100) / 100;
+        if (!(owed > 0.004)) continue;
+        out.total += owed;
+        if (!isLateCredit(sale, today)) out.notDue += owed;
+        else if ((day(today) - day(sale.due_date)) / 86400000 <= 30) out.late += owed;
+        else out.veryLate += owed;
+    }
+    return out;
 }
 
 /**

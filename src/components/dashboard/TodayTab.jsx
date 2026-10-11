@@ -267,7 +267,7 @@ export default function TodayTab({ access, features, user, ranges, home, alerts,
                 </div>
                 {access.shop && !first && (
                     <div className="xl:col-span-5 min-[1800px]:col-span-4">
-                        <BestSellers best={selling?.best} onMore={() => onOpenTab('sales')} />
+                        <BestSellers best={selling?.best} />
                     </div>
                 )}
                 {showSlow && !first && (

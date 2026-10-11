@@ -290,6 +290,7 @@ function firstSteps(api) {
 }
 
 module.exports = {
+    NET_SALE_ITEMS, PRODUCT_STOCK,
     getClothingDashboard, topSizes, topColors, stockValue,
     bestSellers, outOfStockSelling, runningLow, missingSizes, slowMovers, missingCost, soldWithoutCost,
     overdueCredit, offersEnding, creditMoves, salesSeries, firstSteps,

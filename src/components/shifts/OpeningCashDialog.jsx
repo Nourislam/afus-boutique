@@ -1,4 +1,5 @@
 import { t } from '../../i18n';
+import { useEscape } from '../../hooks/useEscape';
 import { translateError } from '../../i18n/errors';
 import { currentLanguage } from '../../i18n';
 import { currencySymbolFor } from '../../i18n/format';
@@ -17,6 +18,8 @@ export default function OpeningCashDialog({ employee, onSuccess, onCancel }) {
     const [lastClosed, setLastClosed] = useState(null);
     const [closing, setClosing] = useState(null); // another employee's open drawer being closed
     const { settings } = useSettingsStore();
+    // Escape = cancel, when cancelling is allowed (not while another window is on top)
+    useEscape(() => { if (onCancel && !closing) onCancel(); }, !!onCancel);
 
     // One drawer per shop: a colleague's drawer left open is closed (counted)
     // before a new one is opened, and its counted cash is the new opening amount.

@@ -33,6 +33,9 @@ import { getThemePreference, setThemePreference } from '../lib/theme';
 // Settings sections, grouped like the shop thinks about them. Each device
 // has its own section, even when one printer does both jobs. E-mail and the
 // online store appear only while their module is on.
+// Tabs whose fields are kept by the page and saved by its "Save changes" button
+const PAGE_SAVED_TABS = ['business', 'language', 'receipt', 'labelPrinter', 'scanner', 'sku', 'modules', 'mail'];
+
 const SECTION_GROUPS = [
     { id: 'shop', ids: ['business', 'language', 'appearance'] },
     { id: 'devices', ids: ['receipt', 'labelPrinter', 'scanner'] },
@@ -269,8 +272,10 @@ export default function SettingsPage() {
                 icon={SettingsIcon}
                 title={t('nav.settings')}
                 subtitle={t('settings.subtitle')}
-                actions={(
-                    <Button onClick={handleSave} loading={saving}>
+                // One save button per screen: the tabs that save on their own
+                // (sale screen, backups, logs, about...) do not show this one
+                actions={PAGE_SAVED_TABS.includes(currentTab) && (
+                    <Button onClick={handleSave} loading={saving} data-testid="settings-save">
                         <Save className="w-4 h-4" /> {t('common.saveChanges')}
                     </Button>
                 )}
@@ -278,7 +283,7 @@ export default function SettingsPage() {
 
             <div className="flex-1 min-h-0 flex flex-col md:flex-row">
                 {/* Sections */}
-                <nav className="md:w-56 lg:w-64 flex-none border-b md:border-b-0 md:border-e border-dark-border p-2 md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto no-scrollbar" aria-label={t('nav.settings')}>
+                <nav className="md:w-52 xl:w-64 flex-none border-b md:border-b-0 md:border-e border-dark-border p-2 md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto no-scrollbar" aria-label={t('nav.settings')}>
                     {SECTION_GROUPS.map(group => {
                         const ids = group.ids.filter(id => tabIds.includes(id));
                         if (!ids.length) return null;
@@ -294,7 +299,7 @@ export default function SettingsPage() {
                                             className={`flex items-center md:items-start gap-2.5 px-3 py-2 rounded-lg text-start whitespace-nowrap md:whitespace-normal transition-colors ${active ? 'bg-indigo-500/15 text-white' : 'text-zinc-400 hover:text-white hover:bg-dark-tertiary/60'}`}>
                                             <Icon className={`w-4 h-4 flex-none md:mt-0.5 ${active ? 'text-indigo-400' : ''}`} />
                                             <span className="min-w-0">
-                                                <span className="block text-sm font-medium md:truncate">{t(`settings.tab.${id}`)}</span>
+                                                <span className="block text-sm font-medium leading-snug">{t(`settings.tab.${id}`)}</span>
                                                 <span className="hidden md:block text-[11px] leading-snug text-zinc-500">{t(`settings.tabHint.${id}`)}</span>
                                             </span>
                                         </button>

@@ -48,4 +48,8 @@ export default {
     'credit.qty': ["Qty", "Qté", "الكمية"],
     'credit.totalDue': ["Total Due", "Total dû", "المجموع المستحق"],
     'credit.history': ["Payment History", "Historique des paiements", "سجل التسديدات"],
+    'credit.aging.title': ["How late is the money owed?", "Depuis quand l'argent est-il dû ?", "منذ متى هذا الدين؟"],
+    'credit.aging.notDue': ["Not due yet", "Pas encore échu", "لم يحن موعده"],
+    'credit.aging.late': ["Late by 30 days or less", "En retard de 30 jours ou moins", "متأخر 30 يوماً أو أقل"],
+    'credit.aging.veryLate': ["Late by more than 30 days", "En retard de plus de 30 jours", "متأخر أكثر من 30 يوماً"],
 };

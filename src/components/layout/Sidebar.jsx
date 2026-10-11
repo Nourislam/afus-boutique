@@ -165,7 +165,7 @@ export function Sidebar() {
             {...tooltip.props(t(item.label))}
         >
             <item.icon className="w-[18px] h-[18px] flex-none" />
-            <span className={collapsed ? 'sr-only' : 'truncate'}>{t(item.label)}</span>
+            <span className={collapsed ? 'sr-only' : 'line-clamp-2 break-words min-w-0'}>{t(item.label)}</span>
         </NavLink>
     );
     const logoutLabel = currentShiftId ? t('nav.closeAndLogout') : t('nav.logout');
@@ -210,25 +210,25 @@ export function Sidebar() {
                 )}
             </button>
 
-            <nav className="flex-1 px-2 py-2 overflow-y-auto no-scrollbar">
+            <nav className="flex-1 min-h-0 px-2 py-2 overflow-y-auto thin-scroll">
                 {NAV_GROUPS.map((group, gi) => {
                     const items = group.items.filter(visible);
                     if (items.length === 0) return null;
                     return (
-                        <div key={group.id} className={gi > 0 ? 'mt-2 pt-2 border-t border-dark-border/60' : ''}>
+                        <div key={group.id} className={gi > 0 ? 'mt-1.5 pt-1.5 border-t border-dark-border/60' : ''}>
                             {items.map(navItem)}
                         </div>
                     );
                 })}
             </nav>
 
-            <div className="p-2 border-t border-dark-border space-y-1">
+            <div className="p-2 border-t border-dark-border space-y-0.5">
                 {!trainingActive && trainingTrial.available && (
                     <button type="button" onClick={enterTraining} disabled={startingTraining} data-testid="nav-training"
                         className={`sidebar-item w-full text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 ${collapsed ? 'justify-center !px-0' : ''}`}
                         {...tooltip.props(`${t('training.startHint')} · ${t('trial.trainingLeft', { n: trainingTrial.daysLeft })}`)}>
                         <GraduationCap className="w-[18px] h-[18px] flex-none" />
-                        <span className={collapsed ? 'sr-only' : 'truncate'}>{t('training.mode')}</span>
+                        <span className={collapsed ? 'sr-only' : 'line-clamp-2 min-w-0'}>{t('training.mode')}</span>
                     </button>
                 )}
                 {hasPermission(SETTINGS_ITEM.permission) && navItem(SETTINGS_ITEM)}
@@ -236,7 +236,7 @@ export function Sidebar() {
                 <button onClick={handleLogout} data-testid="nav-logout" className={`sidebar-item w-full text-red-300 hover:text-red-200 hover:bg-red-500/10 ${collapsed ? 'justify-center !px-0' : ''}`}
                     {...tooltip.props(logoutLabel)}>
                     <LogOut className="w-[18px] h-[18px] flip-rtl flex-none" />
-                    <span className={collapsed ? 'sr-only' : 'truncate'}>{logoutLabel}</span>
+                    <span className={collapsed ? 'sr-only' : 'line-clamp-2 min-w-0'}>{logoutLabel}</span>
                 </button>
             </div>
 

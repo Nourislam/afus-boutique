@@ -97,6 +97,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
         stock: (args) => ipcRenderer.invoke('dashboard:stock', args),
         cash: (args) => ipcRenderer.invoke('dashboard:cash', args),
     },
+    // Decision figures: run-out, sell-through, colour x size, dormant stock, stock worth
+    insights: {
+        runOut: (args) => ipcRenderer.invoke('insights:runOut', args),
+        sellThrough: (args) => ipcRenderer.invoke('insights:sellThrough', args),
+        matrix: (args) => ipcRenderer.invoke('insights:matrix', args),
+        deadStock: (args) => ipcRenderer.invoke('insights:deadStock', args),
+        stockWorth: (args) => ipcRenderer.invoke('insights:stockWorth', args),
+        season: (args) => ipcRenderer.invoke('insights:season', args),
+        markdowns: () => ipcRenderer.invoke('insights:markdowns'),
+        markdownDecide: (args) => ipcRenderer.invoke('insights:markdownDecide', args),
+    },
     products: {
         getAll: () => ipcRenderer.invoke('db:products:getAll'),
         getById: (id) => ipcRenderer.invoke('db:products:getById', id),

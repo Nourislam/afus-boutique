@@ -337,8 +337,8 @@ export default function POSPage() {
             {/* ---------------- Articles */}
             <section className="flex-1 min-w-0 flex flex-col">
                 <div className="flex-none px-5 pt-4 pb-3 space-y-3 border-b border-dark-border">
-                    <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="relative flex-1 min-w-[220px]">
                             <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 pointer-events-none" />
                             <input
                                 ref={searchRef}
@@ -360,12 +360,12 @@ export default function POSPage() {
                             </span>
                         </div>
                         {brands.length > 0 && (
-                            <div className="relative">
+                            <div className="relative flex-1 min-w-[150px] max-w-[13rem]">
                                 <Tag className="absolute start-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
                                 <select
                                     value={selectedBrand}
                                     onChange={(e) => setSelectedBrand(e.target.value)}
-                                    className="input h-11 w-44 ps-8 pe-7 appearance-none cursor-pointer"
+                                    className="input h-11 w-full ps-8 pe-7 appearance-none cursor-pointer truncate"
                                     aria-label={t('brands.title')}
                                 >
                                     <option value="">{t('pos.allBrands')}</option>
@@ -375,12 +375,13 @@ export default function POSPage() {
                             </div>
                         )}
                         <div className="segmented h-11">
-                            <button type="button" className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} title={t('pos.viewGrid')}><LayoutGrid className="w-4 h-4" /></button>
-                            <button type="button" className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} title={t('pos.viewList')}><List className="w-4 h-4" /></button>
+                            <button type="button" className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} title={t('pos.viewGrid')} aria-label={t('pos.viewGrid')} aria-pressed={view === 'grid'}><LayoutGrid className="w-4 h-4" /></button>
+                            <button type="button" className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} title={t('pos.viewList')} aria-label={t('pos.viewList')} aria-pressed={view === 'list'}><List className="w-4 h-4" /></button>
                         </div>
                     </div>
 
-                    <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                    {/* Every category visible (on two lines if needed), none hidden off the edge */}
+                    <div className="flex flex-wrap gap-2 max-h-[4.5rem] overflow-y-auto thin-scroll">
                         {[{ id: 'all', name: t('pos.allProducts'), color: null }, ...categories].map(cat => {
                             const active = selectedCategory === cat.id;
                             const count = cat.id === 'all' ? products.length : (countByCategory[cat.id] || 0);
@@ -473,7 +474,7 @@ export default function POSPage() {
             </section>
 
             {/* ---------------- Ticket */}
-            <aside className="w-[380px] xl:w-[420px] flex-none flex flex-col bg-dark-secondary border-s border-dark-border min-h-0">
+            <aside className="w-[340px] xl:w-[400px] 2xl:w-[420px] flex-none flex flex-col bg-dark-secondary border-s border-dark-border min-h-0">
                 <div className="flex-none px-4 pt-4 pb-3 border-b border-dark-border space-y-3">
                     <div className="flex items-center justify-between gap-2">
                         <h2 className="font-semibold flex items-center gap-2">

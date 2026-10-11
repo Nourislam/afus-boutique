@@ -69,6 +69,7 @@ export default {
     'labels.codeQr': ["QR code", "Code QR", "رمز QR"],
     'labels.ean13Fallback': ["Pieces without an EAN-13 barcode are printed with a Code 128 of their SKU.", "Les pièces sans code EAN-13 sont imprimées avec un Code 128 de leur SKU.", "القطع التي ليس لها باركود EAN-13 تُطبع برمز Code 128 لرمز SKU الخاص بها."],
     'labels.variantsAdded': ["{n} pieces of {name} added", "{n} pièces de {name} ajoutées", "تمت إضافة {n} قطعة من {name}"],
+    'labels.arrivedAdded': ["{n} labels of the pieces that arrived added", "{n} étiquettes des pièces arrivées ajoutées", "أضيفت {n} ملصقات للقطع التي وصلت"],
     'labels.noCode': ["\"{name}\" has no SKU or barcode. Edit the article to add one first.", "« {name} » n'a ni SKU ni code-barres. Modifiez l'article pour en ajouter un.", "«{name}» ليس له رمز SKU ولا باركود. عدّل السلعة لإضافة رمز أولاً."],
     'labels.added': ["{name} added", "{name} ajouté", "تمت إضافة {name}"],
     'labels.stockN': ["stock {n}", "stock {n}", "المخزون {n}"],

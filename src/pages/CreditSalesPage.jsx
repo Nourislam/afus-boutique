@@ -5,6 +5,8 @@ import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
 import { Search, FileText, Banknote, Mail, Bell, Eye, CreditCard, Check, Smartphone, MessageCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { PageHeader } from '../components/ui/PageHeader';
+import { StatTile } from '../components/ui/StatTile';
 import { Input } from '../components/ui/Input';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import ReceiptPreviewModal from '../components/modals/ReceiptPreviewModal';
@@ -12,7 +14,7 @@ import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
 import { paymentLabel } from '../lib/payments';
 import { useSearchParams } from 'react-router-dom';
-import { CREDIT_FILTERS, isLateCredit, readFilter } from '../lib/listFilters';
+import { CREDIT_FILTERS, isLateCredit, readFilter, creditAging } from '../lib/listFilters';
 import { localDate } from '../lib/dashboard';
 import { reminderMessage, whatsappLink } from '../lib/whatsapp';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -127,6 +129,7 @@ export default function CreditSalesPage() {
 
     // Opens WhatsApp on the customer's number with the reminder typed (nothing is sent by the program)
     const shopName = useSettingsStore(state => state.settings.businessName);
+    const features = useSettingsStore(state => state.settings.features);
     const remindOnWhatsApp = async (sale) => {
         const text = reminderMessage({
             customerName: sale.customer_name, amount: (sale.amount_due || 0) - (sale.amount_paid || 0),
@@ -172,202 +175,48 @@ export default function CreditSalesPage() {
         setShowPaymentModal(true);
     };
 
+    const emailOn = !!features?.email;
+    const left = (sale) => (sale.amount_due || 0) - (sale.amount_paid || 0);
+    const tiles = [
+        { icon: Banknote, label: t('credit.outstanding'), value: formatCurrency(totalOutstanding), tone: 'text-amber-300', iconTone: 'bg-amber-500/15 text-amber-300' },
+        { icon: FileText, label: t('credit.totalInvoices'), value: creditSales.length, iconTone: 'bg-indigo-500/15 text-indigo-300' },
+        { icon: Bell, label: t('credit.pending'), value: totalPending, iconTone: 'bg-amber-500/15 text-amber-300' },
+        { icon: CreditCard, label: t('credit.partial'), value: totalPartial, iconTone: 'bg-sky-500/15 text-sky-300' },
+    ];
+
     return (
-        <div className="p-6 space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold">{t('credit.title')}</h1>
-                    <p className="text-zinc-400 text-sm">{t('credit.subtitle')}</p>
-                </div>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                <div className="card p-3 sm:p-4">
-                    <div className="flex items-center gap-2 sm:gap-3">
-                        <div className="p-2 sm:p-3 rounded-xl bg-amber-500/20">
-                            <Banknote className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
-                        </div>
-                        <div className="min-w-0">
-                            <p className="text-xs sm:text-sm text-zinc-400 truncate">{t('credit.outstanding')}</p>
-                            <p className="text-lg sm:text-xl font-bold text-amber-400">{formatCurrency(totalOutstanding)}</p>
-                        </div>
+        <div className="page">
+            <PageHeader icon={CreditCard} title={t('credit.title')} subtitle={t('credit.subtitle')}>
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative flex-1 min-w-[240px] max-w-md">
+                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
+                        <input
+                            type="text"
+                            placeholder={t('credit.search')}
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="input ps-10 w-full"
+                        />
+                    </div>
+                    <div className="segmented max-w-full overflow-x-auto no-scrollbar" role="tablist">
+                        {['all', 'pending', 'partial', 'paid', 'overdue'].map(status => (
+                            <button key={status} type="button" role="tab" aria-selected={statusFilter === status}
+                                onClick={() => setStatusFilter(status)} className={`whitespace-nowrap ${statusFilter === status ? 'active' : ''}`}>
+                                {status === 'all' ? t('credit.all') : getStatusLabel(status)}
+                            </button>
+                        ))}
                     </div>
                 </div>
-                <div className="card p-3 sm:p-4">
-                    <div className="flex items-center gap-2 sm:gap-3">
-                        <div className="p-2 sm:p-3 rounded-xl bg-blue-500/20">
-                            <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />
-                        </div>
-                        <div className="min-w-0">
-                            <p className="text-xs sm:text-sm text-zinc-400 truncate">{t('credit.totalInvoices')}</p>
-                            <p className="text-lg sm:text-xl font-bold">{creditSales.length}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="card p-3 sm:p-4">
-                    <div className="flex items-center gap-2 sm:gap-3">
-                        <div className="p-2 sm:p-3 rounded-xl bg-amber-500/20">
-                            <Bell className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
-                        </div>
-                        <div className="min-w-0">
-                            <p className="text-xs sm:text-sm text-zinc-400 truncate">{t('credit.pending')}</p>
-                            <p className="text-lg sm:text-xl font-bold">{totalPending}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="card p-3 sm:p-4">
-                    <div className="flex items-center gap-2 sm:gap-3">
-                        <div className="p-2 sm:p-3 rounded-xl bg-blue-500/20">
-                            <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />
-                        </div>
-                        <div className="min-w-0">
-                            <p className="text-xs sm:text-sm text-zinc-400 truncate">{t('credit.partial')}</p>
-                            <p className="text-lg sm:text-xl font-bold">{totalPartial}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            </PageHeader>
 
-            {/* Filters */}
-            <div className="flex flex-col gap-3">
-                <div className="relative">
-                    <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
-                    <input
-                        type="text"
-                        placeholder={t('credit.search')}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="input ps-10 w-full"
-                    />
-                </div>
-                <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-                    {['all', 'pending', 'partial', 'paid', 'overdue'].map(status => (
-                        <button
-                            key={status}
-                            onClick={() => setStatusFilter(status)}
-                            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium capitalize transition-colors whitespace-nowrap flex-shrink-0
-                                ${statusFilter === status
-                                    ? 'bg-accent-primary text-white'
-                                    : 'bg-dark-tertiary text-zinc-400 hover:text-white'
-                                }`}
-                        >
-                            {status === 'all' ? t('credit.all') : getStatusLabel(status)}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Table - Mobile Card View / Desktop Table */}
-            <div className="card overflow-hidden">
-                {/* Desktop Table */}
-                <div className="hidden lg:block overflow-x-auto">
-                    <table className="w-full [&_th]:whitespace-nowrap">
-                        <thead>
-                            <tr className="border-b border-dark-border">
-                                <th className="text-start p-4 text-sm font-medium text-zinc-400">{t('credit.invoiceNo')}</th>
-                                <th className="text-start p-4 text-sm font-medium text-zinc-400">{t('tx.customer')}</th>
-                                <th className="text-start p-4 text-sm font-medium text-zinc-400">{t('tx.date')}</th>
-                                <th className="text-start p-4 text-sm font-medium text-zinc-400">{t('pos.dueDate')}</th>
-                                <th className="text-end p-4 text-sm font-medium text-zinc-400">{t('credit.amount')}</th>
-                                <th className="text-end p-4 text-sm font-medium text-zinc-400">{t('credit.paid')}</th>
-                                <th className="text-end p-4 text-sm font-medium text-zinc-400">{t('credit.balance')}</th>
-                                <th className="text-center p-4 text-sm font-medium text-zinc-400">{t('inventory.status')}</th>
-                                <th className="text-end p-4 text-sm font-medium text-zinc-400">{t('inventory.actions')}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr>
-                                    <td colSpan="9" className="text-center py-12 text-zinc-500">{t('common.loading')}</td>
-                                </tr>
-                            ) : filteredSales.length === 0 ? (
-                                <tr>
-                                    <td colSpan="9" className="text-center py-12 text-zinc-500">
-                                        <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                                        <p>{t('credit.none')}</p>
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredSales.map(sale => (
-                                    <tr key={sale.id} className="border-b border-dark-border hover:bg-dark-tertiary/50">
-                                        <td className="p-4">
-                                            <span className="font-mono text-sm">{sale.invoice_number}</span>
-                                        </td>
-                                        <td className="p-4">
-                                            <div>
-                                                <p className="font-medium">{sale.customer_name || t('tx.unknown')}</p>
-                                                <p className="text-xs text-zinc-500"><bdi dir="ltr">{sale.customer_email || sale.customer_phone}</bdi></p>
-                                            </div>
-                                        </td>
-                                        <td className="p-4 text-sm text-zinc-400">{formatDate(sale.created_at)}</td>
-                                        <td className="p-4 text-sm text-zinc-400">{formatDate(sale.due_date)}</td>
-                                        <td className="p-4 text-end font-medium">{formatCurrency(sale.amount_due)}</td>
-                                        <td className="p-4 text-end text-green-400">{formatCurrency(sale.amount_paid)}</td>
-                                        <td className="p-4 text-end font-bold text-amber-400">
-                                            {formatCurrency((sale.amount_due || 0) - (sale.amount_paid || 0))}
-                                        </td>
-                                        <td className="p-4 text-center">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusColor(sale.status)}`}>
-                                                {getStatusLabel(sale.status)}
-                                            </span>
-                                        </td>
-                                        <td className="p-4">
-                                            <div className="flex items-center justify-end gap-1">
-                                                <button
-                                                    onClick={() => handleViewDetails(sale)}
-                                                    className="p-2 hover:bg-dark-tertiary rounded-lg transition-colors"
-                                                    title={t('credit.view')}
-                                                >
-                                                    <Eye className="w-4 h-4" />
-                                                </button>
-                                                {sale.status !== 'paid' && (
-                                                    <button
-                                                        onClick={() => handleRecordPayment(sale)}
-                                                        className="p-2 hover:bg-green-500/20 rounded-lg transition-colors text-green-400"
-                                                        title={t('credit.recordPayment')}
-                                                    >
-                                                        <Banknote className="w-4 h-4" />
-                                                    </button>
-                                                )}
-                                                <button
-                                                    onClick={() => handleSendInvoice(sale)}
-                                                    className="p-2 hover:bg-blue-500/20 rounded-lg transition-colors text-blue-400"
-                                                    title={t('credit.sendInvoice')}
-                                                >
-                                                    <Mail className="w-4 h-4" />
-                                                </button>
-                                                {sale.status !== 'paid' && (
-                                                    <button
-                                                        onClick={() => remindOnWhatsApp(sale)}
-                                                        className="p-2 hover:bg-emerald-500/20 rounded-lg transition-colors text-emerald-400"
-                                                        title={t('whatsapp.remind')}
-                                                        data-testid="whatsapp-remind"
-                                                    >
-                                                        <MessageCircle className="w-4 h-4" />
-                                                    </button>
-                                                )}
-                                                {sale.status !== 'paid' && (
-                                                    <button
-                                                        onClick={() => handleSendReminder(sale)}
-                                                        className="p-2 hover:bg-amber-500/20 rounded-lg transition-colors text-amber-400"
-                                                        title={t('credit.sendReminder')}
-                                                    >
-                                                        <Bell className="w-4 h-4" />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+            <div className="page-body space-y-4">
+                <div className="grid fit-grid-sm gap-3">
+                    {tiles.map(tile => <StatTile key={tile.label} {...tile} />)}
                 </div>
 
-                {/* Mobile Card View */}
-                <div className="lg:hidden divide-y divide-dark-border">
+                <CreditAgingBar aging={creditAging(creditSales, today)} money={formatCurrency} />
+
+                <div className="card p-0 overflow-hidden">
                     {loading ? (
                         <div className="text-center py-12 text-zinc-500">{t('common.loading')}</div>
                     ) : filteredSales.length === 0 ? (
@@ -376,49 +225,66 @@ export default function CreditSalesPage() {
                             <p>{t('credit.none')}</p>
                         </div>
                     ) : (
-                        filteredSales.map(sale => (
-                            <div key={sale.id} className="p-4 space-y-3">
-                                <div className="flex items-start justify-between">
-                                    <div>
-                                        <p className="font-mono text-sm text-zinc-400">{sale.invoice_number}</p>
-                                        <p className="font-medium">{sale.customer_name || t('tx.unknown')}</p>
+                        <ul className="divide-y divide-dark-border" data-testid="credit-list">
+                            {filteredSales.map(sale => (
+                                <li key={sale.id} className="p-4 flex flex-wrap items-center gap-x-6 gap-y-3 hover:bg-dark-tertiary/40">
+                                    {/* Who and which bill */}
+                                    <div className="flex-1 min-w-[200px]">
+                                        <p dir="auto" className="font-semibold leading-snug break-words">{sale.customer_name || t('tx.unknown')}</p>
+                                        <p className="text-xs text-zinc-500 flex flex-wrap gap-x-3">
+                                            {(sale.customer_phone || sale.customer_email) && <bdi dir="ltr" className="whitespace-nowrap">{sale.customer_phone || sale.customer_email}</bdi>}
+                                            <span className="font-mono whitespace-nowrap">{sale.invoice_number}</span>
+                                            <span className="whitespace-nowrap">{formatDate(sale.created_at)}</span>
+                                        </p>
                                     </div>
-                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(sale.status)}`}>
-                                        {getStatusLabel(sale.status)}
-                                    </span>
-                                </div>
-                                <div className="grid grid-cols-3 gap-2 text-sm">
-                                    <div>
-                                        <p className="text-zinc-500 text-xs">{t('credit.amount')}</p>
-                                        <p className="font-medium">{formatCurrency(sale.amount_due)}</p>
+                                    {/* Money: total, paid, what is left */}
+                                    <div className="flex items-center gap-5 text-sm flex-none">
+                                        <div className="text-end">
+                                            <p className="text-xs text-zinc-500">{t('credit.amount')}</p>
+                                            <p className="font-medium whitespace-nowrap">{formatCurrency(sale.amount_due)}</p>
+                                        </div>
+                                        <div className="text-end">
+                                            <p className="text-xs text-zinc-500">{t('credit.paid')}</p>
+                                            <p className="text-emerald-400 whitespace-nowrap">{formatCurrency(sale.amount_paid)}</p>
+                                        </div>
+                                        <div className="text-end">
+                                            <p className="text-xs text-zinc-500">{t('credit.balance')}</p>
+                                            <p className="font-bold text-amber-300 whitespace-nowrap">{formatCurrency(left(sale))}</p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p className="text-zinc-500 text-xs">{t('credit.paid')}</p>
-                                        <p className="text-green-400">{formatCurrency(sale.amount_paid)}</p>
+                                    <div className="flex flex-col items-center gap-1 flex-none min-w-[96px]">
+                                        <span className={`badge ${getStatusColor(sale.status)}`}>{getStatusLabel(sale.status)}</span>
+                                        {sale.due_date && <span className="text-[11px] text-zinc-500 whitespace-nowrap">{t('credit.dueN', { date: formatDate(sale.due_date) })}</span>}
                                     </div>
-                                    <div>
-                                        <p className="text-zinc-500 text-xs">{t('credit.balance')}</p>
-                                        <p className="font-bold text-amber-400">{formatCurrency((sale.amount_due || 0) - (sale.amount_paid || 0))}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-between pt-2 border-t border-dark-border">
-                                    <p className="text-xs text-zinc-500">{t('credit.dueN', { date: formatDate(sale.due_date) })}</p>
-                                    <div className="flex gap-1">
-                                        <button onClick={() => handleViewDetails(sale)} className="p-2 hover:bg-dark-tertiary rounded-lg">
-                                            <Eye className="w-4 h-4" />
-                                        </button>
+                                    {/* What to do */}
+                                    <div className="flex flex-wrap items-center justify-end gap-1.5 w-full sm:w-auto">
                                         {sale.status !== 'paid' && (
-                                            <button onClick={() => handleRecordPayment(sale)} className="p-2 hover:bg-green-500/20 rounded-lg text-green-400">
-                                                <Banknote className="w-4 h-4" />
-                                            </button>
+                                            <Button size="sm" onClick={() => handleRecordPayment(sale)} data-testid="credit-pay">
+                                                <Banknote className="w-4 h-4" /> {t('credit.recordPayment')}
+                                            </Button>
                                         )}
-                                        <button onClick={() => handleSendInvoice(sale)} className="p-2 hover:bg-blue-500/20 rounded-lg text-blue-400">
-                                            <Mail className="w-4 h-4" />
-                                        </button>
+                                        <Button size="sm" variant="secondary" onClick={() => handleViewDetails(sale)}>
+                                            <Eye className="w-4 h-4" /> {t('credit.view')}
+                                        </Button>
+                                        {sale.status !== 'paid' && (
+                                            <Button size="sm" variant="ghost" onClick={() => remindOnWhatsApp(sale)} title={t('whatsapp.remind')} aria-label={t('whatsapp.remind')} data-testid="whatsapp-remind">
+                                                <MessageCircle className="w-4 h-4 text-emerald-400" />
+                                            </Button>
+                                        )}
+                                        {emailOn && sale.customer_email && (
+                                            <Button size="sm" variant="ghost" onClick={() => handleSendInvoice(sale)} title={t('credit.sendInvoice')} aria-label={t('credit.sendInvoice')}>
+                                                <Mail className="w-4 h-4 text-sky-400" />
+                                            </Button>
+                                        )}
+                                        {emailOn && sale.customer_email && sale.status !== 'paid' && (
+                                            <Button size="sm" variant="ghost" onClick={() => handleSendReminder(sale)} title={t('credit.sendReminder')} aria-label={t('credit.sendReminder')}>
+                                                <Bell className="w-4 h-4 text-amber-400" />
+                                            </Button>
+                                        )}
                                     </div>
-                                </div>
-                            </div>
-                        ))
+                                </li>
+                            ))}
+                        </ul>
                     )}
                 </div>
             </div>
@@ -850,5 +716,40 @@ function CreditSaleDetailsModal({ isOpen, onClose, creditSale }) {
                 </Button>
             </ModalFooter>
         </Modal>
+    );
+}
+
+// How late the money still owed is. The colours mean "fine / late / very
+// late" and each part is named with its amount, so colour is never alone.
+const AGING = [
+    { id: 'notDue', color: '#0ca30c', label: 'credit.aging.notDue' },
+    { id: 'late', color: '#fab219', label: 'credit.aging.late' },
+    { id: 'veryLate', color: '#d03b3b', label: 'credit.aging.veryLate' },
+];
+
+function CreditAgingBar({ aging, money }) {
+    if (!(aging.total > 0)) return null;
+    const share = (v) => (aging.total > 0 ? (v / aging.total) * 100 : 0);
+    return (
+        <section className="card space-y-3" data-testid="credit-aging">
+            <h3 className="font-semibold">{t('credit.aging.title')}</h3>
+            <div className="flex h-4 rounded-full overflow-hidden gap-[2px] bg-dark-secondary" aria-hidden="true">
+                {AGING.filter(a => aging[a.id] > 0).map(a => (
+                    <span key={a.id} className="h-full first:rounded-s-full last:rounded-e-full" style={{ width: `${share(aging[a.id])}%`, background: a.color }}
+                        title={`${t(a.label)} · ${money(aging[a.id])}`} />
+                ))}
+            </div>
+            <ul className="grid fit-grid-sm gap-2 text-sm">
+                {AGING.map(a => (
+                    <li key={a.id} className="flex items-start gap-2 min-w-0">
+                        <span className="w-3 h-3 rounded-sm flex-none mt-1" style={{ background: a.color }} />
+                        <span className="min-w-0">
+                            <span className="block text-zinc-400 leading-snug">{t(a.label)}</span>
+                            <span className="block font-semibold whitespace-nowrap">{money(aging[a.id])} <span className="text-xs text-zinc-500 font-normal">· {Math.round(share(aging[a.id]))} %</span></span>
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </section>
     );
 }

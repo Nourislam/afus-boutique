@@ -213,12 +213,6 @@ export default function CustomersPage() {
                         icon={Users}
                         title={onlyOwing && !query ? t('partners.nobodyOwes') : t('customers.none')}
                         description={searchQuery ? t('customers.tryOther') : (onlyOwing ? '' : t('customers.addFirst'))}
-                        action={!onlyOwing && (
-                            <Button onClick={() => { setEditingCustomer(null); setShowModal(true); }}>
-                                <Plus className="w-4 h-4" />
-                                {t('customers.add')}
-                            </Button>
-                        )}
                     />
                 ) : (
                     <Table>
@@ -240,10 +234,10 @@ export default function CustomersPage() {
                                             <div className="w-9 h-9 rounded-full bg-accent-primary/20 flex items-center justify-center flex-none">
                                                 <span className="font-semibold text-accent-primary">{customer.name.charAt(0)}</span>
                                             </div>
-                                            <span className="font-medium truncate">{customer.name}</span>
+                                            <span dir="auto" className="font-medium line-clamp-2 break-words">{customer.name}</span>
                                         </div>
                                     </TableCell>
-                                    <TableCell>
+                                    <TableCell className="whitespace-nowrap">
                                         {customer.phone
                                             ? <span className="inline-flex items-center gap-1.5 font-medium tabular"><Phone className="w-3.5 h-3.5 text-zinc-500" /><bdi dir="ltr">{customer.phone}</bdi></span>
                                             : <span className="text-xs text-zinc-500">{t('partners.noPhone')}</span>}
@@ -251,11 +245,11 @@ export default function CustomersPage() {
                                     {showCredit && <TableCell><OwedBadge amount={customer.owed} /></TableCell>}
                                     <TableCell className="text-zinc-400 whitespace-nowrap">{when(customer.last_sale_at)}</TableCell>
                                     <TableCell className="tabular whitespace-nowrap">
-                                        <bdi>{formatMoney(customer.sales_total)}</bdi>
-                                        <span className="text-xs text-zinc-500 ms-1">({t('partners.salesN', { n: customer.sales_count })})</span>
+                                        <bdi className="block">{formatMoney(customer.sales_total)}</bdi>
+                                        <span className="text-xs text-zinc-500">{t('partners.salesN', { n: customer.sales_count })}</span>
                                     </TableCell>
                                     <TableCell>
-                                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                        <div className="flex items-center gap-1 flex-nowrap" onClick={e => e.stopPropagation()}>
                                             <Button variant="ghost" size="icon" onClick={() => { setEditingCustomer(customer); setShowModal(true); }} aria-label={t('customers.edit')}>
                                                 <Edit2 className="w-4 h-4" />
                                             </Button>

@@ -11,6 +11,8 @@ const salesStatsService = require('./services/salesStatsService');
 const returnService = require('./services/returnService');
 const loyaltyService = require('./services/loyaltyService');
 const accountingService = require('./services/accountingService');
+const insights = require('./services/insightsService');
+const markdowns = require('./services/markdownService');
 const { nextReceiptNumber } = require('./services/receiptNumber');
 const pinService = require('./services/pinService');
 const session = require('./services/session');
@@ -1775,9 +1777,28 @@ ipcMain.handle('dashboard:home', async (_, { today, tomorrow, since30, todayRang
     externalBackup: isDemo() ? null : readExternalStatus(),
     printers: await printerStatus(),
     firstSteps: dashboard.firstSteps(dbApi),
+    // Colours / sizes that will be sold out within a week at the pace of the last 14 days
+    runOut: (() => { const rows = insights.runOutSoon(dbApi); return { count: rows.length, items: rows.slice(0, 3) }; })(),
   };
 });
 ipcMain.handle('dashboard:firstSteps', () => dashboard.firstSteps(dbApi));
+
+// Decision figures (services/insightsService.js), read-only
+ipcMain.handle('insights:runOut', (_, args = {}) => insights.runOutSoon(dbApi, args));
+ipcMain.handle('insights:sellThrough', (_, args = {}) => insights.sellThrough(dbApi, args));
+ipcMain.handle('insights:matrix', (_, { productId, since = null } = {}) => insights.productMatrix(dbApi, productId, { since }));
+ipcMain.handle('insights:deadStock', (_, args = {}) => insights.deadStock(dbApi, args));
+ipcMain.handle('insights:stockWorth', (_, args = {}) => insights.stockWorth(dbApi, args));
+ipcMain.handle('insights:season', (_, args = {}) => insights.seasonReport(dbApi, args));
+// Markdown manager: suggestions and results are read-only; a decision is the owner's
+ipcMain.handle('insights:markdowns', () => ({ suggestions: markdowns.suggestions(dbApi), results: markdowns.results(dbApi), steps: markdowns.STEPS }));
+ipcMain.handle('insights:markdownDecide', (_, args = {}) => {
+  const actor = session.getEmployee();
+  const row = runTransaction(() => markdowns.decide(dbApi, { ...args, employeeId: actor?.id || null }));
+  logSystemAction(row.status === 'approved' ? 'markdown_approved' : 'markdown_refused',
+    `${row.percent}% on ${row.product_id}`, null, actor?.id || null);
+  return row;
+});
 ipcMain.handle('dashboard:selling', (_, { range, since30 }) => ({
   best: dashboard.bestSellers(dbApi, range),
   slow: dashboard.slowMovers(dbApi, since30),

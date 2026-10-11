@@ -3,12 +3,14 @@ import { Percent, Plus, Search, Edit2, Trash2, Calendar, Tag, Banknote, LayoutGr
 import { v4 as uuid } from 'uuid';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
+import { DatePicker } from '../components/ui/DatePicker';
 import { Input } from '../components/ui/Input';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/ui/Toast';
-import { isPromotionLive, parseIds, promotionPreset, PROMOTION_PRESETS } from '../lib/promotions';
+import { isPromotionLive, parseIds, promotionPreset, PROMOTION_PRESETS, addDays } from '../lib/promotions';
+import { readClearance } from '../lib/listFilters';
 import { formatDate as formatLocalDate, formatMoney } from '../i18n/format';
 import { t } from '../i18n';
 
@@ -82,6 +84,20 @@ export default function PromotionsPage() {
     // the form opens on "by article" with that article chosen
     const [searchParams, setSearchParams] = useSearchParams();
     useEffect(() => {
+        // End-of-season clearance (reports): a percentage on the articles still in stock, for 30 days
+        const clearance = readClearance(searchParams);
+        if (clearance) {
+            setEditing(null);
+            setProductQuery('');
+            setForm({
+                ...EMPTY_FORM, ...promotionPreset('product'), applies_to_ids: clearance.ids, name: clearance.name || t('promo.preset.productName'),
+                value: String(clearance.value), end_date: addDays(new Date(), 30), preset: 'product',
+            });
+            const next = new URLSearchParams(searchParams);
+            ['discountProducts', 'discountName', 'discountValue'].forEach(k => next.delete(k));
+            setSearchParams(next, { replace: true });
+            return;
+        }
         const productId = searchParams.get('discountProduct');
         if (!productId) return;
         setEditing(null);
@@ -284,8 +300,8 @@ export default function PromotionsPage() {
                 ) : visible.length === 0 ? (
                     <div className="text-center py-16 text-zinc-500">
                         <Percent className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                        <p className="mb-4">{t('promo.none')}</p>
-                        <Button onClick={openCreate}><Plus className="w-4 h-4" /> {t('promo.create')}</Button>
+                        <p>{t('promo.none')}</p>
+                        <p className="text-sm mt-1">{t('common.useButtonAbove', { label: t('promo.create') })}</p>
                     </div>
                 ) : view === 'grid' ? (
                     <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
@@ -464,8 +480,8 @@ export default function PromotionsPage() {
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
-                                <Input label={t('promo.start')} type="date" value={form.start_date} onChange={(e) => set({ start_date: e.target.value })} />
-                                <Input label={t('promo.end')} type="date" value={form.end_date} onChange={(e) => set({ end_date: e.target.value })} />
+                                <DatePicker label={t('promo.start')} value={form.start_date} onChange={(v) => set({ start_date: v })} clearable testId="promo-start" />
+                                <DatePicker label={t('promo.end')} value={form.end_date} onChange={(v) => set({ end_date: v })} clearable min={form.start_date || undefined} testId="promo-end" />
                             </div>
                             <p className="form-hint -mt-2">{form.start_date || form.end_date ? t('promo.datesHint') : t('promo.noDatesHint')}</p>
 

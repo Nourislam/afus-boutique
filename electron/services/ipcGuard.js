@@ -128,6 +128,7 @@ const RULES = {
     'db:promotions:create': P.PROMOTIONS_MANAGE,
     'db:promotions:update': P.PROMOTIONS_MANAGE,
     'db:promotions:delete': P.PROMOTIONS_MANAGE,
+    'insights:markdownDecide': P.PROMOTIONS_MANAGE,
     'db:promotions:incrementUse': 'login',
 
     // Selling and the cash drawer

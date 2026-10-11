@@ -1,9 +1,11 @@
 import { t } from '../i18n';
 import { formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
+import ProductMatrixModal from '../components/products/ProductMatrixModal';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Edit2, Trash2, Package, Grid, List, FileSpreadsheet, QrCode, Tag, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Package, Grid, List, FileSpreadsheet, QrCode, Tag, X, Grid3x3 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { PageHeader } from '../components/ui/PageHeader';
 import { SearchInput } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader, EmptyState } from '../components/ui/Table';
@@ -27,6 +29,8 @@ export default function ProductsPage() {
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [viewMode, setViewMode] = useState('grid');
     const [showProductModal, setShowProductModal] = useState(false);
+    // Colours x sizes of one article (stock, sold, buying plan)
+    const [matrixOf, setMatrixOf] = useState(null);
     const [editingProduct, setEditingProduct] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showExcelImport, setShowExcelImport] = useState(false);
@@ -145,38 +149,34 @@ export default function ProductsPage() {
 
     return (
         <>
-            <div className="h-full flex flex-col overflow-hidden">
-                {/* Header */}
-                <div className="p-6 border-b border-dark-border">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h1 className="text-2xl font-bold">{t('products.title')}</h1>
-                            <p className="text-zinc-500">{t('products.count', { n: products.length })}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <PermissionGate permission={PERMISSIONS.PRODUCTS_CREATE}>
-                                <Button variant="secondary" onClick={() => setShowExcelImport(true)}>
-                                    <FileSpreadsheet className="w-4 h-4" />
-                                    {t('common.importExcel')}
-                                </Button>
-                                <Button onClick={() => {
-                                    setInitialValues(null);
-                                    setEditingProduct(null);
-                                    setShowProductModal(true);
-                                }}>
-                                    <Plus className="w-4 h-4" />
-                                    {t('products.add')}
-                                </Button>
-                            </PermissionGate>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-4">
+            <div className="page">
+                <PageHeader
+                    icon={Package}
+                    title={t('products.title')}
+                    subtitle={t('products.count', { n: products.length })}
+                    actions={(
+                        <PermissionGate permission={PERMISSIONS.PRODUCTS_CREATE}>
+                            <Button variant="secondary" onClick={() => setShowExcelImport(true)}>
+                                <FileSpreadsheet className="w-4 h-4" />
+                                {t('common.importExcel')}
+                            </Button>
+                            <Button onClick={() => {
+                                setInitialValues(null);
+                                setEditingProduct(null);
+                                setShowProductModal(true);
+                            }}>
+                                <Plus className="w-4 h-4" />
+                                {t('products.add')}
+                            </Button>
+                        </PermissionGate>
+                    )}
+                >
+                    <div className="flex flex-wrap items-center gap-3">
                         <SearchInput
                             value={searchQuery}
                             onChange={setSearchQuery}
                             placeholder={t('products.search')}
-                            className="flex-1 max-w-md"
+                            className="flex-1 min-w-[240px] max-w-md"
                         />
                         <Select
                             value={selectedCategory}
@@ -185,7 +185,7 @@ export default function ProductsPage() {
                                 { value: 'all', label: t('products.allCategories') },
                                 ...categories.map(c => ({ value: c.id, label: c.name }))
                             ]}
-                            className="w-48"
+                            className="w-56"
                         />
                         <button type="button" onClick={() => setNoCostOnly(!noCostOnly)} aria-pressed={noCostOnly} data-testid="filter-no-cost"
                             className={`h-10 px-3 rounded-lg border text-sm inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ${noCostOnly ? 'border-amber-500/50 bg-amber-500/15 text-amber-200' : 'border-dark-border text-zinc-400 hover:text-white'}`}>
@@ -194,23 +194,31 @@ export default function ProductsPage() {
                         </button>
                         <div className="flex items-center gap-1 bg-dark-tertiary rounded-lg p-1">
                             <button
+                                type="button"
                                 onClick={() => setViewMode('grid')}
+                                title={t('pos.viewGrid')}
+                                aria-label={t('pos.viewGrid')}
+                                aria-pressed={viewMode === 'grid'}
                                 className={`p-2 rounded ${viewMode === 'grid' ? 'bg-accent-primary' : 'hover:bg-zinc-700'}`}
                             >
                                 <Grid className="w-4 h-4" />
                             </button>
                             <button
+                                type="button"
                                 onClick={() => setViewMode('list')}
+                                title={t('pos.viewList')}
+                                aria-label={t('pos.viewList')}
+                                aria-pressed={viewMode === 'list'}
                                 className={`p-2 rounded ${viewMode === 'list' ? 'bg-accent-primary' : 'hover:bg-zinc-700'}`}
                             >
                                 <List className="w-4 h-4" />
                             </button>
                         </div>
                     </div>
-                </div>
+                </PageHeader>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="page-body">
                     {loading ? (
                         <div className="flex items-center justify-center h-full">
                             <div className="w-10 h-10 border-4 border-accent-primary border-t-transparent rounded-full animate-spin" />
@@ -220,17 +228,17 @@ export default function ProductsPage() {
                             icon={Package}
                             title={t('products.notFound')}
                             description={searchQuery ? t('products.tryOther') : t('products.addFirst')}
-                            action={
+                            action={products.length === 0 && !searchQuery && (
                                 <Button onClick={() => { setEditingProduct(null); setShowProductModal(true); }}>
                                     <Plus className="w-4 h-4" />
                                     {t('products.add')}
                                 </Button>
-                            }
+                            )}
                         />
                     ) : viewMode === 'grid' ? (
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        <div className="grid fit-grid-sm gap-4">
                             {filteredProducts.map(product => (
-                                <div key={product.id} className="card group">
+                                <div key={product.id} className="card flex flex-col min-w-0">
                                     <div className="aspect-square bg-dark-tertiary rounded-lg mb-3 flex items-center justify-center overflow-hidden">
                                         {product.image_path ? (
                                             <img src={`app://${product.image_path}`} alt={product.name} className="w-full h-full object-cover" />
@@ -239,44 +247,64 @@ export default function ProductsPage() {
                                         )}
                                     </div>
                                     <div className="space-y-1">
-                                        <h3 className="font-medium truncate">{product.name}</h3>
-                                        <p className="text-sm text-zinc-500 truncate">
+                                        <h3 dir="auto" className="font-medium leading-snug line-clamp-2 break-words" title={product.name}>{product.name}</h3>
+                                        <p className="text-xs text-zinc-500 leading-snug">
                                             {product.variant_count > 0 ? t('products.variantsInStock', { n: product.variant_count, stock: product.stock_quantity }) : (product.sku || t('products.noSku'))}
                                         </p>
-                                        <div className="flex items-center justify-between gap-2">
-                                            <p className="font-semibold text-accent-primary truncate">{formatPrice(product)}</p>
+                                        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                                            <p className="font-semibold text-accent-primary whitespace-nowrap">{formatPrice(product)}</p>
                                             <StatusBadge status={getStockStatus(product)} />
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {/* Always shown (no buttons that appear only on hover): edit on its
+                                        own line, then colours x sizes, labels and delete, never out of the card */}
+                                    <div className="mt-auto pt-3 space-y-1.5">
                                         <PermissionGate permission={PERMISSIONS.PRODUCTS_EDIT}>
                                             <Button
                                                 variant="secondary"
                                                 size="sm"
-                                                className="flex-1"
+                                                className="w-full"
                                                 onClick={() => { setEditingProduct(product); setShowProductModal(true); }}
                                             >
-                                                <Edit2 className="w-3 h-3" />
+                                                <Edit2 className="w-3.5 h-3.5" />
                                                 {t('common.edit')}
                                             </Button>
                                         </PermissionGate>
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            title={t('products.printLabels')}
-                                            onClick={() => navigate(`/labels?tab=articles&product=${product.id}`)}
-                                        >
-                                            <QrCode className="w-3 h-3" />
-                                        </Button>
-                                        <PermissionGate permission={PERMISSIONS.PRODUCTS_DELETE}>
+                                        <div className="grid grid-cols-3 gap-1.5">
                                             <Button
-                                                variant="danger"
+                                                variant="ghost"
                                                 size="sm"
-                                                onClick={() => handleDeleteProduct(product)}
+                                                className="justify-center"
+                                                title={t('dash.do.matrix')}
+                                                aria-label={t('dash.do.matrix')}
+                                                data-testid="product-matrix"
+                                                onClick={() => setMatrixOf(product.id)}
                                             >
-                                                <Trash2 className="w-3 h-3" />
+                                                <Grid3x3 className="w-4 h-4" />
                                             </Button>
-                                        </PermissionGate>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="justify-center"
+                                                title={t('products.printLabels')}
+                                                aria-label={t('products.printLabels')}
+                                                onClick={() => navigate(`/labels?tab=articles&product=${product.id}`)}
+                                            >
+                                                <QrCode className="w-4 h-4" />
+                                            </Button>
+                                            <PermissionGate permission={PERMISSIONS.PRODUCTS_DELETE}>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="justify-center"
+                                                    title={t('common.delete')}
+                                                    aria-label={t('common.delete')}
+                                                    onClick={() => handleDeleteProduct(product)}
+                                                >
+                                                    <Trash2 className="w-4 h-4 text-red-400" />
+                                                </Button>
+                                            </PermissionGate>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -286,7 +314,7 @@ export default function ProductsPage() {
                             <TableHead>
                                 <TableRow>
                                     <TableHeader>{t('products.product')}</TableHeader>
-                                    <TableHeader>{t('products.colSku')}</TableHeader>
+                                    <TableHeader className="hidden xl:table-cell">{t('products.colSku')}</TableHeader>
                                     <TableHeader>{t('products.colCategory')}</TableHeader>
                                     <TableHeader>{t('products.colPrice')}</TableHeader>
                                     <TableHeader>{t('products.colStock')}</TableHeader>
@@ -306,11 +334,13 @@ export default function ProductsPage() {
                                                         <Package className="w-5 h-5 text-zinc-600" />
                                                     )}
                                                 </div>
-                                                <span className="font-medium">{product.name}</span>
-                                                {product.variant_count > 0 && <Badge>{t('products.variantCount', { n: product.variant_count })}</Badge>}
+                                                <span className="min-w-0">
+                                                    <span dir="auto" className="block font-medium break-words">{product.name}</span>
+                                                    {product.variant_count > 0 && <span className="text-xs text-zinc-500">{t('products.variantCount', { n: product.variant_count })}</span>}
+                                                </span>
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-zinc-400">{product.sku || '-'}</TableCell>
+                                        <TableCell className="hidden xl:table-cell text-zinc-400 font-mono text-xs whitespace-nowrap">{product.sku || '—'}</TableCell>
                                         <TableCell>
                                             {product.category_name ? (
                                                 <Badge style={{ backgroundColor: `${product.category_color}20`, color: product.category_color }}>
@@ -318,22 +348,35 @@ export default function ProductsPage() {
                                                 </Badge>
                                             ) : '-'}
                                         </TableCell>
-                                        <TableCell className="font-medium">{formatPrice(product)}</TableCell>
+                                        <TableCell className="font-medium whitespace-nowrap">{formatPrice(product)}</TableCell>
                                         <TableCell>{product.stock_quantity}</TableCell>
                                         <TableCell><StatusBadge status={getStockStatus(product)} /></TableCell>
                                         <TableCell>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-1 flex-nowrap">
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
+                                                    title={t('common.edit')}
+                                                    aria-label={t('common.edit')}
                                                     onClick={() => { setEditingProduct(product); setShowProductModal(true); }}
                                                 >
                                                     <Edit2 className="w-4 h-4" />
                                                 </Button>
                                                 <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    title={t('dash.do.matrix')}
+                                                    aria-label={t('dash.do.matrix')}
+                                                    data-testid="product-matrix"
+                                                    onClick={() => setMatrixOf(product.id)}
+                                                >
+                                                    <Grid3x3 className="w-3 h-3" />
+                                                </Button>
+                                                <Button
                                                     variant="ghost"
                                                     size="icon"
                                                     title={t('products.printLabels')}
+                                                    aria-label={t('products.printLabels')}
                                                     onClick={() => navigate(`/labels?tab=articles&product=${product.id}`)}
                                                 >
                                                     <QrCode className="w-4 h-4" />
@@ -341,6 +384,8 @@ export default function ProductsPage() {
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
+                                                    title={t('common.delete')}
+                                                    aria-label={t('common.delete')}
                                                     onClick={() => handleDeleteProduct(product)}
                                                 >
                                                     <Trash2 className="w-4 h-4 text-red-400" />
@@ -390,6 +435,7 @@ export default function ProductsPage() {
                     onImport={handleExcelImport}
                     title={t('products.importTitle')}
                 />
+                <ProductMatrixModal productId={matrixOf} isOpen={!!matrixOf} onClose={() => { setMatrixOf(null); loadData(); }} />
             </div>
         </>
     );

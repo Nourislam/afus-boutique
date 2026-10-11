@@ -58,14 +58,14 @@ export function SystemLogs() {
           />
         </div>
         <div className="flex gap-2 items-center">
-            <div className="w-40">
+            <div className="w-52">
                 <Select
                     value={filter}
                     onChange={(val) => setFilter(val)}
                     options={filterOptions}
                 />
             </div>
-            <Button onClick={fetchLogs} disabled={loading} variant="secondary">
+            <Button onClick={fetchLogs} disabled={loading} variant="secondary" title={t('common.refresh')} aria-label={t('common.refresh')}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
         </div>
@@ -87,7 +87,7 @@ export function SystemLogs() {
                 </div>
                 <div className="mt-2 text-xs text-zinc-400 flex flex-col sm:flex-row justify-between gap-1">
                     <span>{t('logs.userN', { name: log.employee_name || t('logs.system') })}</span>
-                    {log.details && <span className="font-mono opacity-50 truncate max-w-full sm:max-w-xs">{log.details.substring(0, 100)}...</span>}
+                    {log.details && <span className="font-mono opacity-50 truncate max-w-full sm:max-w-xs" title={log.details}>{log.details.substring(0, 100)}...</span>}
                 </div>
             </Card>
         ))}

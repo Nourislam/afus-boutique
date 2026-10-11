@@ -28,6 +28,7 @@ describe('the home screen links', () => {
     const home = {
         printers: {}, openShifts: [], outOfStock: { count: 2, items: [] }, overdueCredit: { customers: 1, amount: 500 },
         lastBackupAt: new Date().toISOString(), lowCount: 3, missingCost: { count: 1 }, offersEnding: [],
+        runOut: { count: 2, items: [{ product_name: 'Jean', size: 'M', color: 'Noir' }] },
     };
     const linkOf = (id, features = { credit: true, purchaseOrders: true }) => buildAlerts(home, { access, features }).find(a => a.id === id).action.to;
 
@@ -37,9 +38,15 @@ describe('the home screen links', () => {
         expect(linkOf('lowStock')).toBe(DASHBOARD_LINKS.stockLow);
         expect(linkOf('missingCost')).toBe(DASHBOARD_LINKS.productsNoCost);
         expect(linkOf('overdueCredit')).toBe(DASHBOARD_LINKS.creditLate);
+        // Selling fast: order it, or see it in the Stock tab without purchase orders
+        expect(linkOf('runOut')).toBe(DASHBOARD_LINKS.orderSoldOut);
+        expect(linkOf('runOut', { credit: true, purchaseOrders: false })).toBe(DASHBOARD_LINKS.stockRunOut);
+        const alerts = buildAlerts(home, { access, features: { credit: true, purchaseOrders: true } });
+        expect(alerts.map(a => a.id).indexOf('runOut')).toBe(alerts.map(a => a.id).indexOf('outOfStock') + 1);
         expect(DASHBOARD_LINKS).toEqual({
             stockOut: '/inventory?stock=out',
             stockLow: '/inventory?stock=low',
+            stockRunOut: '/?tab=stock',
             productsNoCost: '/products?filter=noCost',
             creditLate: '/credit-sales?status=overdue',
             orderSoldOut: '/purchase-orders?order=soldOut',

@@ -159,7 +159,7 @@ export default function ExchangeModal({ isOpen, onClose, sale, onDone }) {
                         <div className="flex items-end gap-2">
                             <Input containerClassName="flex-1" label={t('exchange.otherArticle')} value={code} placeholder={t('exchange.scanHint')}
                                 onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') findOther(); }} />
-                            <Button variant="secondary" onClick={findOther}><ScanLine className="w-4 h-4" /></Button>
+                            <Button variant="secondary" onClick={findOther} title={t('exchange.find')} aria-label={t('exchange.find')}><ScanLine className="w-4 h-4" /></Button>
                         </div>
                         {target && <p className="text-sm">{t('exchange.newPiece')}: <span className="font-medium">{target.label}</span></p>}
 

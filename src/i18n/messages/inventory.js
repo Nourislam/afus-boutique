@@ -67,6 +67,7 @@ export default {
     'qr.previewHere': ["Preview appears here", "L'aperçu s'affiche ici", "تظهر المعاينة هنا"],
     'qr.preview': ["Label preview", "Aperçu de l'étiquette", "معاينة الملصق"],
     // Stock filter (also opened from the home screen)
+    'inventory.history': ["Stock history", "Historique du stock", "سجل المخزون"],
     'inventory.filter.all': ["All", "Tous", "الكل"],
     'inventory.filter.out': ["Sold out", "Épuisé", "نفد"],
     'inventory.filter.low': ["Running low", "Bientôt épuisé", "قارب النفاد"],

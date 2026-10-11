@@ -1,4 +1,5 @@
 import { useT } from '../../i18n';
+import { useEscape } from '../../hooks/useEscape';
 import { AlertTriangle, Info } from 'lucide-react';
 import { Button } from './Button';
 
@@ -13,6 +14,8 @@ export function ConfirmDialog({
     variant = 'danger', // danger, warning, info
 }) {
     const { t } = useT();
+    // Escape = cancel, like every other window
+    useEscape(onClose, isOpen);
     if (!isOpen) return null;
     title = title || t('common.confirmTitle');
     message = message || t('common.confirmMessage');
@@ -38,7 +41,7 @@ export function ConfirmDialog({
     };
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label={title}>
             <div
                 className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/50 w-full max-w-md animate-scale-in p-6"
                 onClick={e => e.stopPropagation()}

@@ -93,7 +93,7 @@ describe('role checks on the main process channels', () => {
             'demo:enter', 'demo:reset', 'demo:exit', 'app:setTheme', 'sync:set-online', 'sync:ack',
             'sync:batch-ack', 'sync:incoming', 'sync:incoming-batch', 'sync:trigger',
         ]);
-        const WRITE = /^(create|update|delete|set|save|saveLogo|saveFromPath|saveProduct|remove|add|start|end|confirm|cancel|import|importProducts|restore|reset|redeem|reload|assemble|disassemble|receiveStock|updateStock|updateStatus|updateCreditSettings|incrementUse|scan|setCounted|removeLine|addExpense|regenerateQr)/;
+        const WRITE = /^(create|update|delete|set|save|saveLogo|saveFromPath|saveProduct|remove|add|start|end|confirm|cancel|import|importProducts|restore|reset|redeem|reload|assemble|disassemble|receiveStock|updateStock|updateStatus|updateCreditSettings|incrementUse|scan|setCounted|removeLine|addExpense|regenerateQr|markdownDecide)/;
         const writes = [...channels].filter(c => WRITE.test(c.split(':').pop()) && !c.endsWith('Pdf'));
         const missing = writes.filter(c => !ipcGuard.RULES[c] && !open.has(c));
         expect(missing).toEqual([]);

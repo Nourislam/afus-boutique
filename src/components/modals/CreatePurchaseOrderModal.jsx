@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { DatePicker } from '../ui/DatePicker';
 import { Select } from '../ui/Select';
 import { Search, Trash2 } from 'lucide-react';
 import { toast } from '../ui/Toast';
@@ -206,11 +207,11 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete, 
                             />
                         </div>
                         <div>
-                            <label className="block text-sm text-zinc-400 mb-1">{t('po.expected')}</label>
-                            <Input
-                                type="date"
+                            <DatePicker
+                                label={t('po.expected')}
                                 value={formData.expected_date}
-                                onChange={e => setFormData({ ...formData, expected_date: e.target.value })}
+                                onChange={(v) => setFormData({ ...formData, expected_date: v })}
+                                clearable
                             />
                         </div>
                     </div>

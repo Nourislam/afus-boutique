@@ -6,6 +6,7 @@ import { formatDate, formatMoney, formatNumber } from '../../i18n/format';
 import { compare, localDate } from '../../lib/dashboard';
 import { Money, Section, Tile, CompareLine, MiniTabs, Spinner, Empty } from './parts';
 import { BestSellers } from './TodayTab';
+import { useVizColors } from '../../lib/vizColors';
 
 const safe = async (promise, fallback) => { try { return (await promise) ?? fallback; } catch { return fallback; } };
 const AGAINST = { today: 'yesterday', week: 'lastWeek', month: 'lastMonth' };
@@ -35,6 +36,7 @@ function fillBuckets(rows, period, bucket, now = new Date()) {
 const shortMoney = (n) => (n >= 1000 ? `${formatNumber(Math.round(n / 100) / 10)}k` : formatNumber(n));
 
 export default function SalesTab({ ranges }) {
+    const viz = useVizColors();
     const { t } = useT();
     const [period, setPeriod] = useState('week');
     const [data, setData] = useState(null);
@@ -71,7 +73,7 @@ export default function SalesTab({ ranges }) {
                                 ? <CompareLine cmp={compare(data.now.total_revenue, data.before.total_revenue)} against={AGAINST[period]} />
                                 : t('dash.noSaleYet')}
                         </Tile>
-                        <Tile icon={Receipt} label={t('dash.ticket.average')} value={<Money value={data.now.average_sale || 0} />}>
+                        <Tile icon={Receipt} label={t('dash.ticket.average')} value={<Money value={Math.round(data.now.average_sale || 0)} />}>
                             {t('dash.ticket.count', { n: data.now.total_transactions || 0 })}
                         </Tile>
                         <Tile icon={Undo2} label={t('dash.returns.title')} value={<bdi className="tabular">{data.now.refunds_count || 0}</bdi>}>
@@ -85,12 +87,12 @@ export default function SalesTab({ ranges }) {
                                 <div className="h-60 ltr" data-testid="sales-chart">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart data={bars} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="28%">
-                                            <CartesianGrid stroke="rgba(113,113,122,0.18)" vertical={false} />
-                                            <XAxis dataKey="label" tick={{ fill: '#a1a1aa', fontSize: 12 }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={8} />
-                                            <YAxis tick={{ fill: '#a1a1aa', fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={shortMoney} />
+                                            <CartesianGrid stroke={viz.grid} vertical={false} />
+                                            <XAxis dataKey="label" tick={{ fill: viz.text, fontSize: 12 }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={8} />
+                                            <YAxis tick={{ fill: viz.text, fontSize: 12 }} axisLine={false} tickLine={false} width={44} tickFormatter={shortMoney} />
                                             <Tooltip cursor={{ fill: 'rgba(113,113,122,0.12)' }} contentStyle={tooltipStyle} itemStyle={{ color: 'rgb(var(--fg))' }}
                                                 formatter={(value, _name, item) => [`${formatMoney(value)} · ${t('dash.ticket.count', { n: item.payload.count })}`, t('dash.chart.sold')]} />
-                                            <Bar dataKey="total" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                                            <Bar dataKey="total" fill={viz.series[0]} radius={[4, 4, 0, 0]} maxBarSize={24} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>

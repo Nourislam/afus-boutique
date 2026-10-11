@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { DatePicker } from '../ui/DatePicker';
 import { toast } from '../ui/Toast';
 import { CheckCircle, XCircle } from 'lucide-react';
 import { useTaxEnabled } from '../../lib/useTaxEnabled';
@@ -85,11 +86,10 @@ export default function AddSupplierInvoiceModal({ isOpen, onClose, onComplete, p
                             />
                         </div>
                         <div>
-                            <label className="block text-sm text-zinc-400 mb-1">{t('invoice.date')}</label>
-                            <Input
-                                type="date"
+                            <DatePicker
+                                label={t('invoice.date')}
                                 value={formData.invoice_date}
-                                onChange={e => setFormData({ ...formData, invoice_date: e.target.value })}
+                                onChange={(v) => setFormData({ ...formData, invoice_date: v })}
                             />
                         </div>
                     </div>

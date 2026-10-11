@@ -99,7 +99,7 @@ export function profitState(access, soldWithoutCost) {
 }
 
 const SEVERITY = {
-    printer: 1, labelPrinter: 2, drawer: 3, outOfStock: 4, overdueCredit: 5, backup: 6, lowStock: 7, missingCost: 8, offerEnding: 9,
+    printer: 1, labelPrinter: 2, drawer: 3, outOfStock: 4, runOut: 4.5, overdueCredit: 5, backup: 6, lowStock: 7, missingCost: 8, offerEnding: 9,
 };
 
 /**
@@ -143,6 +143,15 @@ export function buildAlerts(home, { access, features = {}, user = {}, now = new 
         add({
             id: 'outOfStock', tone: 'danger', icon: 'stock', text: ['dash.alert.outOfStock', { n: home.outOfStock.count, names }],
             action: access.shop && features.purchaseOrders ? { label: 'dash.do.order', to: DASHBOARD_LINKS.orderSoldOut } : { label: 'dash.do.see', to: DASHBOARD_LINKS.stockOut },
+        });
+    }
+
+    // Selling fast: sold out within a week at the pace of the last 14 days
+    if (home.runOut?.count > 0 && access.inventory) {
+        const names = home.runOut.items.map(i => [i.product_name, i.size, i.color].filter(Boolean).join(' ')).join(' · ');
+        add({
+            id: 'runOut', tone: 'warning', icon: 'stock', text: ['dash.alert.runOut', { n: home.runOut.count, names }],
+            action: access.shop && features.purchaseOrders ? { label: 'dash.do.order', to: DASHBOARD_LINKS.orderSoldOut } : { label: 'dash.do.see', to: DASHBOARD_LINKS.stockRunOut },
         });
     }
 

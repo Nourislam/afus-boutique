@@ -26,6 +26,7 @@ export default {
     'exchange.quantity': ["Pieces exchanged", "Pièces échangées", "عدد القطع"],
     'exchange.inStock': ["in stock: {n}", "en stock : {n}", "في المخزون: {n}"],
     'exchange.otherArticle': ["Or another article (scan or type its code)", "Ou un autre article (scannez ou tapez son code)", "أو سلعة أخرى (امسح أو اكتب رمزها)"],
+    'exchange.find': ["Find this code", "Chercher ce code", "ابحث عن هذا الرمز"],
     'exchange.scanHint': ["SKU, barcode or QR", "SKU, code-barres ou QR", "SKU أو باركود أو QR"],
     'exchange.codeUnknown': ["No article with the code \"{code}\" — check the code or pick a size above", "Aucun article avec le code « {code} » — vérifiez le code ou choisissez une taille ci-dessus", "لا توجد سلعة بالرمز «{code}» — تحقق من الرمز أو اختر مقاسًا من الأعلى"],
     'exchange.pickPiece': ["This code is for the whole article: scan the code of the size/colour", "Ce code est celui de l'article : scannez celui de la taille/couleur", "هذا رمز السلعة كلها: امسح رمز المقاس/اللون"],

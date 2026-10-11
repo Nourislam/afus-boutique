@@ -7,6 +7,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { formatMoney, formatDate, currencySymbolFor } from '../../i18n/format';
 import { t, currentLanguage } from '../../i18n';
+import { useEscape } from '../../hooks/useEscape';
 
 // Algerian notes and coins, for counting the drawer
 const DENOMINATIONS = [2000, 1000, 500, 200, 100, 50, 20, 10, 5];
@@ -33,6 +34,8 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
     const [revealed, setRevealed] = useState(false);
     const [notes, setNotes] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    // Escape = cancel (not while the drawer is being closed)
+    useEscape(() => { if (!submitting) onClose?.(); });
     // Closing report (Z) printed on the ticket printer once the drawer is closed
     const [printZ, setPrintZ] = useState(true);
     const currentEmployee = useAuthStore(state => state.currentEmployee);

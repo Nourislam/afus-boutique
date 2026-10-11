@@ -126,6 +126,11 @@ textarea.ltr {
   border-radius: 4px;
 }
 
+/* A thin bar where a list may scroll (the menu on a short screen) */
+.thin-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
 /* Horizontal strips (tabs, category chips) scroll without a visible bar */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
@@ -250,7 +255,21 @@ textarea.ltr {
   }
 
   .sidebar-item {
-    @apply flex items-center gap-3 px-3 h-10 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-dark-tertiary transition-colors duration-150 cursor-pointer;
+    @apply flex items-center gap-3 px-3 min-h-[2.5rem] py-1 rounded-lg text-sm font-medium leading-tight text-zinc-400 hover:text-white hover:bg-dark-tertiary transition-colors duration-150 cursor-pointer;
+  }
+
+  /* Small screens (1024 x 720, a demo or training bar on top): every menu
+     entry still fits without scrolling */
+  @media (max-height: 820px) {
+    .sidebar-item {
+      @apply min-h-[2.125rem] py-0.5;
+    }
+  }
+
+  @media (max-height: 760px) {
+    .sidebar-item {
+      @apply min-h-[1.875rem] py-0 text-[13px];
+    }
   }
 
   .sidebar-item.active {
@@ -338,6 +357,18 @@ textarea.ltr {
   }
 
   /* Page layout used by every screen */
+  /* Grids that follow the room they really have (not the window): a form
+     beside a menu gets fewer columns instead of squeezed fields */
+  .fit-grid-sm {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  }
+  .fit-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+  }
+  .fit-grid-lg {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+  }
+
   .page {
     @apply h-full flex flex-col overflow-hidden;
   }

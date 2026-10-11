@@ -377,6 +377,30 @@ const MIGRATIONS = [
             addColumnIfMissing(db, 'sales', 'loyalty_base', 'REAL');
         },
     },
+    {
+        version: '2026_10_markdowns',
+        description: 'Markdown steps approved or refused by the owner, to measure their result (markdowns)',
+        up(db) {
+            // A new table only: nothing already saved is changed
+            db.run(`
+                CREATE TABLE IF NOT EXISTS markdowns (
+                    id TEXT PRIMARY KEY,
+                    product_id TEXT REFERENCES products(id) ON DELETE CASCADE,
+                    percent REAL NOT NULL,
+                    status TEXT NOT NULL,
+                    promotion_id TEXT,
+                    started_at DATETIME,
+                    ends_at DATETIME,
+                    stock_before INTEGER,
+                    sold_before INTEGER,
+                    rate_before REAL,
+                    employee_id TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            db.run('CREATE INDEX IF NOT EXISTS idx_markdowns_product ON markdowns(product_id)');
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

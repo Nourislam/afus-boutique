@@ -415,6 +415,17 @@ function buildShop(api, { lang = 'ar', imagesDir, now = new Date(), seed = 20261
         api.run('UPDATE products SET created_at = ? WHERE id = ?', [sqlTime(at(DAYS + 3, 10)), article.id]);
     }
 
+    // The brands of the articles are in the brands list too (Catalogue > Brands
+    // shows how many articles use each one)
+    const hasBrands = api.all("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'brands'").length > 0;
+    if (hasBrands) {
+        for (const name of [...new Set(articles.map(a => a.brand).filter(Boolean))]) {
+            if (!api.get('SELECT id FROM brands WHERE name = ? COLLATE NOCASE', [name])) {
+                api.run('INSERT INTO brands (id, name, is_active) VALUES (?, ?, 1)', [`demo-brand-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name]);
+            }
+        }
+    }
+
     // ---- Deliveries from the suppliers (two received, one paid in part, one waiting)
     const orders = [
         { supplier: 0, daysAgo: DAYS + 2, status: 'received', paid: 1 },

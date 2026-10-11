@@ -82,17 +82,17 @@ export function ShopInfoForm({ value, onChange }) {
     };
 
     return (
-        <div className="grid gap-6 md:grid-cols-[minmax(140px,168px)_1fr] items-start">
+        <div className="grid gap-6 xl:grid-cols-[minmax(140px,168px)_1fr] items-start">
             {/* The shop's own identity: its logo, or its initials */}
-            <div className="flex md:flex-col items-center md:items-stretch gap-4">
-                <p className="form-label hidden md:block mb-0">{t('shop.logoOptional')}</p>
-                <div className="w-28 h-28 md:w-full md:h-auto md:aspect-square flex-none rounded-2xl border border-dark-border bg-white/95 flex items-center justify-center overflow-hidden">
+            <div className="flex xl:flex-col items-center xl:items-stretch gap-4">
+                <p className="form-label hidden xl:block mb-0">{t('shop.logoOptional')}</p>
+                <div className="w-28 h-28 xl:w-full xl:h-auto xl:aspect-square flex-none rounded-2xl border border-dark-border bg-white/95 flex items-center justify-center overflow-hidden">
                     {logoPreview
                         ? <img src={logoPreview} alt={t('shop.logo')} className="w-full h-full object-contain p-3" />
                         : <ShopLogo name={value.businessName} size={96} rounded="rounded-2xl" />}
                 </div>
                 <div className="flex-1 min-w-0 space-y-2">
-                    <p className="form-label md:hidden mb-0">{t('shop.logoOptional')}</p>
+                    <p className="form-label xl:hidden mb-0">{t('shop.logoOptional')}</p>
                     <div className="flex gap-2">
                         <label className={`btn btn-secondary px-3 py-2 text-sm flex-1 justify-center cursor-pointer ${uploading ? 'opacity-60 pointer-events-none' : ''}`}>
                             <ImagePlus className="w-4 h-4" />
@@ -111,13 +111,12 @@ export function ShopInfoForm({ value, onChange }) {
 
             <div className="space-y-5 min-w-0">
                 <Section title={t('shop.groupShop')}>
-                    <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-x-4 gap-y-3 fit-grid">
                         <Input
                             label={t('shop.name')}
                             value={value.businessName || ''}
                             onChange={(e) => set('businessName', e.target.value)}
                             placeholder={t('shop.namePlaceholder')}
-                            containerClassName="sm:col-span-2"
                         />
                         <Input
                             label={t('shop.owner')}
@@ -138,13 +137,12 @@ export function ShopInfoForm({ value, onChange }) {
                             value={value.businessEmail || ''}
                             onChange={(e) => set('businessEmail', e.target.value)}
                             className="ltr"
-                            containerClassName="sm:col-span-1 lg:col-span-2"
                         />
                     </div>
                 </Section>
 
                 <Section title={t('shop.groupAddress')}>
-                    <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-x-4 gap-y-3 fit-grid">
                         <Combobox
                             label={t('shop.wilaya')}
                             value={value.businessWilaya || ''}
@@ -162,7 +160,6 @@ export function ShopInfoForm({ value, onChange }) {
                             label={t('shop.address')}
                             value={value.businessAddress || ''}
                             onChange={(e) => set('businessAddress', e.target.value)}
-                            containerClassName="sm:col-span-2 lg:col-span-1"
                         />
                     </div>
                 </Section>
@@ -181,7 +178,7 @@ export function ShopInfoForm({ value, onChange }) {
                     </button>
                     {showMore && (
                         <div className="px-4 pb-4 space-y-3">
-                            <div className="grid gap-x-4 gap-y-3 grid-cols-2 lg:grid-cols-4">
+                            <div className="grid gap-x-4 gap-y-3 fit-grid-sm">
                                 <Input label={t('shop.rc')} value={value.businessRc || ''} onChange={(e) => set('businessRc', e.target.value)} className="ltr" />
                                 <Input label={t('shop.nif')} value={value.businessTaxId || ''} onChange={(e) => set('businessTaxId', e.target.value)} className="ltr" />
                                 <Input label={t('shop.nis')} value={value.businessNis || ''} onChange={(e) => set('businessNis', e.target.value)} className="ltr" />
