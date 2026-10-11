@@ -52,13 +52,39 @@ const readPromotions = (api) => api.all(`
     SELECT id, name, type, value, applies_to, applies_to_ids, start_date, end_date, min_purchase, auto_apply, is_active, max_uses, current_uses
     FROM promotions WHERE is_active = 1 AND auto_apply = 1 AND (coupon_code IS NULL OR TRIM(coupon_code) = '')`);
 
-function readInternal(api) {
+const { countedSale } = require('../../services/saleStatus');
+
+/**
+ * The shop's best sellers of the last 90 days: article ids in order, nothing
+ * else (no quantity, no amount leaves SQL). Pieces returned are taken off;
+ * voided / cancelled sales do not count.
+ */
+function readBestSellers(api, { now = Date.now(), days = 90, limit = 24 } = {}) {
+    const since = new Date(now - days * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+    try {
+        return api.all(`
+            SELECT si.product_id AS id
+            FROM sale_items si
+            JOIN sales s ON s.id = si.sale_id
+            LEFT JOIN (SELECT sale_item_id, SUM(quantity) AS returned FROM return_items WHERE sale_item_id IS NOT NULL GROUP BY sale_item_id) r ON r.sale_item_id = si.id
+            WHERE s.created_at >= ? AND ${countedSale('s')} AND si.product_id IS NOT NULL
+            GROUP BY si.product_id
+            HAVING SUM(MAX(si.quantity - COALESCE(r.returned, 0), 0)) > 0
+            ORDER BY SUM(MAX(si.quantity - COALESCE(r.returned, 0), 0)) DESC, si.product_id
+            LIMIT ?`, [since, limit]).map(r => String(r.id));
+    } catch {
+        return [];
+    }
+}
+
+function readInternal(api, { now = Date.now() } = {}) {
     return {
         store: readStore(api),
         products: readProducts(api),
         variants: readVariants(api),
         categories: readCategories(api),
         promotions: readPromotions(api),
+        bestSellers: readBestSellers(api, { now }),
     };
 }
 
@@ -80,4 +106,4 @@ function readPrivateMarkers(api) {
     return out;
 }
 
-module.exports = { readInternal, readPrivateMarkers, STORE_KEYS };
+module.exports = { readInternal, readBestSellers, readPrivateMarkers, STORE_KEYS };

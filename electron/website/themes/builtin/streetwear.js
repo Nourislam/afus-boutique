@@ -32,6 +32,7 @@ module.exports = {
         { type: 'categories', style: 'tiles', limit: 4, title: true },
         { type: 'products', source: 'sale', limit: 8, layout: 'grid', columns: 4 },
         { type: 'brands', style: 'boxed' },
+        { type: 'products', source: 'best', limit: 8, layout: 'grid', columns: 4 },
         { type: 'contact', style: 'strip', whatsapp: true },
     ],
 };

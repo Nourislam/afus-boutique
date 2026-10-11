@@ -28,6 +28,13 @@ const crypto = require('crypto');
 const { canPublishPages } = require('../github');
 const { buildSite } = require('./siteBuilder');
 
+/** Columns added to the website's tables after the first websites were made (schema.sql has them). */
+const SCHEMA_UPGRADES = [
+    "ALTER TABLE orders ADD COLUMN commune TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE orders ADD COLUMN delivery TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE orders ADD COLUMN items TEXT NOT NULL DEFAULT '[]'",
+];
+
 const STEPS = ['repository', 'pages', 'database', 'worker', 'api', 'data', 'build', 'publish', 'live'];
 const KEY_ITEM = 'website-key';
 const TRIES = 5;
@@ -138,6 +145,8 @@ function createDeployer(deps) {
             setResources({ database: { id: db.id, name: db.name } });
             // Tables of the website (made once; kept as they are afterwards)
             await cloudflare.client.queryDatabase(token, accountId, db.id, schemaSql);
+            // Websites made before the cart: the new columns of orders (already there -> refused, fine)
+            for (const sql of SCHEMA_UPGRADES) await cloudflare.client.queryDatabase(token, accountId, db.id, sql).catch(() => null);
             ctx.database = db;
         },
 

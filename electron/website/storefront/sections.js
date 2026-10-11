@@ -23,11 +23,15 @@ function pick(ctx, source) {
         case 'sale': return all.filter(p => C.onSale(p) && p.available);
         case 'available': return all.filter(p => p.available);
         case 'featured': return [...all.filter(p => p.available && p.images.length), ...all.filter(p => p.available && !p.images.length)];
+        // The shop's best sellers of the last 90 days (order only), in stock
+        case 'best': return (ctx.snap.bestSellers || []).map(id => all.find(p => p.id === id)).filter(p => p && p.available);
         default: return all;
     }
 }
 
-const TITLE = { new: 'new', sale: 'sale', featured: 'featured', available: 'available', all: 'all' };
+const TITLE = { new: 'new', sale: 'sale', featured: 'featured', available: 'available', all: 'all', best: 'best' };
+// "See all" of each kind of list goes to its store page
+const SEE_ALL = { new: ['page', 'new'], sale: ['page', 'offers'], best: ['page', 'best'], featured: ['page', 'products'], available: ['page', 'products'], all: ['page', 'products'] };
 const sectionHead = (ctx, title, href) => `<div class="section-head"><h2 class="section-title">${esc(title)}</h2>${href ? `<a class="see-all" href="${esc(href)}">${esc(ctx.t('seeAll'))}</a>` : ''}</div>`;
 
 const SECTION_TYPES = {
@@ -66,13 +70,13 @@ const SECTION_TYPES = {
 
     products: {
         options: {
-            source: e(['new', 'sale', 'featured', 'available', 'all'], 'featured'), limit: int(2, 24, 8),
+            source: e(['new', 'sale', 'featured', 'available', 'all', 'best'], 'featured'), limit: int(2, 24, 8),
             layout: e(['grid', 'carousel', 'large-first'], 'grid'), columns: int(2, 5, 4), seeAll: bool(true),
         },
         render(ctx, o) {
             const list = pick(ctx, o.source).slice(0, o.limit);
             if (!list.length) return '';
-            const href = o.seeAll ? ctx.link('category', o.source === 'sale' ? 'sale' : 'all') : null;
+            const href = o.seeAll ? ctx.link(...SEE_ALL[o.source]) : null;
             return `<section class="container section">${sectionHead(ctx, ctx.t(TITLE[o.source]), href)}${C.productGrid(ctx, list, { columns: o.columns, layout: o.layout })}</section>`;
         },
     },

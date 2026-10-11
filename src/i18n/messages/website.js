@@ -156,6 +156,8 @@ export default {
     'website.orders.col.options': ["Size / colour", "Taille / couleur", "المقاس / اللون"],
     'website.orders.col.quantity': ["Qty", "Qté", "الكمية"],
     'website.orders.col.where': ["Delivery", "Livraison", "التوصيل"],
+    'website.orders.delivery.home': ["Home delivery", "Livraison à domicile", "توصيل إلى المنزل"],
+    'website.orders.delivery.pickup': ["Picks up at the shop", "Retrait en boutique", "يستلم من المحل"],
 
     // Cloudflare: the shop's own account
     'website.cloudflare.state.not_connected': ["Not connected", "Non connecté", "غير مربوط"],

@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS orders (
     customer_name TEXT NOT NULL,
     phone TEXT NOT NULL,
     wilaya TEXT NOT NULL DEFAULT '',
+    commune TEXT NOT NULL DEFAULT '',
     address TEXT NOT NULL DEFAULT '',
+    delivery TEXT NOT NULL DEFAULT '',
+    items TEXT NOT NULL DEFAULT '[]',
     note TEXT NOT NULL DEFAULT '',
     ip_hash TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'new'

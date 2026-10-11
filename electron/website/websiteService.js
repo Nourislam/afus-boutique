@@ -443,6 +443,14 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return { ...view(), result };
     }
 
+    /** The cart lines of an order (the website API keeps them as JSON text). */
+    function orderItems(value) {
+        try {
+            const list = typeof value === 'string' ? JSON.parse(value) : value;
+            return Array.isArray(list) ? list.filter(i => i && typeof i === 'object').slice(0, 30) : [];
+        } catch { return []; }
+    }
+
     /** The order requests customers sent from the website (from the shop's website API). */
     async function orders() {
         const s = mustExist(read());
@@ -458,7 +466,12 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             orders: r.orders.slice(-200).reverse().map(o => ({
                 id: text(o.id, 40), createdAt: text(o.created_at, 30), productId: text(o.product_id, 80), productName: text(o.product_name, 160),
                 size: text(o.size, 40), color: text(o.color, 40), quantity: Number(o.quantity) || 1,
-                customerName: text(o.customer_name, 80), phone: text(o.phone, 20), wilaya: text(o.wilaya, 60), address: text(o.address, 200), note: text(o.note, 500),
+                customerName: text(o.customer_name, 80), phone: text(o.phone, 20), wilaya: text(o.wilaya, 60), commune: text(o.commune, 60), address: text(o.address, 200), note: text(o.note, 500),
+                delivery: ['home', 'pickup'].includes(o.delivery) ? o.delivery : '',
+                items: orderItems(o.items).map(i => ({
+                    productId: text(i.product_id, 80), productName: text(i.product_name, 160), size: text(i.size, 40), color: text(i.color, 40),
+                    quantity: Math.min(20, Math.max(1, parseInt(i.quantity, 10) || 1)), unitPrice: Number.isFinite(Number(i.unit_price)) && i.unit_price !== null ? Number(i.unit_price) : null,
+                })),
             })),
         };
     }

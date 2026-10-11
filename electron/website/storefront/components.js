@@ -55,8 +55,13 @@ function productCard(ctx, p) {
     const sizeList = c.showSizes && sizes.length
         ? `<span class="card-sizes">${sizes.slice(0, 6).map(s => `<span class="${s.available ? '' : 'is-out'}">${esc(s.name)}</span>`).join('')}</span>`
         : '';
+    const searchText = [p.name, p.brand, categoryName(ctx, p.categoryId), p.collection, p.season, ...colors.map(x => x.name)].filter(Boolean).join(' ').toLowerCase();
+    const bestRank = (ctx.snap.bestSellers || []).indexOf(p.id);
     return html(
-        `<a class="card card-${c.style}${p.available ? '' : ' is-soldout'}" href="${esc(ctx.link('product', p.id))}" data-product="${esc(p.id)}">`,
+        `<a class="card card-${c.style}${p.available ? '' : ' is-soldout'}" href="${esc(ctx.link('product', p.id))}" data-product="${esc(p.id)}"`,
+        ` data-search="${esc(searchText)}" data-price="${onSale(p) ? p.salePrice : p.price}" data-cat="${esc(p.categoryId || '')}"`,
+        ` data-sizes="${esc(sizes.filter(x => x.available).map(x => x.name).join('|'))}" data-colors="${esc(colors.filter(x => x.available).map(x => x.name).join('|'))}"`,
+        ` data-available="${p.available ? 1 : 0}" data-sale="${onSale(p) ? 1 : 0}" data-new="${esc(p.createdAt || '')}" data-best="${bestRank < 0 ? 9999 : bestRank}" data-name="${esc(p.name.toLowerCase())}">`,
         `<span class="card-media">${image(ctx, p, 0, 'card-img')}${p.images[1] ? image(ctx, p, 1, 'card-img card-img-alt') : ''}<span class="badges">${badges(ctx, p)}</span></span>`,
         `<span class="card-body">`,
         c.showBrand && p.brand && `<span class="card-brand">${esc(p.brand)}</span>`,
@@ -78,11 +83,45 @@ function bestPromotion(ctx) {
     return pct.sort((a, b) => b.value - a.value)[0] || null;
 }
 
+/** The store's main pages (the ones with something to show). */
 function navItems(ctx) {
-    const items = [{ href: ctx.link('home'), label: ctx.t('home'), page: 'home' }];
-    for (const c of ctx.snap.categories.slice(0, 8)) items.push({ href: ctx.link('category', c.id), label: c.name, page: `category:${c.id}` });
-    if (ctx.snap.products.some(onSale)) items.push({ href: ctx.link('category', 'sale'), label: ctx.t('sale'), page: 'category:sale', sale: true });
-    return items;
+    const snap = ctx.snap;
+    const items = [
+        { href: ctx.link('home'), label: ctx.t('home'), page: 'home' },
+        { href: ctx.link('page', 'products'), label: ctx.t('products'), page: 'page:products' },
+        snap.categories.length && { href: ctx.link('page', 'categories'), label: ctx.t('categories'), page: 'page:categories' },
+        snap.products.length && { href: ctx.link('page', 'new'), label: ctx.t('newIn'), page: 'page:new' },
+        snap.products.some(onSale) && { href: ctx.link('page', 'offers'), label: ctx.t('offers'), page: 'page:offers', sale: true },
+        (snap.bestSellers || []).length && { href: ctx.link('page', 'best'), label: ctx.t('best'), page: 'page:best' },
+        { href: ctx.link('page', 'about'), label: ctx.t('about'), page: 'page:about' },
+        { href: ctx.link('page', 'contact'), label: ctx.t('contact'), page: 'page:contact' },
+    ];
+    return items.filter(Boolean);
+}
+
+const ICONS = {
+    search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
+    cart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1 13H7L6 7Z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>',
+    home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-7 9 7"/><path d="M5 10v10h14V10"/></svg>',
+    grid: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 6a2 2 0 0 1 2-2Z"/></svg>',
+};
+
+/** The cart link with its count (filled in by the website's script). */
+const cartLink = (ctx, cls = 'hdr-icon') => `<a class="${cls}" href="${esc(ctx.link('page', 'cart'))}" aria-label="${esc(ctx.t('cart'))}">${ICONS.cart}<span class="cart-count" data-cart-count hidden>0</span></a>`;
+
+/** Small screens: a bar at the bottom, always at hand (home, categories, search, cart, contact). */
+function bottomBar(ctx) {
+    const item = (href, icon, label, page, extra = '') => `<a href="${esc(href)}" class="${ctx.current === page ? 'is-current' : ''}">${icon}${extra}<span>${esc(label)}</span></a>`;
+    return html(
+        `<nav class="bottom-bar" aria-label="${esc(ctx.t('menu'))}">`,
+        item(ctx.link('home'), ICONS.home, ctx.t('home'), 'home'),
+        item(ctx.link('page', 'categories'), ICONS.grid, ctx.t('categories'), 'page:categories'),
+        item(ctx.link('page', 'search'), ICONS.search, ctx.t('search'), 'page:search'),
+        item(ctx.link('page', 'cart'), ICONS.cart, ctx.t('cart'), 'page:cart', '<span class="cart-count" data-cart-count hidden>0</span>'),
+        item(ctx.link('page', 'contact'), ICONS.phone, ctx.t('contact'), 'page:contact'),
+        `</nav>`,
+    );
 }
 
 function header(ctx) {
@@ -105,8 +144,10 @@ function header(ctx) {
         `<a class="logo" href="${esc(ctx.link('home'))}">${logo}</a>`,
         h.nav === 'inline' && `<nav class="nav-inline" aria-label="${esc(ctx.t('categories'))}">${links}</nav>`,
         `<div class="hdr-tools">`,
-        h.search && `<span class="hdr-search" aria-hidden="true">⌕</span>`,
+        h.search && `<form class="hdr-search" action="${esc(ctx.link('page', 'search'))}" method="get" role="search"><input type="search" name="q" placeholder="${esc(ctx.t('searchPlaceholder'))}" aria-label="${esc(ctx.t('search'))}"><button type="submit" aria-label="${esc(ctx.t('search'))}">${ICONS.search}</button></form>`,
+        !h.search && `<a class="hdr-icon" href="${esc(ctx.link('page', 'search'))}" aria-label="${esc(ctx.t('search'))}">${ICONS.search}</a>`,
         phone && `<a class="hdr-phone" href="${esc(ctx.preview ? '#' : `tel:+${phone}`)}">${phoneHtml(shop.phone)}</a>`,
+        cartLink(ctx),
         `</div></div>`,
         h.nav === 'tabs' && `<nav class="nav-tabs container" aria-label="${esc(ctx.t('categories'))}">${links}</nav>`,
         `</header>`,
@@ -138,6 +179,7 @@ function footer(ctx) {
         `<footer class="site-footer ftr-${ctx.theme.footer.style}"><div class="container ftr-grid">`,
         `<div><strong class="ftr-name">${esc(shop.name)}</strong>${shop.description ? `<p>${esc(shop.description)}</p>` : ''}</div>`,
         cats && `<div><strong>${esc(ctx.t('categories'))}</strong><div class="ftr-links">${cats}</div></div>`,
+        `<div><strong>${esc(ctx.t('products'))}</strong><div class="ftr-links">${[...navItems(ctx).filter(i => i.page !== 'home'), { href: ctx.link('page', 'location'), label: ctx.t('location') }, { href: ctx.link('page', 'cart'), label: ctx.t('cart') }].map(i => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('')}</div></div>`,
         (shop.phone || where || shop.email || shop.mapUrl) && `<div><strong>${esc(ctx.t('contact'))}</strong>${shop.phone ? `<p>${phoneHtml(shop.phone)}</p>` : ''}${shop.email ? `<p>${esc(shop.email)}</p>` : ''}${where ? `<p>${esc(where)}</p>` : ''}${extras.map ? `<p>${extras.map}</p>` : ''}</div>`,
         (extras.hours || extras.social) && `<div>${extras.hours}${extras.social}</div>`,
         `</div><div class="container ftr-bottom">© ${year} ${esc(shop.name)} · ${esc(ctx.t('rights'))}</div></footer>`,
@@ -195,6 +237,37 @@ function messagePage(ctx, kind) {
     return `<main class="container-narrow section message-page"><h1>${esc(ctx.t(ok ? 'thanksTitle' : 'errorTitle'))}</h1><p>${esc(ctx.t(ok ? 'thanksText' : 'errorText'))}</p><a class="btn btn-primary" href="${esc(ctx.link('home'))}">${esc(ctx.t('backHome'))}</a></main>`;
 }
 
+/**
+ * Choose the colour and the size, then Add to cart / Buy now. Plain radio
+ * buttons (they work without script); the website's script keeps the cart
+ * and greys the sizes not available in the chosen colour (data-variants).
+ */
+function addToCart(ctx, p, colors, sizes) {
+    const pp = ctx.theme.productPage;
+    const variants = p.variants.map(v => [v.color, v.size, v.available ? 1 : 0, v.price]);
+    const off = ctx.preview ? ' disabled' : '';
+    const colorChoice = colors.length && html(
+        `<fieldset class="opt"><legend class="opt-title">${esc(ctx.t('colors'))}</legend><div class="opt-colors opt-${pp.colors}">`,
+        colors.map(c => `<label class="pick pick-color${c.available ? '' : ' is-out'}" title="${esc(c.name)}"><input type="radio" name="color" value="${esc(c.name)}"${c.available ? '' : ' disabled'}${colors.filter(x => x.available).length === 1 && c.available ? ' checked' : ''}>${c.code && pp.colors === 'swatches' ? `<span class="swatch-lg" style="background:${c.code}"></span>` : `<span class="chip">${c.code ? `<i style="background:${c.code}"></i>` : ''}${esc(c.name)}</span>`}</label>`),
+        `</div></fieldset>`,
+    );
+    const sizeChoice = sizes.length && html(
+        `<fieldset class="opt"><legend class="opt-title">${esc(ctx.t('sizes'))}</legend><div class="opt-sizes opt-${pp.sizes}">`,
+        sizes.map(s => `<label class="pick pick-size${s.available ? '' : ' is-out'}"><input type="radio" name="size" value="${esc(s.name)}"${s.available ? '' : ' disabled'}${sizes.filter(x => x.available).length === 1 && s.available ? ' checked' : ''}><span class="size">${esc(s.name)}</span></label>`),
+        `</div></fieldset>`,
+    );
+    return html(
+        `<form class="add-form" data-add-form data-id="${esc(p.id)}" data-variants="${esc(JSON.stringify(variants))}" data-has-colors="${colors.length ? 1 : 0}" data-has-sizes="${sizes.length ? 1 : 0}">`,
+        colorChoice, sizeChoice,
+        `<div class="add-row"><label class="qty"><span>${esc(ctx.t('quantityShort'))}</span><input type="number" name="qty" min="1" max="20" value="1"${off}></label>`,
+        `<button class="btn btn-primary" type="submit" name="action" value="add"${off}>${esc(ctx.t('addToCart'))}</button>`,
+        `<button class="btn btn-ghost" type="submit" name="action" value="buy"${off}>${esc(ctx.t('buyNow'))}</button></div>`,
+        `<p class="form-msg" data-form-msg role="status" aria-live="polite"></p>`,
+        `<noscript><p class="hint">${esc(ctx.t('needScript'))}</p></noscript>`,
+        `</form>`,
+    );
+}
+
 /** An article's own page, as the theme lays it out. */
 function productPage(ctx, p) {
     const pp = ctx.theme.productPage;
@@ -227,9 +300,9 @@ function productPage(ctx, p) {
         `<h1 class="pdp-name">${esc(p.name)}</h1>`,
         `<div class="pdp-price">${priceTag(ctx, p)}${onSale(p) ? ` <span class="badge badge-pill badge-sale">-${percentOff(p)}%</span>` : ''}</div>`,
         `<p class="stock ${p.available ? 'is-in' : 'is-out'}">${esc(p.available ? ctx.t('inStock') : ctx.t('soldOut'))}</p>`,
-        colorBlock, sizeBlock,
+        p.available ? addToCart(ctx, p, colors, sizes) : html(colorBlock, sizeBlock),
         p.available && orderButtons(ctx, p),
-        p.available && orderForm(ctx, p),
+        p.available && (ctx.orderUrl || ctx.preview) && `<details class="order-direct"><summary>${esc(ctx.t('orderDirect'))}</summary>${orderForm(ctx, p)}</details>`,
         p.description && `<div class="pdp-desc">${esc(p.description).replace(/\n/g, '<br>')}</div>`,
         `</div></main>`,
         related.length && `<section class="container section"><h2 class="section-title">${esc(ctx.t('related'))}</h2>${productGrid(ctx, related, { columns: Math.min(4, ctx.theme.categoryPage.desktopColumns) })}</section>`,
@@ -254,4 +327,4 @@ function categoryPage(ctx, id) {
     );
 }
 
-module.exports = { shopExtras, messagePage, orderForm, productCard, productGrid, header, footer, productPage, categoryPage, bestPromotion, onSale, optionsOf, navItems, priceOf };
+module.exports = { bottomBar, cartLink, ICONS, categoryName, shopExtras, messagePage, orderForm, productCard, productGrid, header, footer, productPage, categoryPage, bestPromotion, onSale, optionsOf, navItems, priceOf };

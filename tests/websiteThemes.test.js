@@ -15,7 +15,10 @@ const catalog = require('../electron/services/catalogService');
 const { formatMoney } = require('../electron/i18n');
 
 const IDS = ['fashion-modern', 'luxury', 'minimal', 'streetwear', 'classic', 'kids'];
-const PAGES = [['home', null], ['category', 'all'], ['category', 'sale'], ['product', 'jean']];
+const STORE = ['products', 'search', 'new', 'best', 'offers', 'categories', 'cart', 'checkout', 'contact', 'about', 'location'];
+const PAGES = [['home', null], ['category', 'all'], ['category', 'sale'], ['product', 'jean'], ...STORE.map(id => ['page', id])];
+// The only script of a published page: the website's own file (no inline script, no handler)
+const ONLY_OWN_SCRIPT = (html) => html.replace('<script src="assets/store.js" defer></script>', '');
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const deepFreeze = (o) => { Object.values(o).forEach(v => v && typeof v === 'object' && deepFreeze(v)); return Object.freeze(o); };
 const codeOf = (fn) => { try { fn(); } catch (e) { return e.code; } return null; };
@@ -80,7 +83,7 @@ describe('website themes: data only, checked, extensible', () => {
         expect(reg.list().map(t => t.id)).toEqual([...IDS, 'beach-summer']);
         expect(reg.describe().at(-1)).toMatchObject({ id: 'beach-summer', sections: ['hero', 'products'] });
         const { api } = await createShop();
-        const html = renderPage({ snapshot: buildSnapshot(api), theme: added, page: 'home', lang: 'fr' });
+        const html = renderPage({ snapshot: buildSnapshot(api), theme: added, page: 'home', lang: 'fr', preview: true });
         expect(html).toContain('--bg:#fdf6e3');
         expect(html).toContain('hero-full');
         expect(() => reg.register(clone(BUILTIN[0]))).toThrow(/already exists/);
@@ -124,7 +127,9 @@ describe('website themes: every theme draws the same shop data', () => {
                     expect(html, where).toMatch(/^<!doctype html>/);
                     expect(html, where).toContain(`dir="${lang === 'ar' ? 'rtl' : 'ltr'}"`);
                     expect(html, where).toContain(`theme-${theme.id}`);
-                    expect(html, where).not.toMatch(/<script|javascript:|onerror=|onclick=/i);
+                    expect(ONLY_OWN_SCRIPT(html), where).not.toMatch(/<script|javascript:|\son[a-z]+=/i);
+                    expect(html, where).toContain('<link rel="stylesheet" href="assets/store.css">');
+                    expect(html, where).toContain("script-src 'self'");
                     expect(html, where).toContain("default-src 'none'");
                     expect(html, where).not.toMatch(/img-src[^;]*app:/);
                     expect(html, where).toContain('Boutique Yasmine');
@@ -137,8 +142,9 @@ describe('website themes: every theme draws the same shop data', () => {
                         expect(flat, where).toContain(formatMoney(jean.salePrice, lang));
                         expect(flat, where).toContain(formatMoney(jean.price, lang));
                         for (const size of ['38', '40', '44']) expect(html, where).toContain(`>${size}<`);
-                        // 42 exists but is sold out: shown as such
-                        expect(html, where).toMatch(/class="size is-out">42</);
+                        // 42 exists but is sold out: shown as such, not choosable
+                        expect(html, where).toMatch(/pick-size is-out"><input type="radio" name="size" value="42" disabled><span class="size">42</);
+                        expect(html, where).toContain('data-add-form');
                         for (const color of ['Noir', 'Bleu']) expect(html, where).toContain(color);
                         expect(html, where).toContain('jean-1.jpg');
                         expect(html, where).toContain('Coupe droite');
@@ -164,17 +170,23 @@ describe('website themes: every theme draws the same shop data', () => {
         for (const theme of registry.list()) {
             for (const [page, id] of PAGES) {
                 const html = renderPage({ snapshot: evil, theme, page, id, lang: 'fr' });
-                expect(html).not.toMatch(/<script|<img src=x/i);
+                expect(ONLY_OWN_SCRIPT(html)).not.toMatch(/<script|<img src=x/i);
                 expect(html).not.toContain('evil.example');
                 expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
             }
         }
-        // Every link of the published website points to one of its own pages (or WhatsApp / phone)
-        const files = new Set(pagesOf(snapshot).map(p => p.path));
-        for (const { page, id } of pagesOf(snapshot)) {
-            const html = renderPage({ snapshot, theme: registry.get('classic'), page, id, lang: 'fr' });
-            for (const [, href] of html.matchAll(/href="([^"]*)"/g)) {
-                expect(files.has(href) || /^(https:\/\/wa\.me\/|tel:\+)/.test(href), href).toBe(true);
+        // Every link of the published website points to one of its own pages (or WhatsApp / phone),
+        // in every theme; forms go to its own search page or to the shop's own API
+        const files = new Set([...pagesOf(snapshot).map(p => p.path), 'assets/store.css']);
+        const api = 'https://shop-api.example.workers.dev/api/orders';
+        for (const theme of registry.list()) {
+            for (const { page, id } of pagesOf(snapshot)) {
+                const html = renderPage({ snapshot, theme, page, id, lang: 'fr', orderUrl: api, assetUrl: (name) => `images/${name}` });
+                for (const [, href] of html.matchAll(/href="([^"]*)"/g)) {
+                    expect(files.has(href) || /^(https:\/\/wa\.me\/|tel:\+|images\/[\w.-]+$|data:,$)/.test(href), `${theme.id} ${page}:${id} ${href}`).toBe(true);
+                }
+                for (const [, action] of html.matchAll(/action="([^"]*)"/g)) expect(['search.html', api], action).toContain(action);
+                for (const [, src] of html.matchAll(/src="([^"]*)"/g)) expect(src, src).toMatch(/^(images\/|data:image\/svg\+xml|assets\/store\.js$)/);
             }
         }
     });

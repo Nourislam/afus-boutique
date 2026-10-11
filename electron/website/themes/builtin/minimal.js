@@ -29,6 +29,7 @@ module.exports = {
         { type: 'hero', variant: 'centered', cta: 'all' },
         { type: 'categories', style: 'pills', limit: 10, title: false },
         { type: 'products', source: 'all', limit: 16, layout: 'grid', columns: 4, seeAll: true },
+        { type: 'products', source: 'best', limit: 8, layout: 'grid', columns: 4 },
         { type: 'contact', style: 'strip', whatsapp: false },
     ],
 };

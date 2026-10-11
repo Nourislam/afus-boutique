@@ -31,6 +31,7 @@ module.exports = {
         { type: 'about', style: 'centered' },
         { type: 'categories', style: 'list', limit: 8 },
         { type: 'products', source: 'new', limit: 8, layout: 'carousel', columns: 3 },
+        { type: 'products', source: 'best', limit: 8, layout: 'grid', columns: 4 },
         { type: 'contact', style: 'strip', whatsapp: true },
     ],
 };

@@ -3,8 +3,9 @@
  * (made and updated by Afus Boutique; the shop never sees it).
  *
  *   GET  /api/health             is the website's API up? (public)
- *   POST /api/orders             a customer's order request, from the order
- *                                form of an article page (form or JSON)
+ *   POST /api/orders             a customer's order request: the cart of the
+ *                                checkout page (items) or the order form of
+ *                                an article page (form or JSON)
  *   GET  /api/orders?since=&limit=   the order requests, for Afus Boutique
  *                                only (Authorization: Bearer <shop key>)
  *
@@ -17,8 +18,12 @@
  * No article, price or stock is kept here: the articles are the shop's, in
  * Afus Boutique, which checks every request against them.
  */
-const LIMITS = { product_id: 80, product_name: 160, size: 40, color: 40, customer_name: 80, phone: 20, wilaya: 60, address: 200, note: 500 };
-const MAX_BODY = 8 * 1024;
+const LIMITS = { product_id: 80, product_name: 160, size: 40, color: 40, customer_name: 80, phone: 20, wilaya: 60, commune: 60, address: 200, note: 500 };
+const ITEM_LIMITS = { product_id: 80, product_name: 160, size: 40, color: 40 };
+const MAX_ITEMS = 30;
+const MAX_QTY = 20;
+const DELIVERY = ['home', 'pickup'];
+const MAX_BODY = 64 * 1024; // a full cart, form-encoded (Arabic names take 9 bytes a letter)
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX = 5;
 
@@ -63,12 +68,42 @@ async function sha256(text) {
 
 const clean = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
 
+/** The cart's lines (JSON text or list), checked; null when there is none, false when wrong. */
+function readItems(value) {
+    if (value === undefined || value === null || value === '' || value === '[]') return null;
+    let list;
+    try { list = typeof value === 'string' ? JSON.parse(value) : value; } catch { return false; }
+    if (!Array.isArray(list) || !list.length || list.length > MAX_ITEMS) return false;
+    const items = [];
+    for (const raw of list) {
+        if (!raw || typeof raw !== 'object') return false;
+        const item = {};
+        for (const [key, max] of Object.entries(ITEM_LIMITS)) item[key] = clean(raw[key], max);
+        if (!item.product_id) return false;
+        item.quantity = Math.min(MAX_QTY, Math.max(1, parseInt(raw.quantity, 10) || 1));
+        const price = Number(raw.unit_price);
+        item.unit_price = raw.unit_price !== null && raw.unit_price !== '' && Number.isFinite(price) && price >= 0 && price < 1e9 ? Math.round(price * 100) / 100 : null;
+        items.push(item);
+    }
+    return items;
+}
+
 /** The order request, checked; { order } or { error }. */
 function readOrder(fields) {
     if (clean(fields.website, 100)) return { error: 'spam' }; // a field people never see
     const order = {};
     for (const [key, max] of Object.entries(LIMITS)) order[key] = clean(fields[key], max);
-    order.quantity = Math.min(20, Math.max(1, parseInt(fields.quantity, 10) || 1));
+    order.quantity = Math.min(MAX_QTY, Math.max(1, parseInt(fields.quantity, 10) || 1));
+    const items = readItems(fields.items);
+    if (items === false) return { error: 'items' };
+    order.items = items || [];
+    if (items) {
+        // The first line names the order in lists; the quantity is the whole cart's
+        order.product_id = order.product_id || items[0].product_id;
+        order.product_name = order.product_name || items[0].product_name;
+        order.quantity = items.reduce((n, i) => n + i.quantity, 0);
+    }
+    order.delivery = DELIVERY.includes(fields.delivery) ? fields.delivery : '';
     const digits = order.phone.replace(/\D/g, '');
     if (!order.product_id) return { error: 'product' };
     if (order.customer_name.length < 2) return { error: 'name' };
@@ -100,12 +135,13 @@ async function createOrder(request, env) {
     if ((recent?.n || 0) >= RATE_MAX) return isForm ? backTo(env, 'order-error.html') : json(env, 429, { ok: false, error: 'too_many' });
 
     const id = crypto.randomUUID();
-    await env.DB.prepare(`INSERT INTO orders (id, created_at, product_id, product_name, size, color, quantity, customer_name, phone, wilaya, address, note, ip_hash)
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    await env.DB.prepare(`INSERT INTO orders (id, created_at, product_id, product_name, size, color, quantity, customer_name, phone, wilaya, commune, address, delivery, items, note, ip_hash)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(id, new Date().toISOString(), order.product_id, order.product_name, order.size, order.color, order.quantity,
-            order.customer_name, order.phone, order.wilaya, order.address, order.note, ipHash)
+            order.customer_name, order.phone, order.wilaya, order.commune, order.address, order.delivery, JSON.stringify(order.items), order.note, ipHash)
         .run();
-    return isForm ? backTo(env, 'thanks.html') : json(env, 201, { ok: true, id });
+    // From the cart: the thanks page empties it
+    return isForm ? backTo(env, order.items.length ? 'thanks.html?cart=1' : 'thanks.html') : json(env, 201, { ok: true, id });
 }
 
 async function listOrders(request, env, url) {
@@ -113,7 +149,7 @@ async function listOrders(request, env, url) {
     if (!env.SHOP_KEY || !sameText(auth.replace(/^Bearer\s+/i, ''), env.SHOP_KEY)) return json(env, 401, { ok: false });
     const since = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(url.searchParams.get('since') || '') ? url.searchParams.get('since') : '1970-01-01T00:00:00.000Z';
     const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 100));
-    const { results } = await env.DB.prepare(`SELECT id, created_at, product_id, product_name, size, color, quantity, customer_name, phone, wilaya, address, note, status
+    const { results } = await env.DB.prepare(`SELECT id, created_at, product_id, product_name, size, color, quantity, customer_name, phone, wilaya, commune, address, delivery, items, note, status
                                               FROM orders WHERE created_at > ? ORDER BY created_at LIMIT ?`).bind(since, limit).all();
     return json(env, 200, { ok: true, orders: results || [] }, { 'Access-Control-Allow-Origin': 'null' });
 }

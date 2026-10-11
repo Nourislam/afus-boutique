@@ -112,7 +112,8 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         // GitHub: one repository, the website's files, Pages on
         expect([...cloud.gh.repos.keys()]).toEqual(['boutique-yasmine']);
         const files = cloud.filesOf('boutique-yasmine');
-        for (const f of ['index.html', 'category-all.html', 'category-c-jeans.html', 'product-jean.html', 'product-belt.html', 'thanks.html', 'order-error.html', '404.html', 'catalog.json', '.nojekyll', 'images/jean-1.jpg']) expect(files.has(f), f).toBe(true);
+        for (const f of ['index.html', 'products.html', 'search.html', 'new.html', 'best.html', 'offers.html', 'categories.html', 'cart.html', 'checkout.html', 'contact.html', 'about.html', 'location.html',
+            'assets/store.css', 'assets/store.js', 'search.json', 'category-c-jeans.html', 'product-jean.html', 'product-belt.html', 'thanks.html', 'order-error.html', '404.html', 'catalog.json', '.nojekyll', 'images/jean-1.jpg']) expect(files.has(f), f).toBe(true);
         expect(files.has('README.md')).toBe(true);
         expect(files.get('images/jean-1.jpg').equals(JPEG)).toBe(true);
         expect([...files.keys()].some(f => f.includes('missing'))).toBe(false);
@@ -124,7 +125,15 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         const orderUrl = `${cloud.base}/w/boutique-yasmine-api/api/orders`;
         expect(product).toContain(`action="${orderUrl}"`);
         expect(product).toContain(`form-action ${cloud.base}`);
-        expect(product).not.toMatch(/<script/i);
+        // One script, the website's own file; the cart's checkout sends to the shop's API too
+        expect([...product.matchAll(/<script[^>]*>/g)].map(m => m[0])).toEqual(['<script src="assets/store.js" defer>']);
+        expect(product).toContain("script-src 'self'");
+        expect(files.get('checkout.html').toString()).toContain(`action="${orderUrl}"`);
+        // search.json: what the pages show (name, price, picture, availability), nothing else
+        const search = JSON.parse(files.get('search.json').toString());
+        expect(Object.keys(search).sort()).toEqual(['money', 'products', 'texts', 'version']);
+        for (const p of search.products) expect(Object.keys(p).sort()).toEqual(['available', 'id', 'image', 'name', 'price', 'url', 'variants']);
+        expect(search.products.find(p => p.id === 'jean')).toMatchObject({ url: 'product-jean.html', image: 'images/jean-1.jpg' });
 
         // Cloudflare: one D1 database with the website's tables, one Worker with its bindings
         expect([...cloud.cf.databases.values()].map(d => d.name)).toEqual(['boutique-yasmine-db']);
@@ -186,6 +195,58 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         const health = await fetch(`${cloud.base}/w/boutique-yasmine-api/api/health`).then(x => x.json());
         expect(health).toMatchObject({ ok: true, shop: 'Boutique Yasmine' });
         expect(health.publishedAt).toBeTruthy();
+    });
+
+    it('a customer orders a whole cart from checkout: lines, wilaya, commune, delivery; Afus shows each line', async () => {
+        const { service } = makeService();
+        service.publishSite();
+        await service.publishPending();
+        const siteUrl = service.view().site.url;
+        const orderUrl = `${cloud.base}/w/boutique-yasmine-api/api/orders`;
+        const form = (fields) => fetch(orderUrl, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields).toString() });
+        const items = [
+            { product_id: 'jean', product_name: 'Jean', size: '40', color: 'Noir', quantity: 2, unit_price: 2000 },
+            { product_id: 'belt', product_name: 'Ceinture', size: '', color: '', quantity: 1, unit_price: 900 },
+        ];
+        const cart = { items: JSON.stringify(items), product_id: 'jean', product_name: 'Jean +1', customer_name: 'Sofiane K.', phone: '0770 11 22 33', wilaya: '16 - Alger', commune: 'Kouba', address: 'Rue 5', delivery: 'home', note: '', website: '' };
+        const r = await form(cart);
+        expect(r.status).toBe(303);
+        // The thanks page empties the cart (only after a cart order)
+        expect(r.headers.get('location')).toBe(`${siteUrl}thanks.html?cart=1`);
+        // Wrong lines are refused, never half kept
+        for (const bad of ['not json', '[]x', JSON.stringify([{ product_name: 'no id' }]), JSON.stringify(Array.from({ length: 31 }, () => items[0])), JSON.stringify({ product_id: 'x' })]) {
+            expect((await form({ ...cart, items: bad })).headers.get('location'), bad.slice(0, 20)).toBe(`${siteUrl}order-error.html`);
+        }
+        const o = await service.orders();
+        expect(o.orders).toHaveLength(1);
+        expect(o.orders[0]).toMatchObject({ customerName: 'Sofiane K.', phone: '0770112233', wilaya: '16 - Alger', commune: 'Kouba', delivery: 'home', quantity: 3, productId: 'jean' });
+        expect(o.orders[0].items).toEqual([
+            { productId: 'jean', productName: 'Jean', size: '40', color: 'Noir', quantity: 2, unitPrice: 2000 },
+            { productId: 'belt', productName: 'Ceinture', size: '', color: '', quantity: 1, unitPrice: 900 },
+        ]);
+        // A quantity is kept within limits, a delivery outside the two choices is dropped
+        await form({ ...cart, items: JSON.stringify([{ ...items[0], quantity: 500, unit_price: -4 }]), delivery: 'drone' });
+        const again = (await service.orders()).orders.find(x => x.delivery === '');
+        expect(again.items[0]).toMatchObject({ quantity: 20, unitPrice: null });
+    });
+
+    it('a website made before the cart: Update website adds the new order columns, older orders kept', async () => {
+        const { service } = makeService();
+        service.publishSite();
+        await service.publishPending();
+        const db = [...cloud.cf.databases.values()][0].db;
+        // As the first websites were: no commune / delivery / items
+        db.run('DROP TABLE orders');
+        db.run(`CREATE TABLE orders (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, product_id TEXT NOT NULL, product_name TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '',
+                quantity INTEGER NOT NULL DEFAULT 1, customer_name TEXT NOT NULL, phone TEXT NOT NULL, wilaya TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', ip_hash TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new')`);
+        db.run("INSERT INTO orders (id, created_at, product_id, customer_name, phone) VALUES ('old', '2026-01-01T00:00:00.000Z', 'jean', 'Ancien', '0661000000')");
+        service.publishSite();
+        await service.publishPending();
+        expect(service.view().status).toBe('live');
+        const columns = db.exec('PRAGMA table_info(orders)')[0].values.map(c => c[1]);
+        for (const c of ['commune', 'delivery', 'items']) expect(columns).toContain(c);
+        const o = await service.orders();
+        expect(o.orders.find(x => x.id === 'old')).toMatchObject({ customerName: 'Ancien', items: [], delivery: '' });
     });
 
     it('Update website: same repository, Worker and database; the new price published; unchanged pictures not sent again', async () => {

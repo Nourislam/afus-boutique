@@ -65,13 +65,17 @@ describe('website public data: SQLite internal -> website public', () => {
     let api;
     beforeEach(async () => { api = await privateShop(); });
 
-    it('the internal side reads named columns of five tables only (no SELECT *, no private table)', () => {
+    it('the internal side reads named columns of known tables only (no SELECT *, no private table); sales give a ranking only', () => {
         const sql = [];
         const spy = { all: (q, p) => { sql.push(q); return api.all(q, p); }, get: (q, p) => { sql.push(q); return api.get(q, p); } };
         const internal = readInternal(spy);
         expect(sql.join('\n')).not.toMatch(/SELECT\s+\*/i);
         const tables = new Set(sql.flatMap(q => [...q.matchAll(/\b(?:FROM|JOIN)\s+([a-z_]+)/gi)].map(m => m[1])));
-        expect([...tables].sort()).toEqual(['categories', 'product_variants', 'products', 'promotions', 'settings']);
+        expect([...tables].sort()).toEqual(['categories', 'product_variants', 'products', 'promotions', 'return_items', 'sale_items', 'sales', 'settings']);
+        // Best sellers: article ids in order, no quantity, amount or customer
+        expect(internal.bestSellers.every(id => typeof id === 'string')).toBe(true);
+        const salesSql = sql.find(q => /sale_items/.test(q));
+        expect(salesSql).toMatch(/SELECT\s+si\.product_id\s+AS\s+id\s+FROM/i);
         // Rows hold no private column: stock counts become "available" inside SQL
         for (const row of [...internal.products, ...internal.variants]) {
             for (const k of Object.keys(row)) expect(k, k).not.toMatch(/cost|wholesale|supplier|sku|barcode|qr|stock|min_/);
@@ -165,10 +169,10 @@ describe('website public data: SQLite internal -> website public', () => {
             { color: 'Bleu', colorCode: '', size: '40', price: null, available: true },
             { color: 'Noir', colorCode: '#111111', size: '44', price: 3500, available: true },
         ]);
-        // On the article page: every size, sold-out ones marked; both colours by name
+        // On the article page: every size to choose, sold-out ones marked and not choosable; both colours by name
         const html = renderPage({ snapshot: buildPublicData(api, { now: NOW }), theme: registry.get('classic'), page: 'product', id: 'jean', lang: 'fr' });
-        for (const s of ['38', '40', '44']) expect(html).toContain(`class="size">${s}<`);
-        expect(html).toContain('class="size is-out">42<');
+        for (const s of ['38', '40', '44']) expect(html).toContain(`<label class="pick pick-size"><input type="radio" name="size" value="${s}"><span class="size">${s}<`);
+        expect(html).toContain('<label class="pick pick-size is-out"><input type="radio" name="size" value="42" disabled><span class="size">42<');
         expect(html).toContain('Noir');
         expect(html).toContain('Bleu');
         expect(html).not.toContain('evil.example');
@@ -195,7 +199,7 @@ describe('website public data: SQLite internal -> website public', () => {
         expect(codeOf(() => buildPublicData(api, { now: NOW, secrets: ['gho_SECRETTOKEN123'] }))).toBe('WEBSITE_PRIVATE_DATA');
         expect(checkFiles([{ path: 'index.html', content: 'x cf_at_123456789 y' }], { secrets: ['cf_at_123456789'] })).toHaveLength(1);
         // Every public field has a type (the list is the whole truth)
-        expect(Object.keys(PUBLIC_SHAPE).sort()).toEqual(['brands', 'builtAt', 'categories', 'products', 'promotions', 'shop', 'version']);
+        expect(Object.keys(PUBLIC_SHAPE).sort()).toEqual(['bestSellers', 'brands', 'builtAt', 'categories', 'products', 'promotions', 'shop', 'version']);
     });
 
     it('hours, social pages and map: written on the Website screen, cleaned, shown on the website; other links refused', async () => {

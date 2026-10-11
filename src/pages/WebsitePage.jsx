@@ -8,7 +8,7 @@ import { Button } from '../components/ui/Button';
 import { StatTile } from '../components/ui/StatTile';
 import { toast } from '../components/ui/Toast';
 import { translateError } from '../i18n/errors';
-import { formatDate, formatNumber } from '../i18n/format';
+import { formatDate, formatMoney, formatNumber } from '../i18n/format';
 import { useT } from '../i18n';
 
 const STATUS_STYLE = {
@@ -805,10 +805,31 @@ function WebsiteOrders() {
                                     <td className="py-2 px-2 whitespace-nowrap">{formatDate(o.createdAt, 'datetime')}</td>
                                     <td className="py-2 px-2"><bdi>{o.customerName}</bdi></td>
                                     <td className="py-2 px-2"><bdi dir="ltr" className="font-mono">{o.phone}</bdi></td>
-                                    <td className="py-2 px-2"><bdi>{o.productName}</bdi></td>
-                                    <td className="py-2 px-2 whitespace-nowrap">{[o.size, o.color].filter(Boolean).join(' · ')}</td>
-                                    <td className="py-2 px-2">{o.quantity}</td>
-                                    <td className="py-2 px-2">{[o.wilaya, o.address].filter(Boolean).join(' — ')}{o.note && <span className="block text-xs text-zinc-500">{o.note}</span>}</td>
+                                    {o.items?.length ? (
+                                        <td className="py-2 px-2" colSpan={3} data-testid="website-order-items">
+                                            <ul className="space-y-1">
+                                                {o.items.map((i, n) => (
+                                                    <li key={n} className="flex flex-wrap gap-x-2">
+                                                        <bdi>{i.productName || i.productId}</bdi>
+                                                        {(i.size || i.color) && <span className="text-zinc-400">{[i.size, i.color].filter(Boolean).join(' · ')}</span>}
+                                                        <span className="text-zinc-400">× {i.quantity}</span>
+                                                        {i.unitPrice !== null && <span className="text-zinc-500"><bdi dir="ltr">{formatMoney(i.unitPrice * i.quantity)}</bdi></span>}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </td>
+                                    ) : (
+                                        <>
+                                            <td className="py-2 px-2"><bdi>{o.productName}</bdi></td>
+                                            <td className="py-2 px-2 whitespace-nowrap">{[o.size, o.color].filter(Boolean).join(' · ')}</td>
+                                            <td className="py-2 px-2">{o.quantity}</td>
+                                        </>
+                                    )}
+                                    <td className="py-2 px-2">
+                                        {[o.wilaya, o.commune, o.address].filter(Boolean).join(' — ')}
+                                        {o.delivery && <span className="block text-xs text-indigo-300">{t(`website.orders.delivery.${o.delivery}`)}</span>}
+                                        {o.note && <span className="block text-xs text-zinc-500">{o.note}</span>}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

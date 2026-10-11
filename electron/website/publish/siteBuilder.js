@@ -10,11 +10,55 @@
  *   -> { files: [{ path, content }], summary, hash }
  */
 const crypto = require('crypto');
-const { renderPage, pagesOf } = require('../storefront/render');
+const fs = require('fs');
+const path = require('path');
+const { renderPage, pagesOf, linkFor, scriptTexts, STYLE, SCRIPT } = require('../storefront/render');
+const { css } = require('../storefront/css');
+const { textsFor } = require('../storefront/texts');
+const { money, placeholder } = require('../storefront/html');
+
+const STORE_SCRIPT = path.join(__dirname, '..', 'storefront', 'assets', 'store.js');
 
 const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(jpe?g|png|webp|gif)$/i;
 const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_FILES = 3000;
+
+/** How the pages write money, for the script: "1 234,50 د.ج" -> group, decimal, prefix, suffix. */
+function moneyFormat(lang, currency) {
+    const zero = money(0, lang, currency);
+    const at = zero.indexOf('0');
+    const thousand = money(1000, lang, currency);
+    const half = money(1.5, lang, currency);
+    return { prefix: zero.slice(0, at), suffix: zero.slice(at + 1), group: thousand.charAt(thousand.indexOf('1') + 1), decimal: half.charAt(half.indexOf('1') + 1) };
+}
+
+/**
+ * What the cart and checkout pages need (search.json): the articles the
+ * pages already show, with the price the customer pays for each colour and
+ * size. Public fields only, from the public data.
+ */
+function searchCatalog(snap, theme, lang, asset) {
+    const t = textsFor(lang);
+    const onSale = (p) => p.salePrice !== null && p.salePrice !== undefined && p.salePrice < p.price;
+    return {
+        version: 1,
+        money: moneyFormat(lang, snap.shop.currency),
+        texts: scriptTexts(t),
+        products: snap.products.map(p => {
+            const ratio = onSale(p) && p.price > 0 ? p.salePrice / p.price : 1;
+            const pay = (price) => (price === null || price === undefined ? null : Math.round(price * ratio * 100) / 100);
+            return {
+                id: p.id,
+                name: p.name,
+                url: linkFor('product', p.id),
+                image: p.images[0] ? asset(p.images[0]) : placeholder(p.name, theme.tokens.colors),
+                price: onSale(p) ? p.salePrice : p.price,
+                available: p.available,
+                variants: p.variants.map(v => [v.color, v.size, v.available, pay(v.price)]),
+            };
+        }),
+    };
+}
 
 function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, lang }) {
     // The pictures that exist and can be published; the others are left out of the pages
@@ -39,6 +83,10 @@ function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, l
     for (const page of pagesOf(snap)) {
         files.push({ path: page.path, content: renderPage({ snapshot: snap, theme, page: page.page, id: page.id, lang: language, assetUrl: asset, orderUrl }) });
     }
+    // The website's own style sheet and script (no inline script: Content-Security-Policy)
+    files.push({ path: STYLE, content: css(theme) });
+    files.push({ path: SCRIPT, content: fs.readFileSync(STORE_SCRIPT, 'utf8') });
+    files.push({ path: 'search.json', content: JSON.stringify(searchCatalog(snap, theme, language, asset)) });
     files.push({ path: '404.html', content: renderPage({ snapshot: snap, theme, page: 'home', lang: language, assetUrl: asset, orderUrl }) });
     for (const [name, data] of images) if (data) files.push({ path: asset(name), content: data });
     // The public catalogue: what the pages show, for other uses of the website
@@ -62,4 +110,4 @@ function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, l
     };
 }
 
-module.exports = { buildSite };
+module.exports = { buildSite, searchCatalog, moneyFormat };

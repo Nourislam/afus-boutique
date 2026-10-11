@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const gitSha = (buf) => crypto.createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${buf.length}\0`), buf])).digest('hex');
 const b64url = (b) => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const TYPES = { html: 'text/html; charset=utf-8', json: 'application/json', txt: 'text/plain', md: 'text/plain', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
+const TYPES = { html: 'text/html; charset=utf-8', json: 'application/json', txt: 'text/plain', md: 'text/plain', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8' };
 
 /** A D1 binding over sql.js (prepare / bind / first / all / run, as Workers have it). */
 function d1Binding(db) {
