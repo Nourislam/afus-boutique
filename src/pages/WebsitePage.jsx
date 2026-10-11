@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Globe, Github, Cloud, Copy, RefreshCw, Palette, CheckCircle2, Circle, Link2, Sparkles, Package, Tag, Image as ImageIcon, Shirt, PackageCheck, X,
+    XCircle, Clock, Loader2, ShoppingBag,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
@@ -112,7 +113,7 @@ function CreateWebsite({ site, busy, run }) {
             <section className="card space-y-3">
                 <h3 className="font-semibold">{t('website.nameTitle')}</h3>
                 <p className="text-xs text-zinc-500">{t('website.nameHint')}</p>
-                <AddressField value={name} onChange={setName} host={site.freeHost} />
+                <AddressField value={name} onChange={setName} owner={site.freeOwner} />
             </section>
 
             <section className="card space-y-3">
@@ -129,12 +130,12 @@ function CreateWebsite({ site, busy, run }) {
     );
 }
 
-/** "https://" [name] ".pages.dev": the shop types only its name. */
-function AddressField({ value, onChange, host }) {
+/** "https://<account>.github.io/" [name] "/": the shop types only its name. */
+function AddressField({ value, onChange, owner }) {
     const { t } = useT();
     return (
         <div dir="ltr" className="flex items-stretch rounded-lg border border-dark-border bg-dark-secondary overflow-hidden focus-within:border-indigo-500">
-            <span className="px-3 flex items-center text-sm text-zinc-500 bg-dark-tertiary/60 flex-none">{'https://'}</span>
+            <span className="px-3 flex items-center text-sm text-zinc-500 bg-dark-tertiary/60 flex-none max-w-[45%] truncate">{`https://${owner || '…'}.github.io/`}</span>
             <input
                 className="flex-1 min-w-0 bg-transparent px-3 py-2.5 text-sm font-mono outline-none"
                 value={value}
@@ -143,7 +144,7 @@ function AddressField({ value, onChange, host }) {
                 aria-label={t('website.nameTitle')}
                 data-testid="website-name"
             />
-            <span className="px-3 flex items-center text-sm text-zinc-500 bg-dark-tertiary/60 flex-none">.{host || 'pages.dev'}</span>
+            <span className="px-3 flex items-center text-sm text-zinc-500 bg-dark-tertiary/60 flex-none">/</span>
         </div>
     );
 }
@@ -317,52 +318,19 @@ function ThemeStudio({ site, busy, run }) {
     );
 }
 
-function WebsiteDashboard({ site, setSite, preview, busy, run, reloadPreview }) {
+function WebsiteDashboard({ site, setSite, preview, busy, run }) {
     const { t } = useT();
-    const api = window.electronAPI.website;
-    const update = () => run('update', () => api.update(), (next) => {
-        const r = next?.result;
-        if (r?.reason === 'accounts') toast.info(t('website.update.needAccounts', { n: r.figures.products }), 6000);
-        else toast.success(t('website.update.prepared', { n: r?.figures?.products ?? 0 }));
-        reloadPreview();
-    });
 
     return (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4" data-testid="website-dashboard">
-            {/* Website Status */}
-            <section className="card space-y-4 xl:col-span-2" data-testid="website-status">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                        <h2 className="font-semibold">{t('website.statusTitle')}</h2>
-                        <p className="text-sm text-zinc-400 mt-1">{t(`website.statusText.${site.status}`)}</p>
-                    </div>
-                    <span className={`badge text-sm px-3 py-1 ${STATUS_STYLE[site.status] || STATUS_STYLE.none}`} data-testid="website-status-badge" data-status={site.status}>
-                        {t(`website.status.${site.status}`)}
-                    </span>
-                </div>
-                <ol className="grid fit-grid-sm gap-2">
-                    {site.steps.map((step, i) => (
-                        <li key={step.id} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${step.done ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-dark-border'}`}>
-                            {step.done ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-none" /> : <Circle className="w-4 h-4 text-zinc-500 flex-none" />}
-                            <span className="min-w-0 leading-snug"><span className="text-zinc-500">{i + 1}. </span>{t(`website.step.${step.id}`)}</span>
-                        </li>
-                    ))}
-                </ol>
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-dark-border">
-                    <p className="text-xs text-zinc-500">
-                        {site.lastUpdate ? t('website.lastUpdate', { date: formatDate(site.lastUpdate.at, 'datetime') }) : t('website.neverUpdated')}
-                    </p>
-                    <Button onClick={update} loading={busy === 'update'} data-testid="website-update">
-                        <RefreshCw className="w-4 h-4" /> {t('website.updateNow')}
-                    </Button>
-                </div>
-            </section>
+            {/* Create Website / Update website: requirements, progress, address */}
+            <PublishPanel site={site} setSite={setSite} busy={busy} run={run} />
 
             {/* Free Website URL */}
             <section className="card space-y-3" data-testid="website-url">
                 <h2 className="font-semibold flex items-center gap-2"><Link2 className="w-4 h-4 text-indigo-300" /> {t('website.freeUrl')}</h2>
                 <p dir="ltr" className="font-mono text-sm break-all rounded-lg bg-dark-tertiary/60 px-3 py-2" data-testid="website-free-url">{site.freeUrl}</p>
-                <p className="text-xs text-zinc-500">{site.status === 'live' ? t('website.urlLive') : t('website.urlSoon')}</p>
+                <p className="text-xs text-zinc-500">{site.status === 'live' ? t('website.urlLive') : site.freeOwner ? t('website.urlSoon') : t('website.urlAfterGithub')}</p>
                 <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="secondary" onClick={() => { navigator.clipboard?.writeText(site.freeUrl).then(() => toast.success(t('website.copied')), () => {}); }}>
                         <Copy className="w-4 h-4" /> {t('website.copy')}
@@ -383,6 +351,9 @@ function WebsiteDashboard({ site, setSite, preview, busy, run, reloadPreview }) 
                     <CloudflareAccount site={site} setSite={setSite} busy={busy} run={run} />
                 </ul>
             </section>
+
+            {/* Order requests customers sent from the website */}
+            {site.hasOrders && <WebsiteOrders />}
 
             {/* What the website will show (read from the catalogue) */}
             <section className="card space-y-3 xl:col-span-2" data-testid="website-preview">
@@ -412,7 +383,7 @@ function RenameAddress({ site, busy, run }) {
     if (!open) return <Button size="sm" variant="ghost" onClick={() => { setName(site.name); setOpen(true); }}>{t('website.rename')}</Button>;
     return (
         <div className="w-full space-y-2">
-            <AddressField value={name} onChange={setName} host={site.freeHost} />
+            <AddressField value={name} onChange={setName} owner={site.freeOwner} />
             <div className="flex gap-2">
                 <Button size="sm" onClick={() => run('rename', () => window.electronAPI.website.setName(name), () => { setOpen(false); toast.success(t('website.renamed')); })} loading={busy === 'rename'}>{t('common.save')}</Button>
                 <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
@@ -672,5 +643,175 @@ function CloudflareAccount({ site, setSite, busy, run }) {
                 </div>
             )}
         </li>
+    );
+}
+
+const STEP_ICON = {
+    done: <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-none" />,
+    failed: <XCircle className="w-4 h-4 text-red-400 flex-none" />,
+    waiting: <Clock className="w-4 h-4 text-amber-300 flex-none" />,
+    running: <Loader2 className="w-4 h-4 text-indigo-300 flex-none animate-spin" />,
+    pending: <Circle className="w-4 h-4 text-zinc-600 flex-none" />,
+};
+
+/**
+ * Create Website (then Update website): what it needs (GitHub, Cloudflare,
+ * a theme), one button, the steps as they run, then the address. Every
+ * technical part is made by the program on the shop's own accounts; the
+ * screen names none of them.
+ */
+function PublishPanel({ site, setSite, busy, run }) {
+    const { t, lang } = useT();
+    const api = window.electronAPI.website;
+    const deploy = site.deploy || { status: 'idle', steps: [] };
+    const running = deploy.status === 'running';
+    const published = !!site.publishedAt;
+    const req = site.requirements || {};
+    const theme = site.themes?.find(x => x.id === site.theme);
+    const last = useRef(deploy.status);
+
+    // Follow the run while it goes on
+    useEffect(() => {
+        if (!running) return undefined;
+        const timer = setInterval(() => { api.getState().then(setSite).catch(() => {}); }, 1500);
+        return () => clearInterval(timer);
+    }, [running]);
+    // Say how it ended
+    useEffect(() => {
+        if (last.current === 'running' && deploy.status !== 'running') {
+            if (deploy.status === 'done') toast.success(t('website.publish.doneToast'));
+            else if (deploy.status === 'waiting') toast.info(t('website.publish.waitingToast'), 7000);
+            else if (deploy.status === 'failed') toast.error(t(`website.publish.reason.${deploy.reason || 'unknown'}`), 8000);
+        }
+        last.current = deploy.status;
+    }, [deploy.status]);
+
+    const start = () => run('publish', () => api.publish(), (next) => {
+        const r = next?.result;
+        if (r && !r.started && r.reason !== 'running') toast.error(t(`website.publish.reason.${r.reason}`), 7000);
+    });
+    const recheck = () => run('recheck', () => api.recheck(), (next) => {
+        if (next?.result?.live) toast.success(t('website.publish.doneToast'));
+        else toast.info(t('website.publish.stillWaiting'), 6000);
+    });
+    const copy = () => navigator.clipboard?.writeText(site.site.url).then(() => toast.success(t('website.copied')), () => {});
+    const checks = [
+        { id: 'github', ok: req.github, text: req.githubPermission ? t('website.publish.needGithubAgain') : t('website.publish.needGithub') },
+        { id: 'cloudflare', ok: req.cloudflare, text: t('website.publish.needCloudflare') },
+        { id: 'theme', ok: req.theme, text: theme ? t('website.publish.themeIs', { name: theme.name?.[lang] || theme.id }) : t('website.publish.needTheme') },
+    ];
+
+    return (
+        <section className="card space-y-4 xl:col-span-2" data-testid="website-status" data-deploy={deploy.status}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <h2 className="font-semibold">{t('website.statusTitle')}</h2>
+                    <p className="text-sm text-zinc-400 mt-1">{t(`website.statusText.${site.status}`)}</p>
+                </div>
+                <span className={`badge text-sm px-3 py-1 ${STATUS_STYLE[site.status] || STATUS_STYLE.none}`} data-testid="website-status-badge" data-status={site.status}>
+                    {t(`website.status.${site.status}`)}
+                </span>
+            </div>
+
+            {/* The address, once the website answers */}
+            {published && site.site?.url && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3" data-testid="website-live">
+                    <p className="text-sm text-emerald-300 font-medium">{t('website.publish.liveTitle')}</p>
+                    <p dir="ltr" className="font-mono text-base break-all" data-testid="website-live-url">{site.site.url}</p>
+                    <div className="flex flex-wrap gap-2">
+                        <Button size="sm" onClick={() => api.openSite().catch(() => {})} data-testid="website-open-site"><Globe className="w-4 h-4" /> {t('website.publish.open')}</Button>
+                        <Button size="sm" variant="secondary" onClick={copy}><Copy className="w-4 h-4" /> {t('website.copy')}</Button>
+                    </div>
+                    <p className="text-xs text-zinc-500">{t('website.publish.lastPublished', { date: formatDate(site.publishedAt, 'datetime') })}</p>
+                </div>
+            )}
+
+            {/* What Create Website needs */}
+            {!published && (
+                <ul className="grid fit-grid-sm gap-2" data-testid="website-requirements">
+                    {checks.map(c => (
+                        <li key={c.id} data-testid={`website-req-${c.id}`} data-ok={c.ok ? '1' : '0'}
+                            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${c.ok ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-dark-border'}`}>
+                            {c.ok ? STEP_ICON.done : STEP_ICON.pending}
+                            <span className="min-w-0 leading-snug">{c.ok && c.id !== 'theme' ? t(`website.publish.ok.${c.id}`) : c.text}</span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+
+            {/* The run, step by step */}
+            {deploy.steps.length > 0 && (deploy.status !== 'done' || running) && (
+                <ol className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5" data-testid="website-progress">
+                    {deploy.steps.map((step, i) => (
+                        <li key={step.id} className="flex items-center gap-2 text-sm" data-testid={`website-step-${step.id}`} data-status={step.status}>
+                            {STEP_ICON[step.status] || STEP_ICON.pending}
+                            <span className={`min-w-0 leading-snug ${step.status === 'pending' ? 'text-zinc-500' : ''}`}><span className="text-zinc-500">{i + 1}. </span>{t(`website.publish.step.${step.id}`)}</span>
+                        </li>
+                    ))}
+                </ol>
+            )}
+            {deploy.status === 'failed' && (
+                <p className="text-sm text-red-300 leading-relaxed" data-testid="website-publish-error">{t(`website.publish.reason.${deploy.reason || 'unknown'}`)}</p>
+            )}
+            {deploy.status === 'waiting' && (
+                <div className="flex flex-wrap items-center gap-3 text-sm text-amber-300">
+                    <span className="leading-relaxed">{t('website.publish.waiting')}</span>
+                    <Button size="sm" variant="secondary" onClick={recheck} loading={busy === 'recheck'} data-testid="website-recheck">{t('website.publish.checkNow')}</Button>
+                </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-dark-border">
+                <p className="text-xs text-zinc-500 max-w-md leading-relaxed">{published ? t('website.publish.updateHint') : t('website.publish.createHint')}</p>
+                <Button onClick={start} loading={running || busy === 'publish'} disabled={!site.canPublish} data-testid="website-publish">
+                    {published ? <RefreshCw className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                    {running ? t('website.publish.running') : deploy.status === 'failed' ? t('website.publish.retry') : published ? t('website.updateNow') : t('website.publish.create')}
+                </Button>
+            </div>
+        </section>
+    );
+}
+
+/** The order requests customers sent from the website, newest first (read from the website). */
+function WebsiteOrders() {
+    const { t } = useT();
+    const [state, setState] = useState({ loading: false, data: null });
+    const load = () => {
+        setState(s => ({ ...s, loading: true }));
+        window.electronAPI.website.orders().then((data) => setState({ loading: false, data }), () => setState({ loading: false, data: { ok: false, reason: 'network', orders: [] } }));
+    };
+    useEffect(() => { load(); }, []);
+    const data = state.data;
+    return (
+        <section className="card space-y-3 xl:col-span-3" data-testid="website-orders">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-semibold flex items-center gap-2"><ShoppingBag className="w-4 h-4 text-indigo-300" /> {t('website.orders.title')}</h2>
+                <Button size="sm" variant="secondary" onClick={load} loading={state.loading} data-testid="website-orders-refresh"><RefreshCw className="w-4 h-4" /> {t('website.orders.refresh')}</Button>
+            </div>
+            <p className="text-xs text-zinc-500">{t('website.orders.hint')}</p>
+            {data && !data.ok && <p className="text-sm text-amber-300">{t(`website.orders.reason.${data.reason || 'network'}`)}</p>}
+            {data?.ok && data.orders.length === 0 && <p className="text-sm text-zinc-500">{t('website.orders.none')}</p>}
+            {data?.ok && data.orders.length > 0 && (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm" data-testid="website-orders-table">
+                        <thead className="text-zinc-500 text-xs">
+                            <tr>{['date', 'customer', 'phone', 'article', 'options', 'quantity', 'where'].map(k => <th key={k} className="text-start font-medium py-2 px-2 whitespace-nowrap">{t(`website.orders.col.${k}`)}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                            {data.orders.map(o => (
+                                <tr key={o.id} className="border-t border-dark-border align-top">
+                                    <td className="py-2 px-2 whitespace-nowrap">{formatDate(o.createdAt, 'datetime')}</td>
+                                    <td className="py-2 px-2"><bdi>{o.customerName}</bdi></td>
+                                    <td className="py-2 px-2"><bdi dir="ltr" className="font-mono">{o.phone}</bdi></td>
+                                    <td className="py-2 px-2"><bdi>{o.productName}</bdi></td>
+                                    <td className="py-2 px-2 whitespace-nowrap">{[o.size, o.color].filter(Boolean).join(' · ')}</td>
+                                    <td className="py-2 px-2">{o.quantity}</td>
+                                    <td className="py-2 px-2">{[o.wilaya, o.address].filter(Boolean).join(' — ')}{o.note && <span className="block text-xs text-zinc-500">{o.note}</span>}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
     );
 }

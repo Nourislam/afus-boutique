@@ -6,8 +6,11 @@
  * browser, the shop signs in there and agrees, and the program receives a key
  * for that account alone.
  *
- * Scope asked: public_repo (create and fill the shop's public website
- * repository), nothing else: no private repositories, no profile changes.
+ * Scope asked: repo. The website's repository is public, but GitHub
+ * Pages (publishing it) can only be switched on with the "repo" scope for an
+ * OAuth app (docs.github.com/rest/pages: "OAuth app tokens ... need the repo
+ * scope"); there is no narrower one. The program only ever touches the one
+ * repository it made for the website.
  *
  * Every call has a time limit and never follows a redirect (the key is only
  * ever sent to the GitHub address it was made for). Errors carry a reason
@@ -17,7 +20,7 @@
  */
 const WEB = 'https://github.com';
 const API = 'https://api.github.com';
-const SCOPES = ['public_repo'];
+const SCOPES = ['repo'];
 const TIMEOUT_MS = 15000;
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 // Where the shop can see or withdraw the access it gave (GitHub's own page)
@@ -35,6 +38,13 @@ class GithubError extends Error {
 const parseScopes = (text) => String(text || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
 /** The key can create a public repository (repo includes public_repo). */
 const canCreateRepos = (scopes) => scopes.includes('public_repo') || scopes.includes('repo');
+/** The key can switch GitHub Pages on (an older key given public_repo only cannot). */
+const canPublishPages = (scopes) => scopes.includes('repo');
+
+const crypto = require('crypto');
+/** Git's own name of a file's content (so unchanged files are not sent again). */
+const gitBlobSha = (buf) => crypto.createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${buf.length}\0`), buf])).digest('hex');
+const SAFE_PATH = /^(?!\/)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._/-]{1,200}$/;
 
 function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase = API, timeoutMs = TIMEOUT_MS } = {}) {
     // Electron's own network (system proxy and certificates)
@@ -136,11 +146,78 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
         throw new GithubError(r.status >= 500 ? 'network' : 'unknown', r.status);
     }
 
+    const repoPath = (owner, name) => `${apiBase}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+    const fail = (r) => {
+        if (r.status === 401) throw new GithubError('revoked', 401);
+        if (r.status === 403 || r.status === 404) throw new GithubError('scope', r.status);
+        throw new GithubError(r.status >= 500 ? 'network' : 'unknown', r.status);
+    };
+
+    /**
+     * Put the website's files in the repository as one change (commit) on its
+     * branch; files not listed any more are removed. Files whose content is
+     * already there are not sent again. files: [{ path, content: Buffer|string }]
+     * -> { commit, changed }
+     */
+    async function commitFiles(token, owner, name, { files, message, branch = 'main' }) {
+        const base = repoPath(owner, name);
+        const list = files.map(f => ({ path: String(f.path), content: Buffer.isBuffer(f.content) ? f.content : Buffer.from(String(f.content), 'utf8') }));
+        for (const f of list) if (!SAFE_PATH.test(f.path)) throw new GithubError('unknown');
+        const ref = await call(`${base}/git/ref/heads/${encodeURIComponent(branch)}`, { token });
+        if (!ref.ok) fail(ref);
+        const parent = ref.data.object?.sha;
+        const head = await call(`${base}/git/commits/${parent}`, { token });
+        if (!head.ok) fail(head);
+        const current = await call(`${base}/git/trees/${head.data.tree?.sha}?recursive=1`, { token });
+        const known = new Set((current.ok && Array.isArray(current.data.tree) ? current.data.tree : []).filter(e => e.type === 'blob').map(e => e.sha));
+
+        const entries = [];
+        const queue = [...list];
+        const worker = async () => {
+            for (let f = queue.shift(); f; f = queue.shift()) {
+                let sha = gitBlobSha(f.content);
+                if (!known.has(sha)) {
+                    const b = await call(`${base}/git/blobs`, { method: 'POST', token, body: { content: f.content.toString('base64'), encoding: 'base64' } });
+                    if (!b.ok || !b.data.sha) fail(b);
+                    sha = b.data.sha;
+                }
+                entries.push({ path: f.path, mode: '100644', type: 'blob', sha });
+            }
+        };
+        await Promise.all([1, 2, 3, 4].map(worker));
+        entries.sort((a, b) => a.path.localeCompare(b.path));
+        const tree = await call(`${base}/git/trees`, { method: 'POST', token, body: { tree: entries } });
+        if (!tree.ok || !tree.data.sha) fail(tree);
+        if (tree.data.sha === head.data.tree?.sha) return { commit: parent, changed: false };
+        const commit = await call(`${base}/git/commits`, { method: 'POST', token, body: { message, tree: tree.data.sha, parents: [parent] } });
+        if (!commit.ok || !commit.data.sha) fail(commit);
+        const moved = await call(`${base}/git/refs/heads/${encodeURIComponent(branch)}`, { method: 'PATCH', token, body: { sha: commit.data.sha, force: false } });
+        if (!moved.ok) fail(moved);
+        return { commit: commit.data.sha, changed: true };
+    }
+
+    /** GitHub Pages of the repository: { url, status } (status: built / building / errored / null), or null. */
+    async function getPages(token, owner, name) {
+        const r = await call(`${repoPath(owner, name)}/pages`, { token });
+        if (r.status === 404) return null;
+        if (!r.ok) fail(r);
+        return { url: String(r.data.html_url || ''), status: r.data.status || null };
+    }
+
+    /** Switch GitHub Pages on, from the branch's root (already on: its state). */
+    async function enablePages(token, owner, name, { branch = 'main' } = {}) {
+        const r = await call(`${repoPath(owner, name)}/pages`, { method: 'POST', token, body: { build_type: 'legacy', source: { branch, path: '/' } } });
+        if (r.status === 201) return { url: String(r.data.html_url || ''), status: r.data.status || null };
+        if (r.status === 409) return getPages(token, owner, name);
+        return fail(r);
+    }
+
     return {
         configured: !!id,
         webBase,
         manageUrl: `${webBase}${MANAGE_PATH}`,
         requestDeviceCode, pollToken, getUser, getRepository, createRepository,
+        commitFiles, getPages, enablePages,
     };
 }
 
@@ -154,4 +231,4 @@ const repoOf = (d) => ({
     private: !!d.private,
 });
 
-module.exports = { createGithubClient, GithubError, SCOPES, parseScopes, canCreateRepos, WEB, API };
+module.exports = { createGithubClient, GithubError, SCOPES, parseScopes, canCreateRepos, canPublishPages, gitBlobSha, WEB, API };

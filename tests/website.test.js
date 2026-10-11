@@ -20,7 +20,7 @@ describe('website: names, domains, steps', () => {
         expect(ws.suggestName('بوتيك الياسمين', () => 0.5)).toMatch(/^boutique-[a-z0-9]{4,}$/);
         expect(ws.isValidName('boutique-yasmine')).toBe(true);
         for (const bad of ['ab', '-shop', 'shop-', 'my--shop', 'Shop', 'shop yasmine', 'a'.repeat(41)]) expect(ws.isValidName(bad), bad).toBe(false);
-        expect(ws.freeUrl('boutique-yasmine')).toBe(`https://boutique-yasmine.${ws.FREE_HOST}`);
+        expect(ws.freeUrl('boutique-yasmine', 'Yasmine-Shop')).toBe('https://yasmine-shop.github.io/boutique-yasmine/');
     });
 
     it('own domain: written any way, kept clean; the free address is not one', () => {
@@ -65,7 +65,7 @@ describe('website service (settings key "website", catalogue read only)', () => 
         expect(before.suggestedName).toBe('boutique-yasmine');
         expect(await codeOf(() => service.create({ name: 'x' }))).toBe('WEBSITE_NAME_INVALID');
         const v = service.create({ name: 'Boutique-Yasmine', theme: 'elegant' });
-        expect(v).toMatchObject({ created: true, name: 'boutique-yasmine', theme: 'luxury', status: 'accounts', freeUrl: `https://boutique-yasmine.${ws.FREE_HOST}` });
+        expect(v).toMatchObject({ created: true, name: 'boutique-yasmine', theme: 'luxury', status: 'accounts', freeUrl: `https://….${ws.FREE_HOST}/boutique-yasmine/` });
         expect(v.providers).toEqual({ github: { available: false }, cloudflare: { available: false } });
         expect(JSON.stringify(v)).not.toMatch(/token|secret|api_key|account_id/i);
         expect(await codeOf(() => service.create({ name: 'other-name' }))).toBe('WEBSITE_EXISTS');
@@ -76,11 +76,11 @@ describe('website service (settings key "website", catalogue read only)', () => 
         service.create({ name: 'boutique-yasmine' });
         expect(service.setTheme('classic').theme).toBe('classic');
         expect(await codeOf(() => service.setTheme('neon'))).toBe('WEBSITE_THEME_UNKNOWN');
-        expect(service.setName('yasmine-shop').freeUrl).toContain('yasmine-shop.');
+        expect(service.setName('yasmine-shop').freeUrl).toContain('/yasmine-shop/');
         expect(await codeOf(() => service.setDomain('not a domain'))).toBe('WEBSITE_DOMAIN_INVALID');
         expect(service.setDomain('https://www.yasmine.dz/').domain).toMatchObject({ name: 'www.yasmine.dz', status: 'pending' });
         // The free address keeps working with or without a domain
-        expect(service.view().freeUrl).toContain('yasmine-shop.');
+        expect(service.view().freeUrl).toContain('/yasmine-shop/');
         expect(service.removeDomain().domain).toMatchObject({ name: '', status: 'none' });
         settings.website.publishedAt = '2026-10-11T00:00:00Z';
         expect(await codeOf(() => service.setName('again-other'))).toBe('WEBSITE_NAME_LOCKED');

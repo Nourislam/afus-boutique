@@ -27,6 +27,10 @@ const NETWORK_ALLOWED = {
     'electron/website/github.js': "the shop's own GitHub account (Website Manager, optional module)",
     // Only when the owner links Cloudflare or checks it on the Website screen
     'electron/website/cloudflare.js': "the shop's own Cloudflare account (Website Manager, optional module)",
+    // Create Website: is the shop's own published website / API answering, its order requests
+    'electron/website/publish/ping.js': "the shop's own published website and its API (Website Manager, optional module)",
+    // Not run by the program: uploaded to the shop's Cloudflare account as its website API
+    'electron/website/worker/worker.mjs': "the shop's website API, run by Cloudflare (never by the program)",
     'electron/main.js': 'e-mail sending handlers only (nodemailer), see the next test',
     // Asked by the shop (Settings › About › check), only when the reseller's
     // installer profile gives an https address; nothing is installed by itself
@@ -54,7 +58,9 @@ describe('offline-first core', () => {
         // wa.me: the credit reminder only hands a WhatsApp link to the system (the program connects to nothing)
         const allowed = /shopify\.dev|help\.shopify\.com|woocommerce\.(com|github\.io)|your-store\.com|^https:\/\/wa\.me\b/;
         // The shop's own free website address: shown to the shop, never opened by the program
-        const shopAddress = ([file, url]) => file === 'electron/website/websiteState.js' && url === 'https://${name}.${FREE_HOST}';
+        // The shop's own website / API addresses, built from its names (GitHub Pages, workers.dev)
+        const WEBSITE_FILES = ['electron/website/websiteState.js', 'electron/website/publish/deployer.js', 'electron/website/cloudflare.js', 'src/pages/WebsitePage.jsx'];
+        const shopAddress = ([file, url]) => WEBSITE_FILES.includes(file) && (url.startsWith('https://${') || url.startsWith('https://<'));
         // GitHub's own sign-in page and API, in the GitHub module only
         const github = ([file, url]) => file === 'electron/website/github.js' && ['https://github.com', 'https://api.github.com'].includes(url);
         // Cloudflare's own sign-in and API, in the Cloudflare module only

@@ -237,6 +237,16 @@ h1,h2,h3,.logo-text,.hero-title,.section-title,.pdp-name,.promo-title{font-famil
 .opt-list .size{text-align:start;border-width:0 0 1px;border-radius:0}
 .order{display:flex;gap:10px;flex-wrap:wrap}
 .order .btn{flex:1;min-width:180px}
+.order-form{display:flex;flex-direction:column;gap:12px;border-top:1px solid var(--border);padding-top:16px}
+.order-form .hint{color:var(--muted);font-size:.9em;margin:0}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:flex;flex-direction:column;gap:4px;font-size:.85em;color:var(--muted)}
+.field-wide{grid-column:1/-1}
+.field input,.field select,.field textarea{font:inherit;font-size:1rem;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;width:100%}
+.field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+.hp{position:absolute;inset-inline-start:-9999px;width:1px;height:1px;overflow:hidden}
+.message-page{text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px;padding-block:96px}
+.message-page p{color:var(--muted)}
 .pdp-desc{color:var(--muted);border-top:1px solid var(--border);padding-top:16px}
 
 /* Footer */
@@ -264,6 +274,7 @@ h1,h2,h3,.logo-text,.hero-title,.section-title,.pdp-name,.promo-title{font-famil
   .hero-full{min-height:520px}
   .hero-centered{padding:72px 0}
   .pdp{grid-template-columns:1fr;gap:24px;margin-block:20px}
+  .fields{grid-template-columns:1fr}
   .pdp-info.is-sticky{position:static}
   .ftr-grid,.about-split .container-narrow{grid-template-columns:1fr}
   .nav-inline{display:none}

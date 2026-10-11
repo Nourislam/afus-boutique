@@ -1870,7 +1870,7 @@ const website = createWebsiteService({
         cloudflareClient = createCloudflareClient({
           clientId: PROFILE.cloudflareClientId || (!app.isPackaged ? process.env.AFUS_CLOUDFLARE_CLIENT_ID : '') || '',
           scopes: Array.isArray(PROFILE.cloudflareScopes) && PROFILE.cloudflareScopes.length ? PROFILE.cloudflareScopes : undefined,
-          ...(testBase ? { dashBase: testBase, apiBase: `${testBase}/client/v4` } : {}),
+          ...(testBase ? { dashBase: testBase, apiBase: `${testBase}/client/v4`, workerUrl: (name) => `${testBase}/w/${name}` } : {}),
         });
       }
       return cloudflareClient;
@@ -1885,6 +1885,14 @@ const website = createWebsiteService({
     onConnected: bringBack,
     // The page the browser shows once it came back, in the shop's language
     callbackPage: (kind) => cloudflareCallbackPage(kind, (getSettingValue('store_config') || {}).defaultLanguage),
+  },
+  // Create Website: the shop's pictures (images folder only), the log of each step (no key)
+  publish: {
+    readImage: (name) => {
+      const file = require('./services/imageService').safeImagePath(name);
+      return file && fs.existsSync(file) ? fs.readFileSync(file) : null;
+    },
+    log: (entry) => logService.write('info', `website ${JSON.stringify(entry)}`),
   },
 });
 ipcMain.handle('website:getState', () => website.view());
@@ -1910,6 +1918,18 @@ ipcMain.handle('website:githubOpen', async () => {
 ipcMain.handle('website:githubManage', async () => {
   await shell.openExternal(website.githubManageUrl());
   return { opened: true };
+});
+ipcMain.handle('website:publish', () => website.publishSite());
+ipcMain.handle('website:recheck', () => website.recheckSite());
+ipcMain.handle('website:orders', () => website.orders());
+// The shop's own published website, in the browser (its address comes from GitHub Pages)
+ipcMain.handle('website:openSite', async () => {
+  const url = website.view().site.url;
+  // Always https (GitHub Pages); the local test server of development tests only
+  const testBase = githubTestBase();
+  const allowed = url && (/^https:\/\//.test(url) || (testBase && url.startsWith(`${testBase}/`)));
+  if (allowed) await shell.openExternal(url);
+  return { opened: !!allowed };
 });
 ipcMain.handle('website:cloudflareStart', () => website.cloudflareStart());
 ipcMain.handle('website:cloudflareCancel', () => website.cloudflareCancel());

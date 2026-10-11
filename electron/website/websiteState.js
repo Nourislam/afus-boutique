@@ -11,8 +11,8 @@
  */
 const { registry, DEFAULT_THEME } = require('./themes/registry');
 
-// Free address of every shop: <name>.<FREE_HOST>. One place to change it.
-const FREE_HOST = 'pages.dev';
+// Free address of every shop: GitHub Pages, https://<account>.github.io/<name>/
+const FREE_HOST = 'github.io';
 const NAME_MIN = 3;
 const NAME_MAX = 40;
 
@@ -32,6 +32,12 @@ const DEFAULT_STATE = Object.freeze({
     },
     // The shop's repository, made by the program (never typed by the shop)
     repository: null, // { fullName, htmlUrl, defaultBranch, createdAt }
+    // What Create Website made on the shop's accounts (main process only, never shown)
+    resources: {}, // { repo: { owner, name }, database: { id, name }, worker: { name, subdomain, url } }
+    // The published website: its address and what was published
+    site: {}, // { url, commit, hash, builtAt, publishedAt, pending, summary }
+    // The last Create Website / Update website run, step by step
+    deploy: { status: 'idle', steps: [], startedAt: null, finishedAt: null, failedStep: null, reason: null },
     // Optional own domain: the website always works on the free address first
     domain: { name: '', status: 'none', addedAt: null },
     publishedAt: null,
@@ -62,6 +68,45 @@ function normalizeState(saved) {
         publishedAt: s.publishedAt || null,
         lastUpdate: s.lastUpdate && typeof s.lastUpdate === 'object' ? s.lastUpdate : null,
         lastError: s.lastError || null,
+        resources: resourcesOf(s.resources),
+        site: siteOf(s.site),
+        deploy: deployOf(s.deploy),
+    };
+}
+
+const DEPLOY_STATUSES = ['idle', 'running', 'done', 'failed', 'waiting'];
+const STEP_STATUSES = ['pending', 'running', 'done', 'failed', 'waiting'];
+const isText = (v, max = 200) => typeof v === 'string' && v.length > 0 && v.length <= max;
+
+/** What was made on the shop's accounts (names and ids only, no key). */
+function resourcesOf(r) {
+    const out = {};
+    if (isText(r?.repo?.owner, 39) && isText(r?.repo?.name, 100)) out.repo = { owner: r.repo.owner, name: r.repo.name };
+    if (isText(r?.database?.id, 64) && isText(r?.database?.name, 64)) out.database = { id: r.database.id, name: r.database.name };
+    if (isText(r?.worker?.name, 63) && isText(r?.worker?.subdomain, 63) && isText(r?.worker?.url, 300)) out.worker = { name: r.worker.name, subdomain: r.worker.subdomain, url: r.worker.url };
+    return out;
+}
+
+function siteOf(x) {
+    if (!x || typeof x !== 'object') return {};
+    const out = {};
+    if (isText(x.url, 300) && /^https?:\/\//.test(x.url)) out.url = x.url;
+    for (const key of ['commit', 'hash', 'builtAt', 'publishedAt']) if (isText(x[key], 100)) out[key] = x[key];
+    if (typeof x.pending === 'boolean') out.pending = x.pending;
+    if (x.summary && typeof x.summary === 'object') out.summary = Object.fromEntries(Object.entries(x.summary).filter(([, v]) => Number.isFinite(v)));
+    return out;
+}
+
+function deployOf(d) {
+    const steps = Array.isArray(d?.steps) ? d.steps.filter(x => isText(x?.id, 20)).map(x => ({
+        id: x.id, status: STEP_STATUSES.includes(x.status) ? x.status : 'pending', reason: isText(x.reason, 40) ? x.reason : null, at: x.at || null,
+    })) : [];
+    // A run cut by closing the program is not running any more
+    const status = DEPLOY_STATUSES.includes(d?.status) ? d.status : 'idle';
+    return {
+        status, steps,
+        startedAt: d?.startedAt || null, finishedAt: d?.finishedAt || null,
+        failedStep: isText(d?.failedStep, 20) ? d.failedStep : null, reason: isText(d?.reason, 40) ? d.reason : null,
     };
 }
 
@@ -141,14 +186,15 @@ function cleanDomain(text) {
     return d;
 }
 
-const freeUrl = (name) => (name ? `https://${name}.${FREE_HOST}` : '');
+/** The website's free address once published (owner: the GitHub account, when linked). */
+const freeUrl = (name, owner) => (name ? `https://${owner ? String(owner).toLowerCase() : '…'}.${FREE_HOST}/${name}/` : '');
 
 // `connected` is set by the service only when the key is really kept here
 const githubLinked = (state) => state.accounts.github.connected === true || (state.accounts.github.connected === undefined && state.accounts.github.status === 'connected');
 const cloudflareLinked = (state) => state.accounts.cloudflare.connected === true || (state.accounts.cloudflare.connected === undefined && state.accounts.cloudflare.status === 'connected');
 
 /** The website's repository name on the shop's account: from the address name. */
-const repositoryName = (name) => `${name}-website`;
+const repositoryName = (name) => name;
 
 /** The four steps shown to the shop, in order. */
 function stepsOf(state) {
@@ -167,6 +213,7 @@ function stepsOf(state) {
  */
 function statusOf(state) {
     if (!state.created) return 'none';
+    if (state.deploy?.status === 'running') return 'publishing';
     if (state.lastError) return 'error';
     if (state.publishedAt) return 'live';
     if (!githubLinked(state) || !cloudflareLinked(state)) return 'accounts';

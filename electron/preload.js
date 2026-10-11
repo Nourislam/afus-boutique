@@ -118,6 +118,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         githubCheck: () => ipcRenderer.invoke('website:githubCheck'),
         githubOpen: () => ipcRenderer.invoke('website:githubOpen'),
         githubManage: () => ipcRenderer.invoke('website:githubManage'),
+        // Create Website / Update website (on the shop's own accounts, in the background)
+        publish: () => ipcRenderer.invoke('website:publish'),
+        recheck: () => ipcRenderer.invoke('website:recheck'),
+        orders: () => ipcRenderer.invoke('website:orders'),
+        openSite: () => ipcRenderer.invoke('website:openSite'),
         // The shop's Cloudflare account (its keys never come to the window)
         cloudflareStart: () => ipcRenderer.invoke('website:cloudflareStart'),
         cloudflareCancel: () => ipcRenderer.invoke('website:cloudflareCancel'),

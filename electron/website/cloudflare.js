@@ -39,21 +39,26 @@ class CloudflareError extends Error {
 
 const parseScopes = (text) => String(text || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
 
-function createCloudflareClient({ clientId, scopes, fetch: fetchImpl, dashBase = DASH, apiBase = API, timeoutMs = TIMEOUT_MS } = {}) {
+function createCloudflareClient({ clientId, scopes, fetch: fetchImpl, dashBase = DASH, apiBase = API, timeoutMs = TIMEOUT_MS, workerUrl } = {}) {
+    // Where a Worker answers: https://<name>.<subdomain>.workers.dev (a test server in development tests)
+    const workerUrlOf = workerUrl || ((name, subdomain) => `https://${name}.${subdomain}.workers.dev`);
     // Electron's own network (system proxy and certificates)
     const doFetch = fetchImpl || ((url, init) => require('electron').net.fetch(url, init));
     const id = String(clientId || '').trim();
     const wanted = Array.isArray(scopes) && scopes.length ? scopes.map(String) : DEFAULT_SCOPES;
 
-    async function call(url, { method = 'GET', form, token } = {}) {
+    async function call(url, { method = 'GET', form, json, raw, token } = {}) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         const headers = { Accept: 'application/json', 'User-Agent': 'AfusBoutique' };
         if (token) headers.Authorization = `Bearer ${token}`;
-        if (form) headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        let body;
+        if (form) { headers['Content-Type'] = 'application/x-www-form-urlencoded'; body = new URLSearchParams(form).toString(); }
+        if (json) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(json); }
+        if (raw) { headers['Content-Type'] = raw.type; body = raw.body; }
         let res;
         try {
-            res = await doFetch(url, { method, headers, body: form ? new URLSearchParams(form).toString() : undefined, signal: controller.signal, redirect: 'error' });
+            res = await doFetch(url, { method, headers, body, signal: controller.signal, redirect: 'error' });
         } catch {
             throw new CloudflareError('network');
         } finally {
@@ -155,8 +160,91 @@ function createCloudflareClient({ clientId, scopes, fetch: fetchImpl, dashBase =
         return { workers, d1 };
     }
 
+    const acct = (accountId) => `${apiBase}/accounts/${encodeURIComponent(accountId)}`;
+    const fail = (r) => {
+        if (r.status === 401) throw new CloudflareError('revoked', 401);
+        if (r.status === 403) throw new CloudflareError('scope', 403);
+        throw new CloudflareError(r.status >= 500 ? 'network' : 'unknown', r.status);
+    };
+    const ok = (r) => r.ok && r.data.success !== false;
+
+    /** The account's workers.dev name (<name>.workers.dev), or null when it has none yet. */
+    async function getWorkersSubdomain(token, accountId) {
+        const r = await api(token, `/accounts/${encodeURIComponent(accountId)}/workers/subdomain`);
+        if (ok(r) && r.data.result?.subdomain) return String(r.data.result.subdomain);
+        if (r.status === 404 || (r.ok && !r.data.result?.subdomain) || r.status === 400) return null;
+        return fail(r);
+    }
+
+    /** Give the account its workers.dev name (only when it has none). */
+    async function createWorkersSubdomain(token, accountId, subdomain) {
+        const r = await call(`${acct(accountId)}/workers/subdomain`, { method: 'PUT', token, json: { subdomain } });
+        if (ok(r)) return String(r.data.result?.subdomain || subdomain);
+        if (r.status === 409 || r.status === 400) return null; // taken by someone else
+        return fail(r);
+    }
+
+    /** Is there a Worker of this name on the account? */
+    async function workerExists(token, accountId, name) {
+        const r = await api(token, `/accounts/${encodeURIComponent(accountId)}/workers/scripts/${encodeURIComponent(name)}/settings`);
+        if (r.status === 404) return false;
+        if (ok(r)) return true;
+        return fail(r);
+    }
+
+    /**
+     * Upload the shop's Worker (one module file) with its bindings
+     * (D1, secret, plain texts). Made by hand as multipart/form-data: one part
+     * "metadata", one part named after the module file.
+     */
+    async function uploadWorker(token, accountId, name, { module, moduleName = 'worker.mjs', bindings, compatibilityDate = '2026-01-01' }) {
+        const boundary = `afus${require('crypto').randomBytes(12).toString('hex')}`;
+        const metadata = JSON.stringify({ main_module: moduleName, compatibility_date: compatibilityDate, bindings });
+        const body = Buffer.concat([
+            Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="metadata"\r\nContent-Type: application/json\r\n\r\n${metadata}\r\n`),
+            Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${moduleName}"; filename="${moduleName}"\r\nContent-Type: application/javascript+module\r\n\r\n`),
+            Buffer.from(module, 'utf8'),
+            Buffer.from(`\r\n--${boundary}--\r\n`),
+        ]);
+        const r = await call(`${acct(accountId)}/workers/scripts/${encodeURIComponent(name)}`, { method: 'PUT', token, raw: { type: `multipart/form-data; boundary=${boundary}`, body } });
+        if (!ok(r)) fail(r);
+        return { name };
+    }
+
+    /** Make the Worker answer on <name>.<subdomain>.workers.dev. */
+    async function enableWorkersDev(token, accountId, name) {
+        const r = await call(`${acct(accountId)}/workers/scripts/${encodeURIComponent(name)}/subdomain`, { method: 'POST', token, json: { enabled: true, previews_enabled: false } });
+        if (!ok(r)) fail(r);
+        return true;
+    }
+
+    /** A D1 database of the account by its name: { id, name } or null. */
+    async function findDatabase(token, accountId, name) {
+        const r = await api(token, `/accounts/${encodeURIComponent(accountId)}/d1/database?name=${encodeURIComponent(name)}&per_page=50`);
+        if (!ok(r)) fail(r);
+        const found = (Array.isArray(r.data.result) ? r.data.result : []).find(d => d.name === name);
+        return found ? { id: String(found.uuid || found.id || ''), name: found.name } : null;
+    }
+
+    async function createDatabase(token, accountId, name) {
+        const r = await call(`${acct(accountId)}/d1/database`, { method: 'POST', token, json: { name } });
+        if (ok(r) && (r.data.result?.uuid || r.data.result?.id)) return { id: String(r.data.result.uuid || r.data.result.id), name };
+        if (r.status === 409 || JSON.stringify(r.data.errors || '').includes('already exists')) return { exists: true };
+        return fail(r);
+    }
+
+    /** Run SQL on the shop's D1 database (statements separated by ";"). */
+    async function queryDatabase(token, accountId, databaseId, sql, params) {
+        const r = await call(`${acct(accountId)}/d1/database/${encodeURIComponent(databaseId)}/query`, { method: 'POST', token, json: params ? { sql, params } : { sql } });
+        if (!ok(r)) fail(r);
+        return r.data.result || [];
+    }
+
     return {
         configured: !!id,
+        workerUrl: (name, subdomain) => workerUrlOf(name, subdomain),
+        getWorkersSubdomain, createWorkersSubdomain, workerExists, uploadWorker, enableWorkersDev,
+        findDatabase, createDatabase, queryDatabase,
         dashBase,
         scopes: wanted,
         manageUrl: `${dashBase}${MANAGE_PATH}`,

@@ -4,8 +4,10 @@
  * read or written elsewhere. The pages have no script; their own policy
  * (Content-Security-Policy) allows none.
  *
- *   renderPage({ snapshot, theme, page, id, lang, preview, assetUrl })
+ *   renderPage({ snapshot, theme, page, id, lang, preview, assetUrl, orderUrl })
  *     page: 'home' | 'category' (id: category id, 'all' or 'sale') | 'product' (id)
+ *           | 'thanks' | 'order-error' (after an order request)
+ *     orderUrl: the shop's website API where the order form is sent
  *     preview: inside the program (links go nowhere, no outside call)
  *     assetUrl(path): the address of one of the shop's pictures
  *   pagesOf(snapshot): every page of the website, for publishing
@@ -27,13 +29,14 @@ function linkFor(kind, id) {
     return 'index.html';
 }
 
-function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', preview = false, assetUrl = (p) => p }) {
+function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', preview = false, assetUrl = (p) => p, orderUrl = null }) {
     const language = LANGS.includes(lang) ? lang : 'ar';
     const ctx = {
         snap: snapshot, theme, lang: language, t: textsFor(language), preview,
         link: preview ? () => '#' : linkFor,
         img: (path) => assetUrl(path),
         current: page === 'home' ? 'home' : `${page}:${id}`,
+        orderUrl: !preview && orderUrl && /^https?:\/\//.test(orderUrl) ? orderUrl : null,
     };
     let main;
     let title = snapshot.shop.name || '';
@@ -41,6 +44,8 @@ function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', pr
         const product = snapshot.products.find(p => p.id === id) || snapshot.products[0];
         main = product ? C.productPage(ctx, product) : `<main class="container section">${C.productGrid(ctx, [])}</main>`;
         if (product) title = `${product.name} · ${title}`;
+    } else if (page === 'thanks' || page === 'order-error') {
+        main = C.messagePage(ctx, page);
     } else if (page === 'category') {
         main = C.categoryPage(ctx, id || 'all');
     } else {
@@ -49,7 +54,9 @@ function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', pr
         if (!snapshot.products.length) main += `<section class="container section">${C.productGrid(ctx, [])}</section>`;
     }
     // No script, no frame, no form; pictures from the website itself (or the program's preview)
-    const policy = `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:${preview ? ' app:' : ''}; font-src 'self'; base-uri 'none'; form-action 'none'`;
+    // The only form goes to the shop's own website API
+    const formTo = ctx.orderUrl ? new URL(ctx.orderUrl).origin : "'none'";
+    const policy = `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:${preview ? ' app:' : ''}; font-src 'self'; base-uri 'none'; form-action ${formTo}`;
     return `<!doctype html>
 <html lang="${language}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
 <head>
@@ -71,7 +78,10 @@ ${C.footer(ctx)}
 
 /** Every page of the website: [{ path, page, id }]. */
 function pagesOf(snapshot) {
-    const pages = [{ path: linkFor('home'), page: 'home', id: null }, { path: linkFor('category', 'all'), page: 'category', id: 'all' }];
+    const pages = [
+        { path: linkFor('home'), page: 'home', id: null }, { path: linkFor('category', 'all'), page: 'category', id: 'all' },
+        { path: 'thanks.html', page: 'thanks', id: null }, { path: 'order-error.html', page: 'order-error', id: null },
+    ];
     if (snapshot.products.some(C.onSale)) pages.push({ path: linkFor('category', 'sale'), page: 'category', id: 'sale' });
     for (const c of snapshot.categories) pages.push({ path: linkFor('category', c.id), page: 'category', id: c.id });
     for (const p of snapshot.products) pages.push({ path: linkFor('product', p.id), page: 'product', id: p.id });

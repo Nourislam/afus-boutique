@@ -32,6 +32,22 @@ const TEXTS = {
     orderText: ['مرحبًا، أريد طلب:', 'Bonjour, je voudrais commander :', 'Hello, I would like to order:'],
     upTo: ['حتى', "jusqu'à", 'up to'],
     rights: ['جميع الحقوق محفوظة', 'Tous droits réservés', 'All rights reserved'],
+    orderTitle: ['اطلب هذه السلعة', 'Commander cet article', 'Order this item'],
+    orderHint: ['اترك اسمك ورقمك وسيتصل بك المحل لتأكيد الطلب.', 'Laissez votre nom et votre numéro : la boutique vous appelle pour confirmer.', 'Leave your name and number: the shop calls you to confirm.'],
+    yourName: ['الاسم', 'Nom', 'Name'],
+    yourPhone: ['رقم الهاتف', 'Téléphone', 'Phone number'],
+    wilaya: ['الولاية', 'Wilaya', 'Province'],
+    addressField: ['العنوان', 'Adresse', 'Address'],
+    note: ['ملاحظة', 'Remarque', 'Note'],
+    quantity: ['الكمية', 'Quantité', 'Quantity'],
+    chooseSize: ['اختر المقاس', 'Choisir la taille', 'Choose the size'],
+    chooseColor: ['اختر اللون', 'Choisir la couleur', 'Choose the colour'],
+    send: ['أرسل الطلب', 'Envoyer la commande', 'Send the order'],
+    thanksTitle: ['شكرًا، وصل طلبك', 'Merci, votre commande est arrivée', 'Thank you, your order arrived'],
+    thanksText: ['سيتصل بك المحل قريبًا لتأكيد الطلب والتوصيل.', 'La boutique vous appelle bientôt pour confirmer et livrer.', 'The shop will call you soon to confirm and deliver.'],
+    errorTitle: ['لم يُرسل الطلب', "La commande n'est pas partie", 'The order was not sent'],
+    errorText: ['تحقق من الاسم ورقم الهاتف وأعد المحاولة، أو اتصل بالمحل.', 'Vérifiez le nom et le numéro puis réessayez, ou appelez la boutique.', 'Check the name and number and try again, or call the shop.'],
+    backHome: ['العودة إلى المتجر', 'Retour à la boutique', 'Back to the shop'],
 };
 const INDEX = { ar: 0, fr: 1, en: 2 };
 

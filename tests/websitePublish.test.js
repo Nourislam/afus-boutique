@@ -1,0 +1,316 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { createRequire } from 'module';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { createShop } from './helpers/shop';
+
+const require = createRequire(import.meta.url);
+const { startFakeCloud } = require('./helpers/fakeCloud.cjs');
+const { createWebsiteService } = require('../electron/website/websiteService');
+const { createGithubClient } = require('../electron/website/github');
+const { createCloudflareClient } = require('../electron/website/cloudflare');
+const { createSecureStore } = require('../electron/website/secureStore');
+const ipcGuard = require('../electron/services/ipcGuard');
+const catalog = require('../electron/services/catalogService');
+const initSqlJs = require('sql.js');
+
+const ACCOUNT = 'c'.repeat(32);
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8]);
+const codeOf = async (fn) => { try { await fn(); } catch (e) { return e.code; } return null; };
+const fakeSafeStorage = () => ({
+    isEncryptionAvailable: () => true,
+    getSelectedStorageBackend: () => 'gnome_libsecret',
+    encryptString: (text) => Buffer.from(`enc:${Buffer.from(text).toString('base64')}`),
+    decryptString: (buf) => Buffer.from(buf.toString().slice(4), 'base64').toString(),
+});
+/** Everything of the shop in SQLite (the website must never change it). */
+const shopData = (api) => JSON.stringify(['products', 'product_variants', 'categories', 'sales', 'customers']
+    .map(t => api.all(`SELECT * FROM ${t} ORDER BY rowid`)).concat([api.all("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]));
+
+describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, the real Worker running)', () => {
+    let api, settings, dir, cloud, SQL, mode, logs;
+
+    function makeService({ scopes = ['repo'] } = {}) {
+        const store = createSecureStore({ dir, safeStorage: fakeSafeStorage(), platform: 'linux' });
+        if (!store.has('github')) store.set('github', JSON.stringify({ token: cloud.githubToken(), scopes, login: 'yasmine-shop' }));
+        if (!store.has('cloudflare')) {
+            const { at, rt } = cloud.cloudflareTokens();
+            store.set('cloudflare', JSON.stringify({ accessToken: at, refreshToken: rt, expiresAt: Date.now() + 3600e3, scopes: [], accountId: ACCOUNT }));
+        }
+        const service = createWebsiteService({
+            api,
+            getSetting: (key) => settings[key] ?? null,
+            saveSetting: (key, value) => { settings[key] = JSON.parse(JSON.stringify(value)); },
+            codedError: catalog.codedError,
+            blockedMode: () => mode,
+            github: { client: createGithubClient({ clientId: 'gh-public', fetch: globalThis.fetch, webBase: cloud.base, apiBase: `${cloud.base}/api` }), store },
+            cloudflare: {
+                client: createCloudflareClient({ clientId: 'cf-public', fetch: globalThis.fetch, dashBase: cloud.base, apiBase: `${cloud.base}/client/v4`, workerUrl: (name) => `${cloud.base}/w/${name}` }),
+                store,
+            },
+            publish: {
+                fetch: globalThis.fetch,
+                readImage: (name) => (name === 'jean-1.jpg' || name === 'logo.png' ? JPEG : null),
+                waits: { health: 2000, pages: 3000, site: 2000, every: 20 },
+                log: (e) => logs.push(e),
+            },
+        });
+        return { service, store };
+    }
+
+    beforeEach(async () => {
+        ({ api } = await createShop());
+        api.run("INSERT INTO categories (id, name) VALUES ('c-jeans', 'Jeans')");
+        api.run("UPDATE products SET category_id = 'c-jeans', image_path = 'jean-1.jpg', gallery = '[\"missing.jpg\"]' WHERE id = 'jean'");
+        api.run("INSERT INTO settings (key, value) VALUES ('store_config', ?)", [JSON.stringify({ businessName: 'Boutique Yasmine', businessPhone: '0555 12 34 56', defaultLanguage: 'fr' })]);
+        settings = {
+            store_config: { businessName: 'Boutique Yasmine' },
+            website: {
+                created: true, name: 'boutique-yasmine', theme: 'classic',
+                accounts: {
+                    github: { status: 'connected', login: 'yasmine-shop', connectedAt: '2026-10-11T10:00:00Z', scopes: ['repo'] },
+                    cloudflare: { status: 'connected', accountName: 'Boutique', accountId: ACCOUNT, connectedAt: '2026-10-11T10:00:00Z' },
+                },
+            },
+        };
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'afus-publish-'));
+        SQL = SQL || await initSqlJs();
+        cloud = await startFakeCloud({ login: 'yasmine-shop', accounts: [{ id: ACCOUNT, name: 'Boutique' }], subdomain: 'yasmine', d1Factory: async () => new SQL.Database() });
+        mode = null;
+        logs = [];
+    });
+    afterEach(async () => { await cloud.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+
+    it('one press: repository, Pages, D1, Worker, API, data, pages, published, address answering — nothing technical shown', async () => {
+        const { service, store } = makeService();
+        const before = shopData(api);
+        const v0 = service.view();
+        expect(v0.requirements).toEqual({ github: true, githubPermission: false, cloudflare: true, theme: true });
+        expect(v0.canPublish).toBe(true);
+
+        const started = service.publishSite();
+        expect(started.result).toEqual({ started: true });
+        expect(started.status).toBe('publishing');
+        expect(service.publishSite().result).toEqual({ started: false, reason: 'running' });
+        await service.publishPending();
+
+        const v = service.view();
+        expect(v.deploy.status, JSON.stringify([v.deploy, logs])).toBe('done');
+        expect(v.deploy.steps.map(s => [s.id, s.status])).toEqual(
+            ['repository', 'pages', 'database', 'worker', 'api', 'data', 'build', 'publish', 'live'].map(id => [id, 'done']));
+        const siteUrl = `${cloud.base}/pages/yasmine-shop/boutique-yasmine/`;
+        expect(v.site).toMatchObject({ url: siteUrl, pending: false });
+        expect(v.status).toBe('live');
+        expect(v.freeUrl).toBe(siteUrl);
+        // The screen sees no name, id or key of what was made
+        const shown = JSON.stringify(v);
+        expect(v).not.toHaveProperty('resources');
+        expect(v).not.toHaveProperty('repository');
+        for (const secret of ['boutique-yasmine-api', 'boutique-yasmine-db', '/w/', store.get('website-key'), ACCOUNT]) expect(shown).not.toContain(secret);
+
+        // GitHub: one repository, the website's files, Pages on
+        expect([...cloud.gh.repos.keys()]).toEqual(['boutique-yasmine']);
+        const files = cloud.filesOf('boutique-yasmine');
+        for (const f of ['index.html', 'category-all.html', 'category-c-jeans.html', 'product-jean.html', 'product-belt.html', 'thanks.html', 'order-error.html', '404.html', 'catalog.json', '.nojekyll', 'images/jean-1.jpg']) expect(files.has(f), f).toBe(true);
+        expect(files.has('README.md')).toBe(true);
+        expect(files.get('images/jean-1.jpg').equals(JPEG)).toBe(true);
+        expect([...files.keys()].some(f => f.includes('missing'))).toBe(false);
+        const all = [...files.values()].map(b => b.toString()).join('\n');
+        // Nothing private leaves the program
+        expect(all).not.toMatch(/"cost"|stock_quantity|1800|J-N-38/);
+        expect(all).not.toContain(store.get('website-key'));
+        const product = files.get('product-jean.html').toString();
+        const orderUrl = `${cloud.base}/w/boutique-yasmine-api/api/orders`;
+        expect(product).toContain(`action="${orderUrl}"`);
+        expect(product).toContain(`form-action ${cloud.base}`);
+        expect(product).not.toMatch(/<script/i);
+
+        // Cloudflare: one D1 database with the website's tables, one Worker with its bindings
+        expect([...cloud.cf.databases.values()].map(d => d.name)).toEqual(['boutique-yasmine-db']);
+        const db = [...cloud.cf.databases.values()][0].db;
+        expect(db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")[0].values.flat()).toEqual(['orders', 'site_meta']);
+        expect(db.exec("SELECT value FROM site_meta WHERE key='published_at'")[0].values[0][0]).toBe(v.publishedAt);
+        const worker = cloud.cf.scripts.get('boutique-yasmine-api');
+        expect(worker.enabled).toBe(true);
+        const b = Object.fromEntries(worker.metadata.bindings.map(x => [x.name, x]));
+        expect(b.DB).toMatchObject({ type: 'd1', database_id: [...cloud.cf.databases.keys()][0] });
+        expect(b.SHOP_KEY).toMatchObject({ type: 'secret_text', text: store.get('website-key') });
+        expect(b.SITE_URL).toMatchObject({ type: 'plain_text', text: siteUrl });
+
+        // The published website answers, with the shop's own articles
+        const home = await fetch(siteUrl);
+        expect(home.status).toBe(200);
+        const page = await fetch(`${siteUrl}product-jean.html`).then(r => r.text());
+        expect(page).toContain('Jean');
+        expect(page).toContain('Boutique Yasmine');
+        expect((await fetch(`${siteUrl}images/jean-1.jpg`)).status).toBe(200);
+
+        // SQLite: not one row or table changed; no product database made anywhere
+        expect(shopData(api)).toBe(before);
+    });
+
+    it('a customer orders from the article page; the shop\'s API keeps it in D1; Afus reads it with its key only', async () => {
+        const { service } = makeService();
+        service.publishSite();
+        await service.publishPending();
+        const siteUrl = service.view().site.url;
+        const orderUrl = `${cloud.base}/w/boutique-yasmine-api/api/orders`;
+        const form = (fields) => fetch(orderUrl, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields).toString() });
+        const good = { product_id: 'jean', product_name: 'Jean', size: '40', color: 'Noir', quantity: '2', customer_name: 'Amina B.', phone: '0661 22 33 44', wilaya: 'Alger', address: 'Bab Ezzouar', note: 'Le soir', website: '' };
+
+        const r = await form(good);
+        expect(r.status).toBe(303);
+        expect(r.headers.get('location')).toBe(`${siteUrl}thanks.html`);
+        expect((await fetch(r.headers.get('location'))).status).toBe(200);
+        // Refused: no phone, a robot's hidden field, an address of another site never followed
+        expect((await form({ ...good, phone: '12' })).headers.get('location')).toBe(`${siteUrl}order-error.html`);
+        expect((await form({ ...good, website: 'http://spam.example' })).headers.get('location')).toBe(`${siteUrl}order-error.html`);
+        const json = await fetch(orderUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...good, customer_name: '<b>Lina</b>' }) });
+        expect(json.status).toBe(201);
+        // The list is the shop's only
+        expect((await fetch(orderUrl)).status).toBe(401);
+        expect((await fetch(orderUrl, { headers: { Authorization: 'Bearer wrong' } })).status).toBe(401);
+
+        const o = await service.orders();
+        expect(o.ok).toBe(true);
+        expect(o.orders).toHaveLength(2);
+        expect(o.orders.find(x => x.customerName === 'Amina B.')).toMatchObject({ productId: 'jean', size: '40', color: 'Noir', quantity: 2, phone: '0661223344', wilaya: 'Alger', note: 'Le soir' });
+        // Stored as text (the screen shows it as text)
+        expect(o.orders.some(x => x.customerName === '<b>Lina</b>')).toBe(true);
+
+        // Too many requests from one place in a few minutes
+        for (let i = 0; i < 4; i++) await form(good);
+        expect((await form(good)).headers.get('location')).toBe(`${siteUrl}order-error.html`);
+        // Health of the API (public)
+        const health = await fetch(`${cloud.base}/w/boutique-yasmine-api/api/health`).then(x => x.json());
+        expect(health).toMatchObject({ ok: true, shop: 'Boutique Yasmine' });
+        expect(health.publishedAt).toBeTruthy();
+    });
+
+    it('Update website: same repository, Worker and database; the new price published; unchanged pictures not sent again', async () => {
+        const { service } = makeService();
+        service.publishSite();
+        await service.publishPending();
+        const first = service.view().site;
+        api.run("UPDATE products SET price = 3200 WHERE id = 'jean'");
+        const blobsBefore = cloud.requests.filter(r => r.path.endsWith('/git/blobs')).length;
+        service.publishSite();
+        await service.publishPending();
+        const v = service.view();
+        expect(v.deploy.status).toBe('done');
+        expect(cloud.gh.repos.size).toBe(1);
+        expect(cloud.cf.databases.size).toBe(1);
+        expect(cloud.cf.scripts.size).toBe(1);
+        expect(cloud.cf.scripts.get('boutique-yasmine-api').uploads).toBe(2);
+        expect(v.site.url).toBe(first.url);
+        const page = await fetch(`${v.site.url}product-jean.html`).then(r => r.text());
+        expect(page.replace(/<bdi dir="ltr">|<\/bdi>/g, '')).toContain('3\u00a0200');
+        // Only the pages that changed (and catalog.json) were sent, not the picture
+        const sent = cloud.requests.filter(r => r.path.endsWith('/git/blobs')).length - blobsBefore;
+        expect(sent).toBeGreaterThan(0);
+        expect(sent).toBeLessThan(10);
+    });
+
+    it('a step fails (Cloudflare refuses D1): told which and why; Try again goes on without making anything twice', async () => {
+        const { service } = makeService();
+        cloud.cf.refuse['/d1/database'] = 403;
+        service.publishSite();
+        await service.publishPending();
+        let v = service.view();
+        expect(v.deploy).toMatchObject({ status: 'failed', failedStep: 'database', reason: 'cloudflare_permission' });
+        expect(v.deploy.steps.find(s => s.id === 'repository').status).toBe('done');
+        expect(v.deploy.steps.find(s => s.id === 'database')).toMatchObject({ status: 'failed', reason: 'cloudflare_permission' });
+        expect(v.status).toBe('error');
+        expect(v.canPublish).toBe(true);
+
+        delete cloud.cf.refuse['/d1/database'];
+        service.publishSite();
+        await service.publishPending();
+        v = service.view();
+        expect(v.deploy.status).toBe('done');
+        expect(cloud.gh.repos.size).toBe(1);
+        expect(v.lastError).toBeNull();
+    });
+
+    it('names already used on the accounts: the next free one; no workers.dev name yet: one is made', async () => {
+        // Someone's own repository and Worker of the same name
+        const other = cloud.githubToken();
+        await fetch(`${cloud.base}/api/user/repos`, { method: 'POST', headers: { Authorization: `Bearer ${other}` }, body: JSON.stringify({ name: 'boutique-yasmine' }) });
+        cloud.cf.scripts.set('boutique-yasmine-api', { metadata: { bindings: [] }, source: '', enabled: true, uploads: 1 });
+        cloud.cf.subdomain = null;
+        const { service } = makeService();
+        service.publishSite();
+        await service.publishPending();
+        expect(service.view().deploy.status).toBe('done');
+        expect([...cloud.gh.repos.keys()]).toEqual(['boutique-yasmine', 'boutique-yasmine-2']);
+        expect(cloud.cf.scripts.get('boutique-yasmine-api').uploads).toBe(1);
+        expect(cloud.cf.scripts.has('boutique-yasmine-api-2')).toBe(true);
+        expect(cloud.cf.subdomain).toBe('boutique-yasmine');
+        expect(service.view().site.url).toBe(`${cloud.base}/pages/yasmine-shop/boutique-yasmine-2/`);
+    });
+
+    it('GitHub linked before this version (no right to switch Pages on): asked to link again, nothing started', async () => {
+        const { service } = makeService({ scopes: ['public_repo'] });
+        const v = service.view();
+        expect(v.requirements).toMatchObject({ github: false, githubPermission: true });
+        expect(v.canPublish).toBe(false);
+        expect(service.publishSite().result).toEqual({ started: false, reason: 'github_permission' });
+        expect(cloud.gh.repos.size).toBe(0);
+    });
+
+    it('GitHub Pages slow to build: "waiting", then Check now finds it online', async () => {
+        cloud.gh.pagesBuildPolls = 1000;
+        const { service } = makeService();
+        service.publishSite();
+        await service.publishPending();
+        let v = service.view();
+        expect(v.deploy.status).toBe('waiting');
+        expect(v.deploy.steps.find(s => s.id === 'live').status).toBe('waiting');
+        expect(v.site.pending).toBe(true);
+        expect(v.publishedAt).toBeNull();
+        expect((await service.recheckSite()).result).toEqual({ checked: true, live: false });
+        cloud.gh.pagesBuildPolls = 0;
+        const r = await service.recheckSite();
+        expect(r.result).toEqual({ checked: true, live: true });
+        v = service.view();
+        expect(v).toMatchObject({ status: 'live', site: { pending: false } });
+        expect(v.deploy.status).toBe('done');
+    });
+
+    it('demo shop / training: refused; a run cut by closing the program shows "Try again"; owner-only channels', async () => {
+        const { service } = makeService();
+        mode = 'demo';
+        expect(await codeOf(() => service.publishSite())).toBe('WEBSITE_ACCOUNTS_BLOCKED');
+        expect(await codeOf(() => service.orders())).toBe('WEBSITE_ACCOUNTS_BLOCKED');
+        mode = null;
+        settings.website.deploy = { status: 'running', steps: [{ id: 'repository', status: 'done' }, { id: 'pages', status: 'running' }] };
+        const v = service.view();
+        expect(v.deploy).toMatchObject({ status: 'failed', reason: 'interrupted' });
+        expect(v.deploy.steps[1]).toMatchObject({ status: 'failed', reason: 'interrupted' });
+        expect((await service.orders())).toEqual({ ok: false, reason: 'not_published', orders: [] });
+        for (const ch of ['website:publish', 'website:recheck', 'website:orders', 'website:openSite']) {
+            expect(ipcGuard.allows(ipcGuard.RULES[ch], { id: 'a', role: 'admin' }), ch).toBe(true);
+            expect(ipcGuard.allows(ipcGuard.RULES[ch], { id: 'm', role: 'manager' }), ch).toBe(false);
+        }
+    });
+
+    it('keys go only where they belong: GitHub\'s to GitHub\'s API, Cloudflare\'s to Cloudflare\'s API, the shop key to its own API', async () => {
+        const { service, store } = makeService();
+        service.publishSite();
+        await service.publishPending();
+        await service.orders();
+        const gh = JSON.parse(store.get('github')).token;
+        const cfKeys = JSON.parse(store.get('cloudflare'));
+        for (const r of cloud.requests.filter(x => x.auth)) {
+            const key = r.auth.replace(/^Bearer /, '');
+            if (key === gh) expect(r.path, r.path).toMatch(/^\/api\//);
+            else if (key === cfKeys.accessToken) expect(r.path, r.path).toMatch(/^\/client\/v4\//);
+            else if (key === store.get('website-key')) expect(r.path).toBe('/w/boutique-yasmine-api/api/orders');
+        }
+        expect(cloud.requests.filter(x => x.path.startsWith('/pages/')).every(x => !x.auth)).toBe(true);
+        // The log of the run names steps only
+        expect(JSON.stringify(logs)).not.toMatch(/gho_|cf_at_|cf_rt_/);
+        expect(JSON.stringify(logs)).not.toContain(store.get('website-key'));
+    });
+});

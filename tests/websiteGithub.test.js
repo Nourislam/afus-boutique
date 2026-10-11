@@ -110,7 +110,7 @@ describe('website: the shop\'s GitHub account', () => {
         expect(started.githubFlow).toMatchObject({ userCode: 'WDJB-MJHT', verificationUri: 'https://github.com/login/device' });
         expect(opened).toEqual([['https://github.com/login/device', 'WDJB-MJHT']]);
         // Only the public app id and the minimal scope are sent; no secret exists
-        expect(gh.calls[0].body).toEqual({ client_id: 'Iv1.afus-public-id', scope: 'public_repo' });
+        expect(gh.calls[0].body).toEqual({ client_id: 'Iv1.afus-public-id', scope: 'repo' });
         // The long device code never reaches the window
         expect(JSON.stringify(started)).not.toContain(DEVICE);
 
@@ -242,19 +242,21 @@ describe('website: the shop\'s GitHub account', () => {
     }
 
     it('the repository is made by the program on the shop\'s account (name from the address, taken name avoided)', async () => {
-        const gh = fakeGithub({ taken: ['boutique-yasmine-website'] });
+        const gh = fakeGithub({ taken: ['boutique-yasmine'] });
         const { service } = makeService({ gh });
         expect(await codeOf(() => service.ensureRepository())).toBe('WEBSITE_GITHUB_NOT_CONNECTED');
         await service.githubStart();
         await service.githubPending();
         const repo = await service.ensureRepository();
-        expect(repo).toMatchObject({ fullName: 'yasmine-shop/boutique-yasmine-website-2', private: false });
+        expect(repo).toMatchObject({ fullName: 'yasmine-shop/boutique-yasmine-2', private: false });
         const create = gh.calls.filter(c => c.url === 'https://api.github.com/user/repos');
-        expect(create.at(-1).body).toMatchObject({ name: 'boutique-yasmine-website-2', private: false, auto_init: true });
-        expect(service.view().repository).toMatchObject({ fullName: 'yasmine-shop/boutique-yasmine-website-2' });
+        expect(create.at(-1).body).toMatchObject({ name: 'boutique-yasmine-2', private: false, auto_init: true });
+        // Kept for the program; never shown on the screen
+        expect(settings.website.repository).toMatchObject({ fullName: 'yasmine-shop/boutique-yasmine-2' });
+        expect(service.view()).not.toHaveProperty('repository');
         // Again: the same repository, not a new one
         const again = await service.ensureRepository();
-        expect(again.fullName).toBe('yasmine-shop/boutique-yasmine-website-2');
+        expect(again.fullName).toBe('yasmine-shop/boutique-yasmine-2');
         expect(gh.calls.filter(c => c.url === 'https://api.github.com/user/repos')).toHaveLength(2);
         mode = 'training';
         expect(await codeOf(() => service.ensureRepository())).toBe('WEBSITE_GITHUB_BLOCKED');

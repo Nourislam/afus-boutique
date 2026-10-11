@@ -27,6 +27,15 @@ const { createGithubConnector } = require('./githubConnector');
 const { createGithubClient } = require('./github');
 const { createCloudflareConnector } = require('./cloudflareConnector');
 const { createCloudflareClient } = require('./cloudflare');
+const { createDeployer } = require('./publish/deployer');
+const { canPublishPages } = require('./github');
+const publishPing = require('./publish/ping');
+const fs = require('fs');
+const path = require('path');
+
+// The shop's website API and the tables of its database, uploaded to its own Cloudflare account
+const WORKER_SOURCE = () => fs.readFileSync(path.join(__dirname, 'worker', 'worker.mjs'), 'utf8');
+const SCHEMA_SQL = () => fs.readFileSync(path.join(__dirname, 'worker', 'schema.sql'), 'utf8');
 
 // Without a GitHub setup (tests of the website alone): nothing can be linked
 const NO_STORE = { available: () => false, get: () => null, has: () => false, set: () => { throw Object.assign(new Error('secure storage unavailable'), { reason: 'secure_storage' }); }, remove: () => {} };
@@ -34,7 +43,7 @@ const REPO_TRIES = 5;
 
 const KEY = 'website';
 
-function createWebsiteService({ api, getSetting, saveSetting, codedError, github = {}, cloudflare = {}, blockedMode = () => null }) {
+function createWebsiteService({ api, getSetting, saveSetting, codedError, github = {}, cloudflare = {}, blockedMode = () => null, publish = {} }) {
     const read = () => state.normalizeState(getSetting(KEY));
     const write = (next) => { saveSetting(KEY, next); return next; };
     const shopName = () => (getSetting('store_config') || {}).businessName || '';
@@ -82,6 +91,34 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         timeoutMs: cloudflare.timeoutMs,
     });
 
+    // Create Website / Update website (publish/deployer.js)
+    const ping = (url) => publishPing.ping(url, { fetch: publish.fetch });
+    const deployer = createDeployer({
+        github: {
+            client,
+            keys: () => {
+                if (!connector.linked()) return null;
+                const k = connector.token();
+                return k?.token ? { token: k.token, login: read().accounts.github.login || k.login, scopes: k.scopes || [] } : null;
+            },
+        },
+        cloudflare: { client: cfClient, access: () => cf.access(), linked: () => cf.linked() },
+        store,
+        read,
+        write: (next) => { if (!blockedMode()) write(next); },
+        snapshot: () => buildSnapshot(api),
+        theme: (id) => registry.get(id),
+        readImage: publish.readImage,
+        shopName,
+        workerSource: (publish.workerSource || WORKER_SOURCE)(),
+        schemaSql: (publish.schemaSql || SCHEMA_SQL)(),
+        ping,
+        now: publish.now,
+        sleep: publish.sleep,
+        waits: publish.waits,
+        log: publish.log,
+    });
+
     /** The Cloudflare account as shown: "connected" only while its keys are really kept here; no account id. */
     function cloudflareView(account) {
         const { accountId: _hidden, ...shown } = account;
@@ -99,17 +136,40 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return { ...account, connected: account.status === 'connected' };
     }
 
-    /** Everything the screen shows (no key, no token, no device code). */
+    /** What Create Website needs, as the screen shows it. */
+    function requirements(s) {
+        const keys = connector.linked() ? connector.token() : null;
+        return {
+            github: !!keys?.token && canPublishPages(keys.scopes || []),
+            // Linked before this version (without the right to switch GitHub Pages on): link again
+            githubPermission: !!keys?.token && !canPublishPages(keys.scopes || []),
+            cloudflare: cf.linked(),
+            theme: !!registry.get(s.theme),
+        };
+    }
+
+    /** Everything the screen shows (no key, no token, no device code, no name or id of what was made). */
     function view() {
         const saved = read();
-        const s = { ...saved, accounts: { github: githubView(saved.accounts.github), cloudflare: cloudflareView(saved.accounts.cloudflare) } };
+        // A run stopped by closing the program is not running any more
+        const deploy = saved.deploy.status === 'running' && !deployer.running()
+            ? { ...saved.deploy, status: 'failed', reason: 'interrupted', steps: saved.deploy.steps.map(x => (x.status === 'running' ? { ...x, status: 'failed', reason: 'interrupted' } : x)) }
+            : saved.deploy;
+        const { resources: _made, repository: _repo, ...shown } = saved;
+        const s = { ...shown, deploy, accounts: { github: githubView(saved.accounts.github), cloudflare: cloudflareView(saved.accounts.cloudflare) } };
         const blocked = blockedMode();
+        const owner = saved.resources.repo?.owner || (saved.accounts.github.status === 'connected' ? saved.accounts.github.login : '');
         return {
             ...s,
+            site: { url: saved.site.url || null, publishedAt: saved.site.publishedAt || null, pending: !!saved.site.pending, summary: saved.site.summary || null },
             status: state.statusOf(s),
             steps: state.stepsOf(s),
-            freeUrl: state.freeUrl(s.name),
+            freeUrl: saved.site.url || state.freeUrl(s.name, owner),
             freeHost: state.FREE_HOST,
+            freeOwner: owner || null,
+            requirements: requirements(saved),
+            canPublish: !blocked && !deployer.running() && !deployer.blocker(),
+            hasOrders: !!saved.resources.worker?.url,
             suggestedName: s.created ? s.name : state.suggestName(shopName()),
             providers: providers.describeProviders({ github: client.configured && !blocked, cloudflare: cfClient.configured && !blocked }),
             githubFlow: connector.publicFlow(),
@@ -257,7 +317,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             const base = state.repositoryName(s.name);
             for (let i = 1; i <= REPO_TRIES; i++) {
                 const name = i === 1 ? base : `${base}-${i}`;
-                const made = await client.createRepository(kept.token, { name, description: `${shopName() || s.name} — website (Afus Boutique)`, homepage: state.freeUrl(s.name) });
+                const made = await client.createRepository(kept.token, { name, description: `${shopName() || s.name} — website (Afus Boutique)` });
                 if (made.exists) continue;
                 const now = read();
                 write({ ...now, repository: { fullName: made.fullName || `${owner}/${name}`, htmlUrl: made.htmlUrl, defaultBranch: made.defaultBranch, createdAt: new Date().toISOString() } });
@@ -325,6 +385,44 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         }
     }
 
+    /**
+     * Create Website (and Update website, the same run): on the shop's own
+     * accounts, in the background; the screen follows deploy.steps.
+     */
+    function publishSite() {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        const result = deployer.start();
+        return { ...view(), result };
+    }
+
+    /** The address was not answering yet after publishing: look again. */
+    async function recheckSite() {
+        if (blockedMode()) return { ...view(), result: { checked: false } };
+        const result = await deployer.recheck().catch(() => ({ checked: false }));
+        return { ...view(), result };
+    }
+
+    /** The order requests customers sent from the website (from the shop's website API). */
+    async function orders() {
+        const s = mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        const apiUrl = s.resources.worker?.url;
+        const key = deployer.key();
+        if (!apiUrl || !key) return { ok: false, reason: 'not_published', orders: [] };
+        const r = await publishPing.fetchOrders(apiUrl, key, { fetch: publish.fetch });
+        if (!r.ok) return { ok: false, reason: r.reason, orders: [] };
+        const text = (v, n) => String(v ?? '').slice(0, n);
+        return {
+            ok: true,
+            orders: r.orders.slice(-200).reverse().map(o => ({
+                id: text(o.id, 40), createdAt: text(o.created_at, 30), productId: text(o.product_id, 80), productName: text(o.product_name, 160),
+                size: text(o.size, 40), color: text(o.color, 40), quantity: Number(o.quantity) || 1,
+                customerName: text(o.customer_name, 80), phone: text(o.phone, 20), wilaya: text(o.wilaya, 60), address: text(o.address, 200), note: text(o.note, 500),
+            })),
+        };
+    }
+
     /** Link an account (the window's "Connect" buttons). */
     async function connect(providerId) {
         mustExist(read());
@@ -340,6 +438,8 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
+        publishSite, recheckSite, orders,
+        publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),
         cloudflareManageUrl: () => cfClient.manageUrl,
