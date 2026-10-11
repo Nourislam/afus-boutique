@@ -26,18 +26,33 @@ function d1Binding(db) {
         stmt.free();
         return rows;
     };
-    return {
+    const binding = {
         prepare(sql) {
             let args = [];
             const api = {
                 bind(...a) { args = a; return api; },
                 async first() { return exec(sql, args)[0] || null; },
                 async all() { return { results: exec(sql, args), success: true }; },
-                async run() { exec(sql, args); return { success: true }; },
+                async run() { exec(sql, args); return { success: true, meta: { changes: db.getRowsModified() } }; },
+                // For batch(): the statement and its values
+                _sql: () => [sql, args],
             };
             return api;
         },
+        // As D1: the statements in one transaction, all or nothing
+        async batch(statements) {
+            db.run('BEGIN');
+            try {
+                const out = statements.map(st => { const [sql, args] = st._sql(); return { results: exec(sql, args), success: true, meta: { changes: db.getRowsModified() } }; });
+                db.run('COMMIT');
+                return out;
+            } catch (e) {
+                db.run('ROLLBACK');
+                throw e;
+            }
+        },
     };
+    return binding;
 }
 
 /** Statements of a SQL text, run one by one (D1's /query takes several). */

@@ -468,31 +468,97 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     }
 
     /**
-     * The website's orders: the new ones are fetched from the shop's website
-     * API and kept in AFUS (website/orders/orderBook.js), with their delivery
-     * status. The list is AFUS's own, so it shows without internet too.
+     * Bring the website's orders into the shop's SQLite.
+     *
+     *   website -> the shop's Worker -> its D1 (a waiting room) -> here -> SQLite
+     *
+     * Each page of waiting orders is saved in one SQLite transaction; only
+     * then are they acknowledged, and the Worker deletes them from D1. If
+     * anything fails (no internet, the API refuses, SQLite cannot save, the
+     * ack is lost) nothing is lost: the orders stay in D1 and the next sync
+     * takes them again; an order already kept is never added twice (its id).
+     * One sync at a time; after a failure the next try waits longer
+     * (1, 2, 4 ... 30 minutes), otherwise every 5 minutes.
      */
-    async function orders() {
-        const s = mustExist(read());
-        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+    const SYNC_EVERY = 5 * 60e3;
+    const RETRY_FIRST = 60e3;
+    const RETRY_MAX = 30 * 60e3;
+    const PAGE = 100;
+    let syncing = null;
+
+    function syncOrders({ now = Date.now } = {}) {
+        if (!syncing) syncing = runSync(now).finally(() => { syncing = null; });
+        return syncing;
+    }
+
+    async function runSync(now) {
+        const s = read();
+        if (!s.created || blockedMode()) return { ok: false, reason: 'blocked' };
         const apiUrl = s.resources.worker?.url;
         const key = deployer.key();
+        if (!apiUrl || !key) return { ok: false, reason: 'not_published' };
+        const opts = { storeId: deployer.storeId(), fetch: publish.fetch, allowHttp: !!publish.allowHttp };
+        let received = 0;
+        let waiting = 0;
         let reason = null;
-        if (!apiUrl || !key) reason = 'not_published';
-        else {
-            // Only what came after the last order kept (the API gives 200 at a time)
-            for (let page = 0; page < 10; page++) {
-                const last = api.get('SELECT MAX(received_at) AS at FROM website_orders')?.at;
-                const since = last ? `${String(last).replace(' ', 'T').slice(0, 19)}.000Z` : undefined;
-                const r = await publishPing.fetchOrders(apiUrl, key, { fetch: publish.fetch, since });
-                if (!r.ok) { reason = r.reason; break; }
-                orderBook.importOrders(api, r.orders);
-                if (r.orders.length < 200) break;
+        let legacy = false;
+        for (let page = 0; page < 20; page++) {
+            // A website published before the waiting room keeps every order: read after the last one kept
+            const last = legacy ? api.get('SELECT MAX(received_at) AS at FROM website_orders')?.at : null;
+            const since = last ? `${String(last).replace(' ', 'T').slice(0, 19)}.000Z` : undefined;
+            const r = await publishPing.fetchOrders(apiUrl, key, { ...opts, limit: PAGE, since });
+            if (!r.ok) { reason = r.reason === 'insecure' || r.reason === 'store' || r.reason === 'key' || r.reason === 'busy' ? r.reason : 'network'; break; }
+            if (r.legacy && !legacy) { legacy = true; page--; continue; }
+            waiting = r.waiting;
+            if (!r.orders.length) break;
+            // Training or the demo shop opened meanwhile: never into that copy (nor acknowledged)
+            if (blockedMode()) { reason = 'save'; break; }
+            let kept;
+            try {
+                received += orderBook.importOrders(api, r.orders);
+                kept = orderBook.knownIds(api, r.orders.map(o => o.id));
+            } catch {
+                reason = 'save';
+                break;
             }
+            if (!kept.length) { reason = 'save'; break; }
+            if (legacy) { if (r.orders.length < PAGE) break; continue; }
+            if (blockedMode()) { reason = 'ack'; break; }
+            // Saved: the waiting room may let them go
+            const a = await publishPing.ackOrders(apiUrl, key, kept, opts);
+            if (!a.ok) { reason = 'ack'; break; }
+            waiting = a.waiting;
+            if (r.orders.length < PAGE || !waiting) break;
         }
+        const at = new Date(now()).toISOString();
+        const prev = read().sync;
+        const failures = reason ? prev.failures + 1 : 0;
+        const wait = reason ? Math.min(RETRY_MAX, RETRY_FIRST * 2 ** (failures - 1)) : SYNC_EVERY;
+        const sync = {
+            lastAt: at, lastOkAt: reason ? prev.lastOkAt : at, ok: !reason, reason, failures,
+            nextAt: new Date(now() + wait).toISOString(), received, waiting, legacy,
+        };
+        write({ ...read(), sync });
+        return { ok: !reason, reason, received, waiting };
+    }
+
+    /** The background sync (main process timer): only when it is time. */
+    function syncIfDue({ now = Date.now } = {}) {
+        const s = read();
+        if (!s.created || blockedMode() || !s.resources.worker?.url) return Promise.resolve({ ok: false, reason: 'idle' });
+        if (s.sync.nextAt && now() < Date.parse(s.sync.nextAt)) return Promise.resolve({ ok: false, reason: 'later' });
+        return syncOrders({ now });
+    }
+
+    /** The website's orders kept in AFUS (after bringing the new ones). Shown without internet too. */
+    async function orders() {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        const r = await syncOrders();
         const list = orderBook.listOrders(api).map(orderView);
-        if (reason === 'not_published' && !list.length) return { ok: false, reason, orders: [] };
-        return { ok: true, synced: !reason, reason, orders: list };
+        const sync = read().sync;
+        if (r.reason === 'not_published' && !list.length) return { ok: false, reason: 'not_published', orders: [], sync };
+        return { ok: true, synced: r.ok, reason: r.ok ? null : r.reason, orders: list, sync };
     }
 
     /**
@@ -524,7 +590,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
-        publishSite, recheckSite, orders, setOrderStatus, setPublicInfo,
+        publishSite, recheckSite, orders, syncOrders, syncIfDue, setOrderStatus, setPublicInfo,
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),

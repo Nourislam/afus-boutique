@@ -3,15 +3,32 @@
  * (made and updated by Afus Boutique; the shop never sees it).
  *
  *   GET  /api/health             is the website's API up? (public)
- *   POST /api/orders             a customer's order request: the cart of the
- *                                checkout page (items) or the order form of
- *                                an article page (form or JSON)
- *   GET  /api/orders?since=&limit=   the order requests, for Afus Boutique
- *                                only (Authorization: Bearer <shop key>)
+ *   POST /api/orders             a customer's order (the checkout page's
+ *                                form, or JSON); public, from the website
+ *   GET  /api/orders?limit=      the orders waiting, oldest first   } Afus
+ *   POST /api/orders/ack         {"ids": [...]}: kept by Afus, removed  } Boutique
+ *                                from here                               } only
+ *
+ * D1 is a waiting room, not the shop's database: an order stays here only
+ * until Afus Boutique has saved it in the shop's SQLite and acknowledged it
+ * (ack), then it is deleted. If Afus is closed, orders simply wait.
+ *
+ * Security
+ *   HTTPS only (workers.dev); Strict-Transport-Security.
+ *   Afus Boutique's endpoints: Authorization: Bearer <shop key> AND
+ *   X-Afus-Store: <store id> (this shop's own Worker, never another's);
+ *   the key is compared in constant time; repeated wrong keys are refused
+ *   for a while. The website (public) holds no key at all.
+ *   Orders: checked field by field; from the shop's own website only (Origin);
+ *   5 per 10 minutes from one place; a hidden field stops robots.
+ *   Idempotency: the checkout sends an order key (random, per order); the
+ *   same key again (double press, retry, back button) gives the same order,
+ *   never a second one, also after the order left for Afus (keys kept 30 days).
  *
  * Bindings (set by Afus Boutique when it uploads this file):
- *   DB         the shop's D1 database (schema.sql): orders and site_meta
+ *   DB         this shop's D1 database (schema.sql)
  *   SHOP_KEY   secret, known only to Afus Boutique on the shop's computer
+ *   STORE_ID   this shop's id (Afus sends it back on every call)
  *   SITE_URL   the website's address (where customers come back to)
  *   SHOP_NAME  the shop's name
  *
@@ -33,7 +50,14 @@ const MAX_BODY = 64 * 1024; // a full cart, form-encoded (Arabic names take 9 by
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX = 5;
 
+const AUTH_FAIL_MAX = 10;
+const ACK_MAX = 200;
+const KEY_DAYS = 30;
+const ORDER_KEY = /^[A-Za-z0-9-]{16,64}$/;
+const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 const SECURITY = {
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
@@ -159,35 +183,115 @@ async function createOrder(request, env) {
     }
     const { order, error } = readOrder(fields || {});
     if (error) return isForm ? backTo(env, 'order-error.html') : json(env, 400, { ok: false, error });
+    const done = (id, status) => (isForm ? backTo(env, order.items.length ? 'thanks.html?cart=1' : 'thanks.html') : json(env, status, { ok: true, id, duplicate: status === 200 }));
 
-    const ip = request.headers.get('CF-Connecting-IP') || '';
-    const ipHash = (await sha256(`${ip}|${env.SHOP_KEY}`)).slice(0, 32);
-    const since = new Date(Date.now() - RATE_WINDOW_MS).toISOString();
-    const recent = await env.DB.prepare('SELECT COUNT(*) AS n FROM orders WHERE ip_hash = ? AND created_at > ?').bind(ipHash, since).first();
-    if ((recent?.n || 0) >= RATE_MAX) return isForm ? backTo(env, 'order-error.html') : json(env, 429, { ok: false, error: 'too_many' });
+    // The same order sent again (double press, retry): the same answer, no second order
+    const key = ORDER_KEY.test(String(fields.order_key || '')) ? String(fields.order_key) : null;
+    if (key) {
+        const seen = await env.DB.prepare('SELECT order_id FROM order_keys WHERE order_key = ?').bind(key).first();
+        if (seen) return done(seen.order_id, 200);
+    }
+    const ipHash = await whoIs(request, env);
+    if (await overLimit(env, 'order', ipHash, RATE_MAX, RATE_WINDOW_MS)) return isForm ? backTo(env, 'order-error.html') : json(env, 429, { ok: false, error: 'too_many' });
 
     const id = crypto.randomUUID();
-    // An order request only: nothing is sold and no stock moves here (Afus Boutique decides)
-    await env.DB.prepare(`INSERT INTO orders (id, created_at, product_id, product_name, size, color, quantity, customer_name, first_name, last_name, phone, wilaya, commune, address, delivery,
-                          courier_company, office_wilaya, office_commune, courier_office, items, note, ip_hash)
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(id, new Date().toISOString(), order.product_id, order.product_name, order.size, order.color, order.quantity,
-            order.customer_name, order.first_name, order.last_name, order.phone, order.wilaya, order.commune, order.address, order.delivery,
-            order.courier_company, order.office_wilaya, order.office_commune, order.courier_office, JSON.stringify(order.items), order.note, ipHash)
-        .run();
-    // From the cart: the thanks page empties it
-    return isForm ? backTo(env, order.items.length ? 'thanks.html?cart=1' : 'thanks.html') : json(env, 201, { ok: true, id });
+    const at = new Date().toISOString();
+    // An order request only: nothing is sold and no stock moves here (Afus Boutique decides).
+    // Key, order and rate count are written together (one D1 batch: all or nothing)
+    const writes = [
+        env.DB.prepare(`INSERT INTO orders (id, created_at, product_id, product_name, size, color, quantity, customer_name, first_name, last_name, phone, wilaya, commune, address, delivery,
+                          courier_company, office_wilaya, office_commune, courier_office, items, note, ip_hash, order_key)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+            .bind(id, at, order.product_id, order.product_name, order.size, order.color, order.quantity,
+                order.customer_name, order.first_name, order.last_name, order.phone, order.wilaya, order.commune, order.address, order.delivery,
+                order.courier_company, order.office_wilaya, order.office_commune, order.courier_office, JSON.stringify(order.items), order.note, ipHash, key || ''),
+        env.DB.prepare('INSERT INTO hits (kind, who, created_at) VALUES (?, ?, ?)').bind('order', ipHash, at),
+    ];
+    if (key) writes.unshift(env.DB.prepare('INSERT INTO order_keys (order_key, order_id, created_at) VALUES (?, ?, ?)').bind(key, id, at));
+    try {
+        await env.DB.batch(writes);
+    } catch (e) {
+        // Two presses at the same moment: the other one made the order
+        const seen = key ? await env.DB.prepare('SELECT order_id FROM order_keys WHERE order_key = ?').bind(key).first() : null;
+        if (seen) return done(seen.order_id, 200);
+        throw e;
+    }
+    return done(id, 201);
 }
 
-async function listOrders(request, env, url) {
+/** One place (an IP address), never kept as such: a hash with the shop's key. */
+async function whoIs(request, env) {
+    const ip = request.headers.get('CF-Connecting-IP') || '';
+    return (await sha256(`${ip}|${env.SHOP_KEY}`)).slice(0, 32);
+}
+
+async function overLimit(env, kind, who, max, windowMs) {
+    const since = new Date(Date.now() - windowMs).toISOString();
+    const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM hits WHERE kind = ? AND who = ? AND created_at > ?').bind(kind, who, since).first();
+    return (row?.n || 0) >= max;
+}
+
+/**
+ * Afus Boutique of this shop only: the shop key (constant time) and this
+ * Worker's own store id. Wrong keys are counted: too many from one place
+ * and even the right key is refused there for a while.
+ * -> null when allowed, else the Response to send.
+ */
+async function afusOnly(request, env) {
+    const who = await whoIs(request, env);
+    if (await overLimit(env, 'auth_fail', who, AUTH_FAIL_MAX, RATE_WINDOW_MS)) return json(env, 429, { ok: false, error: 'too_many' }, { 'Access-Control-Allow-Origin': 'null' });
     const auth = request.headers.get('Authorization') || '';
-    if (!env.SHOP_KEY || !sameText(auth.replace(/^Bearer\s+/i, ''), env.SHOP_KEY)) return json(env, 401, { ok: false });
+    const keyOk = !!env.SHOP_KEY && sameText(auth.replace(/^Bearer\s+/i, ''), env.SHOP_KEY);
+    const storeOk = !!env.STORE_ID && sameText(request.headers.get('X-Afus-Store') || '', env.STORE_ID);
+    if (keyOk && storeOk) return null;
+    await env.DB.prepare('INSERT INTO hits (kind, who, created_at) VALUES (?, ?, ?)').bind('auth_fail', who, new Date().toISOString()).run();
+    return json(env, keyOk ? 403 : 401, { ok: false }, { 'Access-Control-Allow-Origin': 'null' });
+}
+
+/** The orders waiting for Afus Boutique, oldest first. */
+async function listOrders(request, env, url) {
+    const refused = await afusOnly(request, env);
+    if (refused) return refused;
     const since = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(url.searchParams.get('since') || '') ? url.searchParams.get('since') : '1970-01-01T00:00:00.000Z';
-    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 100));
+    const limit = Math.min(ACK_MAX, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 100));
     const { results } = await env.DB.prepare(`SELECT id, created_at, product_id, product_name, size, color, quantity, customer_name, first_name, last_name, phone, wilaya, commune, address, delivery,
                                               courier_company, office_wilaya, office_commune, courier_office, items, note, status
-                                              FROM orders WHERE created_at > ? ORDER BY created_at LIMIT ?`).bind(since, limit).all();
-    return json(env, 200, { ok: true, orders: results || [] }, { 'Access-Control-Allow-Origin': 'null' });
+                                              FROM orders WHERE created_at > ? ORDER BY created_at, id LIMIT ?`).bind(since, limit).all();
+    const waiting = await env.DB.prepare('SELECT COUNT(*) AS n FROM orders').first();
+    return json(env, 200, { ok: true, store: env.STORE_ID, orders: results || [], waiting: waiting?.n || 0 }, { 'Access-Control-Allow-Origin': 'null' });
+}
+
+/**
+ * Afus Boutique saved these orders in the shop's SQLite: they leave the
+ * waiting room. Unknown ids are ignored (already gone: a repeated ack is fine).
+ */
+async function ackOrders(request, env) {
+    const refused = await afusOnly(request, env);
+    if (refused) return refused;
+    if (!(request.headers.get('Content-Type') || '').includes('application/json')) return json(env, 415, { ok: false, error: 'json_only' }, { 'Access-Control-Allow-Origin': 'null' });
+    let body;
+    try {
+        const text = await request.text();
+        if (text.length > 16 * 1024) return json(env, 413, { ok: false, error: 'too_large' }, { 'Access-Control-Allow-Origin': 'null' });
+        body = JSON.parse(text);
+    } catch {
+        return json(env, 400, { ok: false, error: 'bad_request' }, { 'Access-Control-Allow-Origin': 'null' });
+    }
+    const ids = Array.isArray(body?.ids) ? body.ids : null;
+    if (!ids || ids.length > ACK_MAX || !ids.every(id => typeof id === 'string' && ID.test(id))) return json(env, 400, { ok: false, error: 'ids' }, { 'Access-Control-Allow-Origin': 'null' });
+    let removed = 0;
+    if (ids.length) {
+        const r = await env.DB.prepare(`DELETE FROM orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).run();
+        removed = r?.meta?.changes ?? 0;
+    }
+    // Old order keys and counts are not needed any more
+    const old = new Date(Date.now() - KEY_DAYS * 86400000).toISOString();
+    await env.DB.batch([
+        env.DB.prepare('DELETE FROM order_keys WHERE created_at < ?').bind(old),
+        env.DB.prepare('DELETE FROM hits WHERE created_at < ?').bind(new Date(Date.now() - 86400000).toISOString()),
+    ]);
+    const waiting = await env.DB.prepare('SELECT COUNT(*) AS n FROM orders').first();
+    return json(env, 200, { ok: true, store: env.STORE_ID, removed, waiting: waiting?.n || 0 }, { 'Access-Control-Allow-Origin': 'null' });
 }
 
 async function health(env) {
@@ -199,12 +303,20 @@ export default {
     async fetch(request, env) {
         const url = new URL(request.url);
         try {
+            // HTTPS only (an http:// call is not answered with data)
+            if (url.protocol !== 'https:') return json(env, 403, { ok: false, error: 'https' });
             if (request.method === 'OPTIONS') {
                 return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': siteOrigin(env) || 'null', 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '600', ...SECURITY } });
             }
             if (url.pathname === '/api/health' && request.method === 'GET') return await health(env);
-            if (url.pathname === '/api/orders' && request.method === 'POST') return await createOrder(request, env);
+            if (url.pathname === '/api/orders' && request.method === 'POST') {
+                // From the shop's own website only (a browser always says where the form was)
+                const origin = request.headers.get('Origin');
+                if (origin && siteOrigin(env) && origin !== siteOrigin(env)) return json(env, 403, { ok: false, error: 'origin' });
+                return await createOrder(request, env);
+            }
             if (url.pathname === '/api/orders' && request.method === 'GET') return await listOrders(request, env, url);
+            if (url.pathname === '/api/orders/ack' && request.method === 'POST') return await ackOrders(request, env);
             if (url.pathname === '/' && request.method === 'GET' && env.SITE_URL) return backTo(env, './');
             return json(env, 404, { ok: false });
         } catch {

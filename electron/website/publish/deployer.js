@@ -33,11 +33,12 @@ const SCHEMA_UPGRADES = [
     "ALTER TABLE orders ADD COLUMN commune TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE orders ADD COLUMN delivery TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE orders ADD COLUMN items TEXT NOT NULL DEFAULT '[]'",
-    ...['first_name', 'last_name', 'courier_company', 'office_wilaya', 'office_commune', 'courier_office'].map(c => `ALTER TABLE orders ADD COLUMN ${c} TEXT NOT NULL DEFAULT ''`),
+    ...['first_name', 'last_name', 'courier_company', 'office_wilaya', 'office_commune', 'courier_office', 'order_key'].map(c => `ALTER TABLE orders ADD COLUMN ${c} TEXT NOT NULL DEFAULT ''`),
 ];
 
 const STEPS = ['repository', 'pages', 'database', 'worker', 'api', 'data', 'build', 'publish', 'live'];
 const KEY_ITEM = 'website-key';
+const STORE_ITEM = 'website-store';
 const TRIES = 5;
 const WAITS = { health: 60000, pages: 240000, site: 120000, every: 4000 };
 
@@ -95,6 +96,16 @@ function createDeployer(deps) {
             store.set(KEY_ITEM, key);
         }
         return key;
+    }
+
+    /** This shop's own id, sent with the shop key on every call (one shop, one Worker). */
+    function storeId() {
+        let id = store.get(STORE_ITEM);
+        if (!id) {
+            id = crypto.randomUUID();
+            store.set(STORE_ITEM, id);
+        }
+        return id;
     }
 
     const names = (base, suffix) => Array.from({ length: TRIES }, (_, i) => `${base}${suffix}${i ? `-${i + 1}` : ''}`);
@@ -171,6 +182,8 @@ function createDeployer(deps) {
             const bindings = [
                 { type: 'd1', name: 'DB', database_id: ctx.database.id },
                 { type: 'secret_text', name: 'SHOP_KEY', text: shopKey() },
+                // This shop's own id: Afus sends it on every call (never another shop's Worker)
+                { type: 'plain_text', name: 'STORE_ID', text: storeId() },
                 { type: 'plain_text', name: 'SITE_URL', text: ctx.siteUrl },
                 { type: 'plain_text', name: 'SHOP_NAME', text: ctx.shopName },
             ];
@@ -316,8 +329,9 @@ function createDeployer(deps) {
     const pending = () => job || Promise.resolve();
     const key = () => store.get(KEY_ITEM);
     const forgetKey = () => store.remove(KEY_ITEM);
+    const store_ = () => store.get(STORE_ITEM);
 
-    return { start, recheck, running, pending, blocker, key, forgetKey, STEPS };
+    return { start, recheck, running, pending, blocker, key, storeId: store_, forgetKey, STEPS };
 }
 
 module.exports = { createDeployer, STEPS, KEY_ITEM };

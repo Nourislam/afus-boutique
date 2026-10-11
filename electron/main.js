@@ -1894,8 +1894,19 @@ const website = createWebsiteService({
       return file && fs.existsSync(file) ? fs.readFileSync(file) : null;
     },
     log: (entry) => logService.write('info', `website ${JSON.stringify(entry)}`),
+    // The shop's API is https only; plain http only for the local test server (development)
+    allowHttp: !!cloudflareTestBase(),
   },
 });
+// The website's orders come into SQLite by themselves while the program is open
+// (first a little after it starts, then when the last sync says it is time)
+function websiteOrdersTick() {
+  website.syncIfDue()
+    .then((r) => { if (r?.reason && !['idle', 'later'].includes(r.reason)) logService.write('warn', `website orders sync: ${r.reason}`); })
+    .catch(() => logService.write('warn', 'website orders sync failed'))
+    .finally(() => setTimeout(websiteOrdersTick, 60 * 1000).unref?.());
+}
+setTimeout(websiteOrdersTick, 20 * 1000).unref?.();
 ipcMain.handle('website:getState', () => website.view());
 ipcMain.handle('website:preview', () => website.preview());
 ipcMain.handle('website:previewTheme', (_, args = {}) => website.previewTheme(args));

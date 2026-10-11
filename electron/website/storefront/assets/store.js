@@ -29,6 +29,8 @@
     }
     function writeCart(list) {
         try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, MAX_LINES))); } catch { /* private window: the cart lasts this page only */ }
+        // Another cart is another order: a new order key
+        try { sessionStorage.removeItem(ORDER_KEY); } catch { /* nothing kept */ }
         badges(list);
     }
     function count(list) { return list.reduce(function (n, l) { return n + (l.qty || 0); }, 0); }
@@ -375,6 +377,10 @@
         function recheck() { if (!checkAll() && msg) msg.hidden = true; }
         showDelivery();
 
+        // One key per order (kept until the thanks page): sent twice, it is still one order
+        var keyField = form.querySelector('[data-order-key]');
+        if (keyField) keyField.value = orderKey();
+
         var ready = false;
         loadCatalog().then(function (data) {
             var lines = linesOf(data);
@@ -412,9 +418,30 @@
         });
     }
 
-    /* After the order: the cart is empty again (only when the cart was sent) */
+    /* The order key of the checkout (idempotency): random, the same until the order is through */
+    var ORDER_KEY = 'afus-order-key-v1:' + base;
+    function randomKey() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        var bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        return Array.prototype.map.call(bytes, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    }
+    function orderKey() {
+        var key = null;
+        try { key = sessionStorage.getItem(ORDER_KEY); } catch { key = null; }
+        if (!key || !/^[A-Za-z0-9-]{16,64}$/.test(key)) {
+            key = randomKey();
+            try { sessionStorage.setItem(ORDER_KEY, key); } catch { /* private window: one key for this page */ }
+        }
+        return key;
+    }
+
+    /* After the order: the cart is empty again (only when the cart was sent), a new key next time */
     function afterOrder() {
-        if (document.body.classList.contains('page-thanks') && new URLSearchParams(location.search).get('cart') === '1') writeCart([]);
+        if (document.body.classList.contains('page-thanks') && new URLSearchParams(location.search).get('cart') === '1') {
+            writeCart([]);
+            try { sessionStorage.removeItem(ORDER_KEY); } catch { /* nothing kept */ }
+        }
     }
 
     function start() {

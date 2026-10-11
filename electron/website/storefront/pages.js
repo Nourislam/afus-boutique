@@ -127,7 +127,7 @@ function checkoutPage(ctx) {
         pageHead(ctx, ctx.t('checkout'), ctx.t('codOnly')),
         `<main class="container section checkout" data-checkout>`,
         `<form class="checkout-form" method="post" novalidate${ctx.orderUrl ? ` action="${esc(ctx.orderUrl)}"` : ''} accept-charset="utf-8" data-checkout-form>`,
-        `<input type="hidden" name="items" data-items value="[]"><input type="hidden" name="product_id" data-first-id value=""><input type="hidden" name="product_name" data-first-name value="">`,
+        `<input type="hidden" name="order_key" data-order-key value=""><input type="hidden" name="items" data-items value="[]"><input type="hidden" name="product_id" data-first-id value=""><input type="hidden" name="product_name" data-first-name value="">`,
         `<label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>`,
         `<div class="co-main">`,
         `<fieldset class="co-block"><legend class="co-title"><b>1</b>${esc(ctx.t('yourDetails'))}</legend><div class="fields">`,

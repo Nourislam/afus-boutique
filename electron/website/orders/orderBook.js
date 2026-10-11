@@ -74,6 +74,13 @@ function importOrders(api, remote = []) {
     return added;
 }
 
+/** Of these ids, the ones kept in SQLite (safe to remove from the website's waiting room). */
+function knownIds(api, ids) {
+    const list = [...new Set(ids.map(String))].filter(Boolean);
+    if (!list.length) return [];
+    return api.all(`SELECT id FROM website_orders WHERE id IN (${list.map(() => '?').join(',')})`, list).map(r => r.id);
+}
+
 function listOrders(api, { limit = 200, id = null } = {}) {
     const orders = api.all(`
         SELECT o.*, s.receipt_number FROM website_orders o LEFT JOIN sales s ON s.id = o.sale_id
@@ -153,4 +160,4 @@ function setStatus(api, { id, status, employeeId = null, now = new Date(), coded
     return { order: listOrders(api, { id: String(id) })[0], sale };
 }
 
-module.exports = { STATUSES, COMPLETED, importOrders, listOrders, setStatus, sqlTime };
+module.exports = { STATUSES, COMPLETED, importOrders, knownIds, listOrders, setStatus, sqlTime };

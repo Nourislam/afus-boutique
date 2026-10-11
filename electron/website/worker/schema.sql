@@ -1,7 +1,8 @@
 -- The shop's website database (Cloudflare D1, on the shop's own account).
 -- No article is kept here: the articles stay in Afus Boutique (SQLite) and
--- are published as pages. This holds what the website receives: order
--- requests from customers, and what was last published.
+-- are published as pages. A waiting room for the customers' orders: each
+-- one stays until Afus Boutique saved it in the shop's SQLite and said so
+-- (ack), then it is deleted. Also what was last published.
 CREATE TABLE IF NOT EXISTS orders (
     id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -25,10 +26,24 @@ CREATE TABLE IF NOT EXISTS orders (
     items TEXT NOT NULL DEFAULT '[]',
     note TEXT NOT NULL DEFAULT '',
     ip_hash TEXT NOT NULL DEFAULT '',
+    order_key TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'new'
 );
 CREATE INDEX IF NOT EXISTS orders_created ON orders (created_at);
 CREATE INDEX IF NOT EXISTS orders_ip ON orders (ip_hash, created_at);
+-- The checkout's order keys (idempotency), kept 30 days after the order
+CREATE TABLE IF NOT EXISTS order_keys (
+    order_key TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+-- Counts for the limits (orders, wrong keys) per place (hashed), kept one day
+CREATE TABLE IF NOT EXISTS hits (
+    kind TEXT NOT NULL,
+    who TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS hits_who ON hits (kind, who, created_at);
 CREATE TABLE IF NOT EXISTS site_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

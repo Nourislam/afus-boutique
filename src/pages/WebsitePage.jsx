@@ -791,6 +791,15 @@ function WebsiteOrders() {
                 <Button size="sm" variant="secondary" onClick={load} loading={state.loading} data-testid="website-orders-refresh"><RefreshCw className="w-4 h-4" /> {t('website.orders.refresh')}</Button>
             </div>
             <p className="text-xs text-zinc-500">{t('website.orders.hint')}</p>
+            {data?.sync?.lastAt && (
+                <p className="text-xs text-zinc-400" data-testid="website-orders-sync" data-ok={data.sync.ok ? '1' : '0'}>
+                    {data.sync.ok
+                        ? t('website.orders.syncOk', { when: formatDate(data.sync.lastAt, 'datetime') })
+                        : t('website.orders.syncRetry', { when: formatDate(data.sync.nextAt, 'datetime') })}
+                    {data.sync.waiting > 0 && <span className="ms-2 text-amber-300">{t('website.orders.syncWaiting', { n: data.sync.waiting })}</span>}
+                    {data.sync.legacy && <span className="block text-amber-300">{t('website.orders.syncLegacy')}</span>}
+                </p>
+            )}
             {data && (!data.ok || data.synced === false) && data.reason && <p className="text-sm text-amber-300">{t(`website.orders.reason.${data.reason || 'network'}`)}</p>}
             {data?.ok && data.orders.length === 0 && <p className="text-sm text-zinc-500">{t('website.orders.none')}</p>}
             {data?.ok && data.orders.length > 0 && (

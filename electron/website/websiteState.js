@@ -44,6 +44,8 @@ const DEFAULT_STATE = Object.freeze({
     // Optional own domain: the website always works on the free address first
     domain: { name: '', status: 'none', addedAt: null },
     publishedAt: null,
+    // Bringing the website's orders into the shop's SQLite (website/orders + websiteService.syncOrders)
+    sync: { lastAt: null, lastOkAt: null, ok: null, reason: null, failures: 0, nextAt: null, received: 0, waiting: 0, legacy: false },
     lastUpdate: null, // { at, products, available, onSale, withImages, categories, published }
     lastError: null,
 });
@@ -75,6 +77,18 @@ function normalizeState(saved) {
         publicInfo: publicInfo(s.publicInfo),
         site: siteOf(s.site),
         deploy: deployOf(s.deploy),
+        sync: syncOf(s.sync),
+    };
+}
+
+const SYNC_REASONS = ['network', 'key', 'busy', 'store', 'insecure', 'save', 'ack'];
+function syncOf(x) {
+    const n = (v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+    const at = (v) => (isText(v, 40) ? v : null);
+    return {
+        lastAt: at(x?.lastAt), lastOkAt: at(x?.lastOkAt), ok: typeof x?.ok === 'boolean' ? x.ok : null,
+        reason: SYNC_REASONS.includes(x?.reason) ? x.reason : null, failures: n(x?.failures), nextAt: at(x?.nextAt),
+        received: n(x?.received), waiting: n(x?.waiting), legacy: x?.legacy === true,
     };
 }
 

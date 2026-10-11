@@ -54,6 +54,8 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
                 readImage: (name) => (name === 'jean-1.jpg' || name === 'logo.png' ? JPEG : null),
                 waits: { health: 2000, pages: 3000, site: 2000, every: 20 },
                 log: (e) => logs.push(e),
+                // The fake cloud is a local http server (the program itself: https only)
+                allowHttp: true,
             },
         });
         return { service, store };
@@ -139,7 +141,7 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         // Cloudflare: one D1 database with the website's tables, one Worker with its bindings
         expect([...cloud.cf.databases.values()].map(d => d.name)).toEqual(['boutique-yasmine-db']);
         const db = [...cloud.cf.databases.values()][0].db;
-        expect(db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")[0].values.flat()).toEqual(['orders', 'site_meta']);
+        expect(db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")[0].values.flat()).toEqual(['hits', 'order_keys', 'orders', 'site_meta']);
         expect(db.exec("SELECT value FROM site_meta WHERE key='published_at'")[0].values[0][0]).toBe(v.publishedAt);
         const worker = cloud.cf.scripts.get('boutique-yasmine-api');
         expect(worker.enabled).toBe(true);
@@ -440,7 +442,7 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         const v = service.view();
         expect(v.deploy).toMatchObject({ status: 'failed', reason: 'interrupted' });
         expect(v.deploy.steps[1]).toMatchObject({ status: 'failed', reason: 'interrupted' });
-        expect((await service.orders())).toEqual({ ok: false, reason: 'not_published', orders: [] });
+        expect((await service.orders())).toMatchObject({ ok: false, reason: 'not_published', orders: [] });
         for (const ch of ['website:publish', 'website:recheck', 'website:orders', 'website:openSite']) {
             expect(ipcGuard.allows(ipcGuard.RULES[ch], { id: 'a', role: 'admin' }), ch).toBe(true);
             expect(ipcGuard.allows(ipcGuard.RULES[ch], { id: 'm', role: 'manager' }), ch).toBe(false);
