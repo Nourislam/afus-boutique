@@ -443,6 +443,15 @@ const MIGRATIONS = [
             db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_website_orders_sale ON website_orders(sale_id) WHERE sale_id IS NOT NULL');
         },
     },
+    {
+        version: '2026_10_website_orders_courier',
+        description: "Website orders: first and last name, delivery to a courier company's office",
+        up(db) {
+            for (const column of ['first_name', 'last_name', 'courier_company', 'office_wilaya', 'office_commune', 'courier_office']) {
+                addColumnIfMissing(db, 'website_orders', column, "TEXT NOT NULL DEFAULT ''");
+            }
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

@@ -40,14 +40,16 @@
         });
     }
     function sameLine(a, b) { return a.id === b.id && (a.color || '') === (b.color || '') && (a.size || '') === (b.size || ''); }
+    /** Adds to the cart (same article, colour and size: one line); 'capped' when 20 was reached. */
     function addLine(line) {
         var list = readCart();
         var found = list.filter(function (l) { return sameLine(l, line); })[0];
-        if (found) found.qty = Math.min(MAX_QTY, found.qty + line.qty);
+        var capped = false;
+        if (found) { capped = found.qty + line.qty > MAX_QTY; found.qty = Math.min(MAX_QTY, found.qty + line.qty); }
         else if (list.length < MAX_LINES) list.push(line);
         else return false;
         writeCart(list);
-        return true;
+        return capped ? 'capped' : true;
     }
 
     function loadCatalog() {
@@ -132,10 +134,16 @@
             if ((hasColors && !color) || (hasSizes && !size)) { say(texts.chooseFirst || '', false); return; }
             if (variants.length && !available(color, size)) { say(texts.notThisOne || '', false); return; }
             var qtyInput = form.querySelector('input[name="qty"]');
-            var qty = Math.min(MAX_QTY, Math.max(1, parseInt(qtyInput && qtyInput.value, 10) || 1));
-            if (!addLine({ id: form.getAttribute('data-id'), color: color, size: size, qty: qty })) return;
+            var asked = parseInt(qtyInput && qtyInput.value, 10);
+            if (!(asked >= 1 && asked <= MAX_QTY)) {
+                if (qtyInput) qtyInput.value = String(Math.min(MAX_QTY, Math.max(1, asked || 1)));
+                say(texts.maxQty || '', false);
+                return;
+            }
+            var added = addLine({ id: form.getAttribute('data-id'), color: color, size: size, qty: asked });
+            if (!added) return;
             if (action === 'buy') { location.href = base + 'checkout.html'; return; }
-            say(texts.added || '', true, { label: texts.viewCart || '', href: base + 'cart.html' });
+            say(added === 'capped' ? texts.maxQty || '' : texts.added || '', added !== 'capped', { label: texts.viewCart || '', href: base + 'cart.html' });
         });
         refresh();
     }
@@ -231,6 +239,9 @@
     }
     function lineNode(item, data, tools, onChange) {
         var row = el('div', 'cart-line');
+        row.setAttribute('data-id', item.line.id);
+        row.setAttribute('data-color', item.line.color || '');
+        row.setAttribute('data-size', item.line.size || '');
         var img = el('img');
         img.src = item.product.image;
         img.alt = '';
@@ -249,7 +260,10 @@
             [minus, plus, remove].forEach(function (b) { b.type = 'button'; });
             minus.setAttribute('aria-label', '-1');
             plus.setAttribute('aria-label', '+1');
-            minus.addEventListener('click', function () { onChange(item.line, item.line.qty - 1); });
+            // 1 to 20 pieces a line; "remove" takes the line out
+            minus.disabled = item.line.qty <= 1;
+            plus.disabled = item.line.qty >= MAX_QTY;
+            minus.addEventListener('click', function () { onChange(item.line, Math.max(1, item.line.qty - 1)); });
             plus.addEventListener('click', function () { onChange(item.line, Math.min(MAX_QTY, item.line.qty + 1)); });
             remove.addEventListener('click', function () { onChange(item.line, 0); });
             box.appendChild(minus);
@@ -293,10 +307,75 @@
         draw();
     }
 
+    /* Same rules as the shop's API (worker.mjs) */
+    function algerianPhone(text) {
+        var d = String(text || '').replace(/[\s.-]/g, '');
+        if (/[^\d+]/.test(d)) return '';
+        d = d.replace(/^(\+|00)213/, '0');
+        return /^0[5-7]\d{8}$/.test(d) || /^0[1-49]\d{7}$/.test(d) ? d : '';
+    }
+    var CHECKS = {
+        first_name: ['errName', function (v) { return v.length >= 2; }],
+        last_name: ['errName', function (v) { return v.length >= 2; }],
+        phone: ['errPhone', function (v) { return !!algerianPhone(v); }],
+        wilaya: ['errWilaya', function (v) { return !!v; }],
+        commune: ['errCommune', function (v) { return v.length >= 2; }],
+        address: ['errAddress', function (v) { return v.length >= 3; }],
+        courier_company: ['errCourier', function (v) { return !!v; }],
+        office_wilaya: ['errWilaya', function (v) { return !!v; }],
+        office_commune: ['errCommune', function (v) { return v.length >= 2; }],
+        courier_office: ['errOffice', function (v) { return v.length >= 2; }],
+    };
+
     function setupCheckout(root) {
         var form = root.querySelector('[data-checkout-form]');
         if (!form) return;
+        var texts = window.AFUS_TEXTS || {};
         var sending = false;
+        var tried = false;
+        var msg = form.querySelector('[data-form-msg]');
+
+        // Home delivery: the address; courier office: company, wilaya, commune, office
+        function delivery() { var c = form.querySelector('input[name="delivery"]:checked'); return c ? c.value : 'home'; }
+        var live = !(form.querySelector('[data-confirm]') || {}).disabled;
+        function showDelivery() {
+            if (!live) return;
+            var chosen = delivery();
+            form.querySelectorAll('[data-when]').forEach(function (block) {
+                var on = block.getAttribute('data-when') === chosen;
+                block.hidden = !on;
+                block.querySelectorAll('input, select, textarea').forEach(function (f) { f.disabled = !on; });
+            });
+        }
+        function check(name) {
+            var f = form.elements[name];
+            if (!f || !CHECKS[name]) return true;
+            // A field of the delivery not chosen: nothing to say about it
+            var ok = f.disabled || CHECKS[name][1](String(f.value || '').trim());
+            var box = form.querySelector('[data-field="' + name + '"]');
+            var err = form.querySelector('[data-err-for="' + name + '"]');
+            if (box) box.classList.toggle('is-bad', !ok);
+            if (err) { err.textContent = ok ? '' : texts[CHECKS[name][0]] || ''; err.hidden = ok; }
+            f.setAttribute('aria-invalid', ok ? 'false' : 'true');
+            return ok;
+        }
+        function checkAll() {
+            var first = null;
+            Object.keys(CHECKS).forEach(function (name) { if (!check(name) && !first) first = form.elements[name]; });
+            return first;
+        }
+        form.addEventListener('change', function (e) {
+            if (e.target.name === 'delivery') showDelivery();
+            // The office is usually in the customer's wilaya
+            if (e.target.name === 'wilaya' && form.elements.office_wilaya && !form.elements.office_wilaya.value) form.elements.office_wilaya.value = e.target.value;
+            if (tried) recheck(); else if (e.target.name) check(e.target.name);
+        });
+        form.addEventListener('input', function (e) { if (tried && e.target.name) { check(e.target.name); recheck(); } });
+        // After a first try: the message under the button goes once all is right
+        function recheck() { if (!checkAll() && msg) msg.hidden = true; }
+        showDelivery();
+
+        var ready = false;
         loadCatalog().then(function (data) {
             var lines = linesOf(data);
             var box = root.querySelector('[data-summary-lines]');
@@ -305,8 +384,7 @@
             fillSum(root, data, lines);
             root.classList.toggle('is-empty', lines.length === 0);
             if (!lines.length) {
-                var p = el('p', 'empty', data.texts.cartEmpty);
-                box.appendChild(p);
+                box.appendChild(el('p', 'empty', data.texts.cartEmpty));
                 return;
             }
             form.querySelector('[data-items]').value = JSON.stringify(lines.map(function (i) {
@@ -314,13 +392,23 @@
             }));
             form.querySelector('[data-first-id]').value = lines[0].product.id;
             form.querySelector('[data-first-name]').value = lines[0].product.name + (lines.length > 1 ? ' +' + (lines.length - 1) : '');
+            ready = true;
         }).catch(function () { root.classList.add('is-empty'); });
+
         form.addEventListener('submit', function (e) {
-            var items = form.querySelector('[data-items]').value;
-            if (sending || !items || items === '[]') { e.preventDefault(); return; }
+            tried = true;
+            var first = checkAll();
+            if (sending || !ready || first) {
+                e.preventDefault();
+                if (first && msg) { msg.textContent = texts.errForm || ''; msg.hidden = false; }
+                if (first) first.focus();
+                return;
+            }
+            if (msg) msg.hidden = true;
             sending = true;
             var button = form.querySelector('[data-confirm]');
-            if (button) button.disabled = true;
+            // Sent once (a second press would send a second order)
+            if (button) setTimeout(function () { button.disabled = true; }, 0);
         });
     }
 

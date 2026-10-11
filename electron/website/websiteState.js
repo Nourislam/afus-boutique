@@ -38,7 +38,7 @@ const DEFAULT_STATE = Object.freeze({
     // The published website: its address and what was published
     site: {}, // { url, commit, hash, builtAt, publishedAt, pending, summary }
     // What the owner wrote for the website only (opening hours, social links, map)
-    publicInfo: { hours: [], social: {}, mapUrl: '' },
+    publicInfo: { hours: [], social: {}, mapUrl: '', couriers: [] },
     // The last Create Website / Update website run, step by step
     deploy: { status: 'idle', steps: [], startedAt: null, finishedAt: null, failedStep: null, reason: null },
     // Optional own domain: the website always works on the free address first

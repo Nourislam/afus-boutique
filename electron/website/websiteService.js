@@ -33,6 +33,7 @@ const { createDeployer } = require('./publish/deployer');
 const { canPublishPages } = require('./github');
 const publishPing = require('./publish/ping');
 const orderBook = require('./orders/orderBook');
+const { COURIERS } = require('./storefront/couriers');
 const fs = require('fs');
 const path = require('path');
 
@@ -179,6 +180,8 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return {
             ...s,
             site: { url: saved.site.url || null, publishedAt: saved.site.publishedAt || null, pending: !!saved.site.pending, summary: saved.site.summary || null },
+            // Delivery companies the shop can offer for pick up at their office
+            couriersList: COURIERS.map(([id, name]) => ({ id, name })),
             status: state.statusOf(s),
             steps: state.stepsOf(s),
             freeUrl: saved.site.url || state.freeUrl(s.name, owner),
@@ -457,8 +460,10 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             moneyReceivedAt: o.money_received_at || null, receipt: o.receipt_number || null,
             productId: first.productId || '', productName: first.productName || '', size: first.size || '', color: first.color || '',
             quantity: items.reduce((n, i) => n + i.quantity, 0),
-            customerName: o.customer_name, phone: o.phone, wilaya: o.wilaya, commune: o.commune, address: o.address, note: o.note,
-            delivery: o.delivery, items,
+            customerName: o.customer_name || [o.first_name, o.last_name].filter(Boolean).join(' '), firstName: o.first_name || '', lastName: o.last_name || '',
+            phone: o.phone, wilaya: o.wilaya, commune: o.commune, address: o.address, note: o.note, delivery: o.delivery,
+            courier: o.delivery === 'office' ? { company: o.courier_company, wilaya: o.office_wilaya, commune: o.office_commune, office: o.courier_office } : null,
+            items,
         };
     }
 

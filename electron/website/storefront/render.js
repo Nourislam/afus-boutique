@@ -30,7 +30,8 @@ const STYLE = 'assets/store.css';
 const SCRIPT = 'assets/store.js';
 
 /** The few words the website's script writes (cart messages). */
-const SCRIPT_TEXTS = ['added', 'chooseFirst', 'notThisOne', 'viewCart', 'remove', 'cartEmpty'];
+const SCRIPT_TEXTS = ['added', 'chooseFirst', 'notThisOne', 'viewCart', 'remove', 'cartEmpty', 'maxQty',
+    'errName', 'errPhone', 'errWilaya', 'errCommune', 'errAddress', 'errCourier', 'errOffice', 'errForm'];
 const scriptTexts = (t) => Object.fromEntries(SCRIPT_TEXTS.map(k => [k, t(k)]));
 
 /** Where each page lives on the published website (all in one folder). */

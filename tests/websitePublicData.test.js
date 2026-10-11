@@ -106,6 +106,8 @@ describe('website public data: SQLite internal -> website public', () => {
         expect(shop).toEqual({
             name: 'Boutique Yasmine', logo: 'logo.png', description: 'Mode femme à Alger', phone: '0555 12 34 56', email: 'contact@yasmine.dz',
             address: '12 rue Didouche', city: 'Alger', wilaya: 'Alger', currency: 'DZD', language: 'fr', hours: [], social: {}, mapUrl: '',
+            // No courier ticked on the Website screen: every company is offered
+            couriers: ['Yalidine', 'ZR Express', 'Maystro Delivery', 'Noest Express', 'Guepex', 'World Express', 'Procolis', 'EMS Algérie Poste'],
         });
     });
 
@@ -209,19 +211,22 @@ describe('website public data: SQLite internal -> website public', () => {
             hours: 'Samedi – jeudi : 9 h – 20 h\n\nVendredi : fermé\u0007',
             social: { facebook: 'https://www.facebook.com/boutique.yasmine', instagram: 'http://instagram.com/x', tiktok: 'javascript:alert(1)' },
             mapUrl: 'https://maps.app.goo.gl/abc123',
+            couriers: ['yalidine', 'zr-express', 'yalidine', 'unknown-co', 42],
         })).toEqual({
             hours: ['Samedi – jeudi : 9 h – 20 h', 'Vendredi : fermé'],
             social: { facebook: 'https://www.facebook.com/boutique.yasmine' },
             mapUrl: 'https://maps.app.goo.gl/abc123',
+            // Known companies only, each once
+            couriers: ['yalidine', 'zr-express'],
         });
-        expect(publicInfo({ social: { facebook: 'https://facebook.com.evil.example/x', instagram: 'https://user:pw@instagram.com/x' }, mapUrl: 'https://evil.example/maps' })).toEqual({ hours: [], social: {}, mapUrl: '' });
+        expect(publicInfo({ social: { facebook: 'https://facebook.com.evil.example/x', instagram: 'https://user:pw@instagram.com/x' }, mapUrl: 'https://evil.example/maps' })).toEqual({ hours: [], social: {}, mapUrl: '', couriers: [] });
 
         const settings = { website: { created: true, name: 'boutique-yasmine', theme: 'classic' } };
         const service = createWebsiteService({ api, getSetting: (k) => settings[k] ?? null, saveSetting: (k, v) => { settings[k] = JSON.parse(JSON.stringify(v)); }, codedError: catalog.codedError });
         const before = api.all('SELECT * FROM settings ORDER BY key');
         const r = service.setPublicInfo({ hours: 'Tous les jours 9h-21h', social: { instagram: 'https://instagram.com/yasmine', tiktok: 'https://evil.example' }, mapUrl: 'https://www.google.com/maps/place/Alger' });
         expect(r.result.refused).toEqual(['tiktok']);
-        expect(r.publicInfo).toEqual({ hours: ['Tous les jours 9h-21h'], social: { instagram: 'https://instagram.com/yasmine' }, mapUrl: 'https://www.google.com/maps/place/Alger' });
+        expect(r.publicInfo).toEqual({ hours: ['Tous les jours 9h-21h'], social: { instagram: 'https://instagram.com/yasmine' }, mapUrl: 'https://www.google.com/maps/place/Alger', couriers: [] });
         // The shop's own settings are not touched
         expect(api.all('SELECT * FROM settings ORDER BY key')).toEqual(before);
         const html = service.previewTheme({ page: 'home' }).html;

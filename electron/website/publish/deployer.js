@@ -33,6 +33,7 @@ const SCHEMA_UPGRADES = [
     "ALTER TABLE orders ADD COLUMN commune TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE orders ADD COLUMN delivery TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE orders ADD COLUMN items TEXT NOT NULL DEFAULT '[]'",
+    ...['first_name', 'last_name', 'courier_company', 'office_wilaya', 'office_commune', 'courier_office'].map(c => `ALTER TABLE orders ADD COLUMN ${c} TEXT NOT NULL DEFAULT ''`),
 ];
 
 const STEPS = ['repository', 'pages', 'database', 'worker', 'api', 'data', 'build', 'publish', 'live'];

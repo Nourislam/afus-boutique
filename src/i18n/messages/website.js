@@ -168,6 +168,9 @@ export default {
     'website.orders.recordSale': ["Money received: record the sale", "Argent reçu : enregistrer la vente", "تم استلام المال: سجّل البيع"],
     'website.orders.saleRecorded': ["Sale recorded: ticket {receipt}", "Vente enregistrée : ticket {receipt}", "تم تسجيل البيع: التذكرة {receipt}"],
     'website.orders.ticket': ["Ticket", "Ticket", "التذكرة"],
+    'website.orders.delivery.office': ["Picks up at a courier office", "Retrait au bureau du transporteur", "يستلم من مكتب شركة التوصيل"],
+    'website.info.couriers': ["Delivery companies you work with (pick up at their office)", "Sociétés de livraison avec qui vous travaillez (retrait au bureau)", "شركات التوصيل التي تتعامل معها (الاستلام من مكتبها)"],
+    'website.info.couriersHint': ["The customer chooses one of them on the website. None ticked: all are offered.", "Le client en choisit une sur le site. Aucune cochée : toutes sont proposées.", "يختار الزبون واحدة منها في الموقع. إن لم تختر أي شركة تُعرض كلها."],
     'website.orders.delivery.home': ["Home delivery", "Livraison à domicile", "توصيل إلى المنزل"],
     'website.orders.delivery.pickup': ["Picks up at the shop", "Retrait en boutique", "يستلم من المحل"],
 

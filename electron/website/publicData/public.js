@@ -13,6 +13,7 @@
  *     links, map), kept in the website's settings
  */
 const { labelSalePrice, parseIds, isPromotionLive } = require('../../shared/promotions.mjs');
+const { COURIER_IDS, courierNames } = require('../storefront/couriers');
 
 const VERSION = 1;
 const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(jpe?g|png|webp|gif)$/i;
@@ -60,6 +61,8 @@ function publicInfo(info = {}) {
         hours,
         social: Object.fromEntries(Object.entries(SOCIAL_HOSTS).map(([k, hosts]) => [k, link(info.social?.[k], hosts)]).filter(([, v]) => v)),
         mapUrl: link(info.mapUrl, MAP_HOSTS),
+        // The delivery companies the shop works with (ids of storefront/couriers.js)
+        couriers: [...new Set((Array.isArray(info.couriers) ? info.couriers : []).filter(id => COURIER_IDS.includes(id)))],
     };
 }
 
@@ -79,6 +82,7 @@ function shopOf(store, info, pic) {
         hours: extra.hours,
         social: extra.social,
         mapUrl: extra.mapUrl,
+        couriers: courierNames(extra.couriers),
     };
 }
 
@@ -154,6 +158,7 @@ const PUBLIC_SHAPE = {
     shop: {
         name: 'string', logo: 'string', description: 'string', phone: 'string', email: 'string', address: 'string', city: 'string', wilaya: 'string',
         currency: 'string', language: 'string', hours: { '*': 'string' }, social: { facebook: 'string', instagram: 'string', tiktok: 'string' }, mapUrl: 'string',
+        couriers: { '*': 'string' },
     },
     categories: { '*': { id: 'string', name: 'string', count: 'number' } },
     brands: { '*': 'string' },

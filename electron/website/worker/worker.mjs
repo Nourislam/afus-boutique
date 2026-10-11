@@ -18,11 +18,17 @@
  * No article, price or stock is kept here: the articles are the shop's, in
  * Afus Boutique, which checks every request against them.
  */
-const LIMITS = { product_id: 80, product_name: 160, size: 40, color: 40, customer_name: 80, phone: 20, wilaya: 60, commune: 60, address: 200, note: 500 };
+const LIMITS = {
+    product_id: 80, product_name: 160, size: 40, color: 40, customer_name: 80, first_name: 40, last_name: 40, phone: 20, wilaya: 60, commune: 60, address: 200, note: 500,
+    courier_company: 60, office_wilaya: 60, office_commune: 60, courier_office: 120,
+};
 const ITEM_LIMITS = { product_id: 80, product_name: 160, size: 40, color: 40 };
 const MAX_ITEMS = 30;
 const MAX_QTY = 20;
-const DELIVERY = ['home', 'pickup'];
+// home: to the customer's address; office: picked up at a courier company's office
+// (pickup: at the shop, sent by websites made before the courier offices)
+const DELIVERY = ['home', 'office', 'pickup'];
+const WILAYA = /^(0?[1-9]|[1-5]\d) - \S/;
 const MAX_BODY = 64 * 1024; // a full cart, form-encoded (Arabic names take 9 bytes a letter)
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX = 5;
@@ -68,6 +74,21 @@ async function sha256(text) {
 
 const clean = (value, max) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
 
+/** "16 - Alger" -> 16 (one of the 58 wilayas), else 0. */
+function wilayaCode(text) {
+    if (!WILAYA.test(text)) return 0;
+    const n = parseInt(text, 10);
+    return n >= 1 && n <= 58 ? n : 0;
+}
+
+/** An Algerian number: mobile 05/06/07 + 8 digits, or fixed 0 + 8 digits; +213 / 00213 accepted. */
+function algerianPhone(text) {
+    let d = String(text || '').replace(/[\s.-]/g, '');
+    if (/[^\d+]/.test(d)) return '';
+    d = d.replace(/^(\+|00)213/, '0');
+    return /^0[5-7]\d{8}$/.test(d) || /^0[1-49]\d{7}$/.test(d) ? d : '';
+}
+
 /** The cart's lines (JSON text or list), checked; null when there is none, false when wrong. */
 function readItems(value) {
     if (value === undefined || value === null || value === '' || value === '[]') return null;
@@ -104,11 +125,22 @@ function readOrder(fields) {
         order.quantity = items.reduce((n, i) => n + i.quantity, 0);
     }
     order.delivery = DELIVERY.includes(fields.delivery) ? fields.delivery : '';
-    const digits = order.phone.replace(/\D/g, '');
     if (!order.product_id) return { error: 'product' };
-    if (order.customer_name.length < 2) return { error: 'name' };
-    if (digits.length < 8 || digits.length > 15) return { error: 'phone' };
-    order.phone = digits;
+    // The checkout: first and last name, an Algerian phone, wilaya and commune,
+    // and what the chosen delivery needs (older forms send one name)
+    const checkout = !!(order.first_name || order.last_name);
+    if (checkout) {
+        if (order.first_name.length < 2 || order.last_name.length < 2) return { error: 'name' };
+        order.customer_name = `${order.first_name} ${order.last_name}`.slice(0, LIMITS.customer_name);
+        if (!wilayaCode(order.wilaya) || order.commune.length < 2) return { error: 'place' };
+        if (order.delivery === 'home' && order.address.length < 3) return { error: 'address' };
+        if (order.delivery === 'office' && (order.courier_company.length < 2 || !wilayaCode(order.office_wilaya) || order.office_commune.length < 2 || order.courier_office.length < 2)) return { error: 'office' };
+        if (!['home', 'office'].includes(order.delivery)) return { error: 'delivery' };
+    } else if (order.customer_name.length < 2) return { error: 'name' };
+    if (order.delivery !== 'office') { order.courier_company = ''; order.office_wilaya = ''; order.office_commune = ''; order.courier_office = ''; }
+    const phone = algerianPhone(order.phone);
+    if (!phone) return { error: 'phone' };
+    order.phone = phone;
     return { order };
 }
 
@@ -135,10 +167,13 @@ async function createOrder(request, env) {
     if ((recent?.n || 0) >= RATE_MAX) return isForm ? backTo(env, 'order-error.html') : json(env, 429, { ok: false, error: 'too_many' });
 
     const id = crypto.randomUUID();
-    await env.DB.prepare(`INSERT INTO orders (id, created_at, product_id, product_name, size, color, quantity, customer_name, phone, wilaya, commune, address, delivery, items, note, ip_hash)
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    // An order request only: nothing is sold and no stock moves here (Afus Boutique decides)
+    await env.DB.prepare(`INSERT INTO orders (id, created_at, product_id, product_name, size, color, quantity, customer_name, first_name, last_name, phone, wilaya, commune, address, delivery,
+                          courier_company, office_wilaya, office_commune, courier_office, items, note, ip_hash)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(id, new Date().toISOString(), order.product_id, order.product_name, order.size, order.color, order.quantity,
-            order.customer_name, order.phone, order.wilaya, order.commune, order.address, order.delivery, JSON.stringify(order.items), order.note, ipHash)
+            order.customer_name, order.first_name, order.last_name, order.phone, order.wilaya, order.commune, order.address, order.delivery,
+            order.courier_company, order.office_wilaya, order.office_commune, order.courier_office, JSON.stringify(order.items), order.note, ipHash)
         .run();
     // From the cart: the thanks page empties it
     return isForm ? backTo(env, order.items.length ? 'thanks.html?cart=1' : 'thanks.html') : json(env, 201, { ok: true, id });
@@ -149,7 +184,8 @@ async function listOrders(request, env, url) {
     if (!env.SHOP_KEY || !sameText(auth.replace(/^Bearer\s+/i, ''), env.SHOP_KEY)) return json(env, 401, { ok: false });
     const since = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(url.searchParams.get('since') || '') ? url.searchParams.get('since') : '1970-01-01T00:00:00.000Z';
     const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 100));
-    const { results } = await env.DB.prepare(`SELECT id, created_at, product_id, product_name, size, color, quantity, customer_name, phone, wilaya, commune, address, delivery, items, note, status
+    const { results } = await env.DB.prepare(`SELECT id, created_at, product_id, product_name, size, color, quantity, customer_name, first_name, last_name, phone, wilaya, commune, address, delivery,
+                                              courier_company, office_wilaya, office_commune, courier_office, items, note, status
                                               FROM orders WHERE created_at > ? ORDER BY created_at LIMIT ?`).bind(since, limit).all();
     return json(env, 200, { ok: true, orders: results || [] }, { 'Access-Control-Allow-Origin': 'null' });
 }

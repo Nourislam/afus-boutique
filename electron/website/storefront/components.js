@@ -200,37 +200,6 @@ function orderButtons(ctx, p) {
     );
 }
 
-/**
- * The order form of an article page: a plain form (no script) sent to the
- * shop's own website API, which keeps the request for the shop to call back.
- * In the program's preview it is shown, disabled.
- */
-function orderForm(ctx, p) {
-    if (!ctx.orderUrl && !ctx.preview) return '';
-    const { colors, sizes } = optionsOf(p);
-    const off = ctx.preview ? ' disabled' : '';
-    const select = (name, label, items) => items.length
-        ? `<label class="field"><span>${esc(label)}</span><select name="${name}" required${off}>${items.filter(i => i.available).map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('')}</select></label>`
-        : '';
-    return html(
-        `<form class="order-form" method="post"${ctx.preview ? '' : ` action="${esc(ctx.orderUrl)}"`} accept-charset="utf-8">`,
-        `<h2 class="opt-title">${esc(ctx.t('orderTitle'))}</h2><p class="hint">${esc(ctx.t('orderHint'))}</p>`,
-        `<input type="hidden" name="product_id" value="${esc(p.id)}"><input type="hidden" name="product_name" value="${esc(p.name)}">`,
-        // A field people never see: robots fill it, the API then refuses the request
-        `<label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>`,
-        `<div class="fields">`,
-        select('size', ctx.t('chooseSize'), sizes),
-        select('color', ctx.t('chooseColor'), colors),
-        `<label class="field"><span>${esc(ctx.t('quantity'))}</span><input name="quantity" type="number" min="1" max="20" value="1"${off}></label>`,
-        `<label class="field"><span>${esc(ctx.t('yourName'))}</span><input name="customer_name" required minlength="2" maxlength="80" autocomplete="name"${off}></label>`,
-        `<label class="field"><span>${esc(ctx.t('yourPhone'))}</span><input name="phone" type="tel" required minlength="8" maxlength="20" autocomplete="tel" dir="ltr"${off}></label>`,
-        `<label class="field"><span>${esc(ctx.t('wilaya'))}</span><input name="wilaya" maxlength="60"${off}></label>`,
-        `<label class="field field-wide"><span>${esc(ctx.t('addressField'))}</span><input name="address" maxlength="200" autocomplete="street-address"${off}></label>`,
-        `<label class="field field-wide"><span>${esc(ctx.t('note'))}</span><textarea name="note" rows="2" maxlength="500"${off}></textarea></label>`,
-        `</div><button class="btn btn-primary" type="submit"${off}>${esc(ctx.t('send'))}</button></form>`,
-    );
-}
-
 /** After an order request: thanks, or why it was not sent. */
 function messagePage(ctx, kind) {
     const ok = kind === 'thanks';
@@ -302,7 +271,6 @@ function productPage(ctx, p) {
         `<p class="stock ${p.available ? 'is-in' : 'is-out'}">${esc(p.available ? ctx.t('inStock') : ctx.t('soldOut'))}</p>`,
         p.available ? addToCart(ctx, p, colors, sizes) : html(colorBlock, sizeBlock),
         p.available && orderButtons(ctx, p),
-        p.available && (ctx.orderUrl || ctx.preview) && `<details class="order-direct"><summary>${esc(ctx.t('orderDirect'))}</summary>${orderForm(ctx, p)}</details>`,
         p.description && `<div class="pdp-desc">${esc(p.description).replace(/\n/g, '<br>')}</div>`,
         `</div></main>`,
         related.length && `<section class="container section"><h2 class="section-title">${esc(ctx.t('related'))}</h2>${productGrid(ctx, related, { columns: Math.min(4, ctx.theme.categoryPage.desktopColumns) })}</section>`,
@@ -327,4 +295,4 @@ function categoryPage(ctx, id) {
     );
 }
 
-module.exports = { bottomBar, cartLink, ICONS, categoryName, shopExtras, messagePage, orderForm, productCard, productGrid, header, footer, productPage, categoryPage, bestPromotion, onSale, optionsOf, navItems, priceOf };
+module.exports = { bottomBar, cartLink, ICONS, categoryName, shopExtras, messagePage, productCard, productGrid, header, footer, productPage, categoryPage, bestPromotion, onSale, optionsOf, navItems, priceOf };

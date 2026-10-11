@@ -123,7 +123,8 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         expect(all).not.toContain(store.get('website-key'));
         const product = files.get('product-jean.html').toString();
         const orderUrl = `${cloud.base}/w/boutique-yasmine-api/api/orders`;
-        expect(product).toContain(`action="${orderUrl}"`);
+        // Orders go through the cart and checkout (no order form on the article page)
+        expect(product).not.toContain(`action="${orderUrl}"`);
         expect(product).toContain(`form-action ${cloud.base}`);
         // One script, the website's own file; the cart's checkout sends to the shop's API too
         expect([...product.matchAll(/<script[^>]*>/g)].map(m => m[0])).toEqual(['<script src="assets/store.js" defer>']);
@@ -265,6 +266,41 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         mode = null;
         // Owner only
         expect(ipcGuard.RULES['website:setOrderStatus']).toBe('admin');
+    });
+
+    it('checkout (cash on delivery): first / last name, Algerian phone, wilaya, commune; home address or courier office; checked by the API', async () => {
+        const { service } = makeService();
+        service.publishSite();
+        await service.publishPending();
+        const siteUrl = service.view().site.url;
+        const orderUrl = `${cloud.base}/w/boutique-yasmine-api/api/orders`;
+        const form = (fields) => fetch(orderUrl, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields).toString() });
+        const where = async (fields) => (await form(fields)).headers.get('location').replace(siteUrl, '');
+        const stock = () => api.all('SELECT id, stock_quantity FROM product_variants ORDER BY id').concat(api.all('SELECT id, stock_quantity FROM products ORDER BY id'));
+        const before = stock();
+        const items = JSON.stringify([{ product_id: 'jean', product_name: 'Jean', size: '40', color: 'Noir', quantity: 2, unit_price: 3000 }]);
+        const home = { items, first_name: 'Amina', last_name: 'Benali', phone: '0661 22 33 44', wilaya: '16 - Alger', commune: 'Kouba', delivery: 'home', address: 'Cité 200 logements, bât. 3', website: '' };
+        const office = { ...home, delivery: 'office', address: '', courier_company: 'Yalidine', office_wilaya: '09 - Blida', office_commune: 'Boufarik', courier_office: 'Stop desk Boufarik centre' };
+        expect(await where(home)).toBe('thanks.html?cart=1');
+        expect(await where({ ...office, phone: '+213 770 11 22 33' })).toBe('thanks.html?cart=1');
+        // Refused: each missing or wrong field
+        const bad = [
+            { first_name: 'A' }, { last_name: '' }, { phone: '0661' }, { phone: '0861223344' }, { phone: '06612233445' }, { phone: 'abc0661223344' },
+            { wilaya: 'Alger' }, { wilaya: '59 - Nowhere' }, { commune: '' }, { address: '' }, { delivery: '' }, { delivery: 'drone' },
+        ];
+        for (const change of bad) expect(await where({ ...home, ...change }), JSON.stringify(change)).toBe('order-error.html');
+        for (const change of [{ courier_company: '' }, { office_wilaya: '' }, { office_commune: 'x' }, { courier_office: '' }]) {
+            expect(await where({ ...office, ...change }), JSON.stringify(change)).toBe('order-error.html');
+        }
+        const o = await service.orders();
+        expect(o.orders).toHaveLength(2);
+        const byDelivery = Object.fromEntries(o.orders.map(x => [x.delivery, x]));
+        expect(byDelivery.home).toMatchObject({ firstName: 'Amina', lastName: 'Benali', customerName: 'Amina Benali', phone: '0661223344', wilaya: '16 - Alger', commune: 'Kouba', address: 'Cité 200 logements, bât. 3', courier: null, status: 'new' });
+        expect(byDelivery.office).toMatchObject({ phone: '0770112233', courier: { company: 'Yalidine', wilaya: '09 - Blida', commune: 'Boufarik', office: 'Stop desk Boufarik centre' }, status: 'new' });
+        expect(byDelivery.office.items).toEqual([{ productId: 'jean', productName: 'Jean', size: '40', color: 'Noir', quantity: 2, unitPrice: 3000 }]);
+        // Ordering is not selling: no sale and not one piece out of stock
+        expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(0);
+        expect(stock()).toEqual(before);
     });
 
     it('a website made before the cart: Update website adds the new order columns, older orders kept', async () => {

@@ -102,37 +102,70 @@ function cartPage(ctx) {
     );
 }
 
-/** Name, phone, wilaya, commune, address, home delivery or pick up: sent to the shop's own API. */
+/**
+ * Checkout (cash on delivery): the customer's first and last name, phone,
+ * wilaya and commune; home delivery (address) or a courier company's office
+ * (company, wilaya, commune, office); the order summary, the total, Confirm.
+ * Sent to the shop's own API; nothing is paid and no stock moves here.
+ * Every field says what is wrong next to it (assets/store.js); the API
+ * checks the same rules again.
+ */
 function checkoutPage(ctx) {
     const off = ctx.orderUrl ? '' : ' disabled';
-    const wilaya = ctx.snap.shop.wilaya || '';
-    const options = WILAYAS.map(w => {
-        const label = wilayaLabel(w, ctx.lang);
-        const chosen = wilaya && (w[1] === wilaya || w[2].toLowerCase() === wilaya.toLowerCase());
-        return `<option value="${esc(label)}"${chosen ? ' selected' : ''}>${esc(label)}</option>`;
-    }).join('');
+    const shopWilaya = ctx.snap.shop.wilaya || '';
+    const wilayas = (name) => `<select name="${name}" required${off}><option value="">${esc(ctx.t('chooseWilaya'))}</option>${WILAYAS.map(w => {
+        const text = wilayaLabel(w, ctx.lang);
+        const chosen = name === 'wilaya' && shopWilaya && (w[1] === shopWilaya || w[2].toLowerCase() === shopWilaya.toLowerCase());
+        return `<option value="${esc(text)}"${chosen ? ' selected' : ''}>${esc(text)}</option>`;
+    }).join('')}</select>`;
+    const err = (name) => `<small class="ferr" data-err-for="${name}" hidden></small>`;
+    const field = (name, label, input, wide = false) => `<label class="field${wide ? ' field-wide' : ''}" data-field="${name}"><span>${esc(label)}</span>${input}${err(name)}</label>`;
+    const text = (name, { min = 2, max = 60, auto = '', extra = '' } = {}) => `<input name="${name}" required minlength="${min}" maxlength="${max}"${auto ? ` autocomplete="${auto}"` : ''}${extra}${off}>`;
+    const couriers = ctx.snap.shop.couriers || [];
+    const choice = (value, title, sub, checked) => `<label class="dchoice"><input type="radio" name="delivery" value="${value}"${checked ? ' checked' : ''}${off}><span><strong>${esc(title)}</strong><small>${esc(sub)}</small></span></label>`;
     return html(
-        pageHead(ctx, ctx.t('checkout')),
+        pageHead(ctx, ctx.t('checkout'), ctx.t('codOnly')),
         `<main class="container section checkout" data-checkout>`,
-        `<form class="checkout-form" method="post"${ctx.orderUrl ? ` action="${esc(ctx.orderUrl)}"` : ''} accept-charset="utf-8" data-checkout-form>`,
+        `<form class="checkout-form" method="post" novalidate${ctx.orderUrl ? ` action="${esc(ctx.orderUrl)}"` : ''} accept-charset="utf-8" data-checkout-form>`,
         `<input type="hidden" name="items" data-items value="[]"><input type="hidden" name="product_id" data-first-id value=""><input type="hidden" name="product_name" data-first-name value="">`,
         `<label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>`,
-        `<div class="fields">`,
-        `<label class="field"><span>${esc(ctx.t('yourName'))}</span><input name="customer_name" required minlength="2" maxlength="80" autocomplete="name"${off}></label>`,
-        `<label class="field"><span>${esc(ctx.t('yourPhone'))}</span><input name="phone" type="tel" required pattern="[0-9 +]{9,16}" maxlength="20" autocomplete="tel" dir="ltr" placeholder="${esc(ctx.t('phoneHint'))}"${off}></label>`,
-        `<label class="field"><span>${esc(ctx.t('wilaya'))}</span><select name="wilaya" required${off}><option value="">${esc(ctx.t('chooseWilaya'))}</option>${options}</select></label>`,
-        `<label class="field"><span>${esc(ctx.t('commune'))}</span><input name="commune" maxlength="60"${off}></label>`,
-        `<label class="field field-wide"><span>${esc(ctx.t('addressField'))}</span><input name="address" maxlength="200" autocomplete="street-address"${off}></label>`,
-        `<fieldset class="field field-wide delivery"><legend>${esc(ctx.t('delivery'))}</legend>`,
-        `<label class="fcheck"><input type="radio" name="delivery" value="home" checked${off}> ${esc(ctx.t('deliveryHome'))}</label>`,
-        `<label class="fcheck"><input type="radio" name="delivery" value="pickup"${off}> ${esc(ctx.t('deliveryPickup'))}</label></fieldset>`,
-        `<label class="field field-wide"><span>${esc(ctx.t('note'))}</span><textarea name="note" rows="2" maxlength="500"${off}></textarea></label>`,
+        `<div class="co-main">`,
+        `<fieldset class="co-block"><legend class="co-title"><b>1</b>${esc(ctx.t('yourDetails'))}</legend><div class="fields">`,
+        field('first_name', ctx.t('firstName'), text('first_name', { max: 40, auto: 'given-name' })),
+        field('last_name', ctx.t('lastName'), text('last_name', { max: 40, auto: 'family-name' })),
+        field('phone', ctx.t('yourPhone'), `<input name="phone" type="tel" inputmode="tel" required maxlength="20" autocomplete="tel" dir="ltr" placeholder="${esc(ctx.t('phoneHint'))}"${off}>`, true),
+        field('wilaya', ctx.t('wilaya'), wilayas('wilaya')),
+        field('commune', ctx.t('commune'), text('commune', { auto: 'address-level2' })),
+        `</div></fieldset>`,
+        `<fieldset class="co-block"><legend class="co-title"><b>2</b>${esc(ctx.t('delivery'))}</legend>`,
+        `<div class="dchoices">`,
+        choice('home', ctx.t('deliveryHome'), ctx.t('deliveryHomeSub'), true),
+        couriers.length ? choice('office', ctx.t('deliveryOffice'), ctx.t('deliveryOfficeSub'), false) : '',
         `</div>`,
+        `<div class="fields" data-when="home">`,
+        field('address', ctx.t('addressField'), text('address', { min: 3, max: 200, auto: 'street-address' }), true),
+        `</div>`,
+        couriers.length ? html(
+            `<div class="fields" data-when="office">`,
+            field('courier_company', ctx.t('courierCompany'), `<select name="courier_company" required${off}><option value="">${esc(ctx.t('chooseCourier'))}</option>${couriers.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>`, true),
+            field('office_wilaya', ctx.t('officeWilaya'), wilayas('office_wilaya')),
+            field('office_commune', ctx.t('officeCommune'), text('office_commune')),
+            field('courier_office', ctx.t('courierOffice'), text('courier_office', { max: 120, extra: ` placeholder="${esc(ctx.t('courierOfficeHint'))}"` }), true),
+            `</div>`,
+        ) : '',
+        `</fieldset>`,
+        `<fieldset class="co-block"><div class="fields">${field('note', ctx.t('note'), `<textarea name="note" rows="2" maxlength="500"${off}></textarea>`, true)}</div></fieldset>`,
+        `</div>`,
+        `<aside class="cart-total summary" data-summary><h2 class="co-title"><b>3</b>${esc(ctx.t('orderSummary'))}</h2><div data-summary-lines></div>`,
+        `<p class="sum-row"><span>${esc(ctx.t('subtotal'))}</span><span data-cart-sum></span></p>`,
+        `<p class="sum-row"><span>${esc(ctx.t('deliveryCost'))}</span><span>${esc(ctx.t('deliveryByPhone'))}</span></p>`,
+        `<p class="sum-row sum-total"><span>${esc(ctx.t('total'))}</span><strong data-cart-sum></strong></p>`,
         `<p class="hint">${esc(ctx.t('checkoutHint'))}</p>`,
+        `<p class="form-msg is-bad" data-form-msg role="alert" hidden></p>`,
         `<button class="btn btn-primary btn-block" type="submit" data-confirm${off}>${esc(ctx.t('confirmOrder'))}</button>`,
         `<noscript><p class="hint">${esc(ctx.t('needScript'))}</p></noscript>`,
+        `</aside>`,
         `</form>`,
-        `<aside class="cart-total summary"><h2 class="opt-title">${esc(ctx.t('yourOrder'))}</h2><div data-summary-lines></div><p><span>${esc(ctx.t('subtotal'))}</span><strong data-cart-sum></strong></p><p class="hint">${esc(ctx.t('deliveryNote'))}</p></aside>`,
         `</main>`,
     );
 }

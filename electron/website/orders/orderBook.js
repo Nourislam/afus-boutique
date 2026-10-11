@@ -23,7 +23,7 @@ const { nextReceiptNumber } = require('../../services/receiptNumber');
 
 const STATUSES = ['new', 'confirmed', 'preparing', 'shipped', 'delivered', 'money_received', 'cancelled'];
 const COMPLETED = 'money_received';
-const DELIVERY = ['home', 'pickup'];
+const DELIVERY = ['home', 'office', 'pickup'];
 const MAX_LINES = 30;
 
 const text = (v, n) => String(v ?? '').slice(0, n);
@@ -49,11 +49,15 @@ function importOrders(api, remote = []) {
             const lines = linesOf(o).filter(i => i && i.product_id);
             if (!lines.length) continue;
             const at = new Date(o.created_at);
-            api.run(`INSERT INTO website_orders (id, received_at, customer_name, phone, wilaya, commune, address, delivery, note, status, status_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`, [
+            // An order only: no sale and no stock movement until the money is received
+            api.run(`INSERT INTO website_orders (id, received_at, customer_name, first_name, last_name, phone, wilaya, commune, address, delivery,
+                                                 courier_company, office_wilaya, office_commune, courier_office, note, status, status_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`, [
                 id, Number.isNaN(at.getTime()) ? sqlTime(new Date()) : sqlTime(at),
-                text(o.customer_name, 80), text(o.phone, 20), text(o.wilaya, 60), text(o.commune, 60), text(o.address, 200),
-                DELIVERY.includes(o.delivery) ? o.delivery : '', text(o.note, 500), sqlTime(new Date()),
+                text(o.customer_name, 80), text(o.first_name, 40), text(o.last_name, 40), text(o.phone, 20), text(o.wilaya, 60), text(o.commune, 60), text(o.address, 200),
+                DELIVERY.includes(o.delivery) ? o.delivery : '',
+                text(o.courier_company, 60), text(o.office_wilaya, 60), text(o.office_commune, 60), text(o.courier_office, 120),
+                text(o.note, 500), sqlTime(new Date()),
             ]);
             lines.forEach((i, n) => {
                 const price = Number(i.unit_price);

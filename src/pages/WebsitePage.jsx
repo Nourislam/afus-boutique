@@ -826,8 +826,14 @@ function WebsiteOrders() {
                                         </>
                                     )}
                                     <td className="py-2 px-2">
-                                        {[o.wilaya, o.commune, o.address].filter(Boolean).join(' — ')}
+                                        {[o.wilaya, o.commune, o.delivery !== 'office' && o.address].filter(Boolean).join(' — ')}
                                         {o.delivery && <span className="block text-xs text-indigo-300">{t(`website.orders.delivery.${o.delivery}`)}</span>}
+                                        {o.courier && (
+                                            <span className="block text-xs text-zinc-300" data-testid="website-order-courier">
+                                                <bdi>{o.courier.company}</bdi> — <bdi>{o.courier.office}</bdi>
+                                                <span className="block text-zinc-500">{[o.courier.wilaya, o.courier.commune].filter(Boolean).join(' — ')}</span>
+                                            </span>
+                                        )}
                                         {o.note && <span className="block text-xs text-zinc-500">{o.note}</span>}
                                     </td>
                                     <td className="py-2 px-2"><OrderStatus order={o} onChanged={(next) => setState(st => ({ ...st, data: { ...st.data, orders: st.data.orders.map(x => (x.id === next.id ? next : x)) } }))} /></td>
@@ -897,12 +903,12 @@ function OrderStatus({ order, onChanged }) {
 function PublicInfoCard({ site, busy, run }) {
     const { t } = useT();
     const saved = site.publicInfo || { hours: [], social: {}, mapUrl: '' };
-    const fromSaved = () => ({ hours: (saved.hours || []).join('\n'), facebook: saved.social?.facebook || '', instagram: saved.social?.instagram || '', tiktok: saved.social?.tiktok || '', mapUrl: saved.mapUrl || '' });
+    const fromSaved = () => ({ hours: (saved.hours || []).join('\n'), facebook: saved.social?.facebook || '', instagram: saved.social?.instagram || '', tiktok: saved.social?.tiktok || '', mapUrl: saved.mapUrl || '', couriers: saved.couriers || [] });
     const [form, setForm] = useState(fromSaved);
     useEffect(() => { setForm(fromSaved()); }, [JSON.stringify(saved)]);
     const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }));
     const save = () => run('info', () => window.electronAPI.website.setPublicInfo({
-        hours: form.hours, social: { facebook: form.facebook, instagram: form.instagram, tiktok: form.tiktok }, mapUrl: form.mapUrl,
+        hours: form.hours, social: { facebook: form.facebook, instagram: form.instagram, tiktok: form.tiktok }, mapUrl: form.mapUrl, couriers: form.couriers,
     }), (next) => {
         const refused = next?.result?.refused || [];
         if (refused.length) toast.error(t('website.info.refused', { list: refused.map(k => t(`website.info.${k}`)).join('، ') }), 7000);
@@ -926,6 +932,19 @@ function PublicInfoCard({ site, busy, run }) {
             {field('instagram', t('website.info.instagram'), 'https://instagram.com/…')}
             {field('tiktok', t('website.info.tiktok'), 'https://tiktok.com/@…')}
             {field('mapUrl', t('website.info.mapUrl'), 'https://maps.app.goo.gl/…')}
+            <fieldset className="space-y-2" data-testid="website-info-couriers">
+                <legend className="text-xs text-zinc-400">{t('website.info.couriers')}</legend>
+                <div className="flex flex-wrap gap-2">
+                    {(site.couriersList || []).map(c => (
+                        <label key={c.id} className="flex items-center gap-2 rounded-lg bg-dark-tertiary/60 px-2 py-1 text-sm cursor-pointer">
+                            <input type="checkbox" checked={form.couriers.includes(c.id)} data-testid={`website-courier-${c.id}`}
+                                onChange={(e) => setForm(f => ({ ...f, couriers: e.target.checked ? [...f.couriers, c.id] : f.couriers.filter(x => x !== c.id) }))} />
+                            <span dir="ltr">{c.name}</span>
+                        </label>
+                    ))}
+                </div>
+                <p className="text-xs text-zinc-500">{t('website.info.couriersHint')}</p>
+            </fieldset>
             <div className="flex justify-end">
                 <Button size="sm" onClick={save} loading={busy === 'info'} data-testid="website-info-save">{t('common.save')}</Button>
             </div>
