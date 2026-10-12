@@ -1,4 +1,6 @@
 // Kids: warm and playful colours, round shapes, sizes on every card.
+const SANS = "'Afus Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
+
 module.exports = {
     id: 'kids',
     version: 1,
@@ -10,14 +12,11 @@ module.exports = {
     },
     tags: ['kids', 'baby', 'family'],
     tokens: {
-        colors: { background: '#fffdf7', surface: '#fff1d6', text: '#2d2a4a', muted: '#6e6a8f', primary: '#ff6b6b', onPrimary: '#ffffff', accent: '#4ecdc4', sale: '#ff6b6b', border: '#ffe2a8' },
-        fonts: {
-            heading: "'Nunito', 'Baloo 2', 'Segoe UI Rounded', 'Segoe UI', Arial, 'Noto Sans Arabic', Tahoma, sans-serif",
-            body: "'Nunito', 'Segoe UI', Arial, 'Noto Sans Arabic', Tahoma, sans-serif",
-        },
+        colors: { background: '#fffdf7', surface: '#fff1d6', text: '#2d2a4a', muted: '#6e6a8f', primary: '#ff6b6b', onPrimary: '#ffffff', accent: '#2bb5ab', sale: '#ff6b6b', border: '#ffe2a8' },
+        fonts: { heading: SANS, body: SANS },
         type: { baseSize: 16, scale: 1.25, headingWeight: '800', headingCase: 'none', headingTracking: 0, bodyTracking: 0 },
         shape: { radius: 14, buttonRadius: 999, cardRadius: 24 },
-        layout: { container: 1200, sectionGap: 64, gridGap: 22 },
+        layout: { container: 1200, sectionGap: 64, gridGap: 18 },
         style: { shadow: 'soft', border: 2, imageFilter: 'none' },
     },
     header: { style: 'inline', sticky: true, announcement: true, nav: 'inline', search: true },
@@ -27,6 +26,7 @@ module.exports = {
     footer: { style: 'columns' },
     home: [
         { type: 'hero', variant: 'playful', cta: 'all' },
+        { type: 'trust', style: 'cards' },
         { type: 'categories', style: 'circles', limit: 8 },
         { type: 'products', source: 'new', limit: 8, layout: 'grid', columns: 4 },
         { type: 'promo', style: 'banner' },

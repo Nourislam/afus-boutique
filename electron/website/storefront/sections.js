@@ -42,16 +42,32 @@ const SECTION_TYPES = {
             const shop = ctx.snap.shop;
             const withPic = byNewest(ctx.snap.products.filter(p => p.images.length));
             const pic = withPic[0];
-            const target = o.cta === 'sale' && ctx.snap.products.some(C.onSale) ? 'sale' : 'all';
+            const sale = ctx.snap.products.some(C.onSale);
+            const target = o.cta === 'sale' && sale ? 'sale' : 'all';
+            // A small line over the title, only when it is true (new pieces this week, a sale on)
+            const eyebrow = (ctx.snap.newProducts || []).length ? ctx.t('new') : sale ? ctx.t('sale') : '';
+            // The second way in: the sale (when the first is not already it), else the categories
+            const second = sale && target !== 'sale' ? ['category', 'sale', ctx.t('offers')]
+                : ctx.snap.categories.length ? ['page', 'categories', ctx.t('categories')] : null;
             return html(
                 `<section class="hero hero-${o.variant}${pic ? '' : ' no-image'}">`,
-                pic && o.variant !== 'centered' && `<div class="hero-media"><img src="${esc(ctx.img(pic.images[0]))}" alt="${esc(pic.name)}"></div>`,
+                pic && o.variant !== 'centered' && `<div class="hero-media"><img src="${esc(ctx.img(pic.images[0]))}" alt="${esc(pic.name)}" fetchpriority="high" decoding="async"></div>`,
                 `<div class="hero-text container-narrow">`,
+                eyebrow && `<span class="hero-eyebrow">${esc(eyebrow)}</span>`,
                 `<h1 class="hero-title">${esc(shop.name)}</h1>`,
                 shop.description && `<p class="hero-sub">${esc(shop.description)}</p>`,
-                `<a class="btn btn-primary" href="${esc(ctx.link('category', target))}">${esc(ctx.t('shopNow'))}</a>`,
-                `</div></section>`,
+                `<div class="hero-ctas"><a class="btn btn-primary" href="${esc(ctx.link('category', target))}">${esc(ctx.t('shopNow'))}</a>`,
+                second && `<a class="btn btn-outline" href="${esc(ctx.link(second[0], second[1]))}">${esc(second[2])}</a>`,
+                `</div></div></section>`,
             );
+        },
+    },
+
+    // Pay on delivery, delivery to the wilaya, a call before sending: what a buyer checks first
+    trust: {
+        options: { style: e(['strip', 'cards'], 'strip') },
+        render(ctx, o) {
+            return `<section class="trust-section trust-${o.style}"><div class="container">${C.trustList(ctx, 'trust-row')}</div></section>`;
         },
     },
 

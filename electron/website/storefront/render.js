@@ -85,9 +85,11 @@ function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', pr
     // Scripts and styles of the website itself only; the only form goes to the shop's own API
     const formTo = ctx.orderUrl ? new URL(ctx.orderUrl).origin : "'none'";
     const policy = preview
-        ? "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data: app:; base-uri 'none'; form-action 'none'"
+        ? "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data: app:; font-src data:; base-uri 'none'; form-action 'none'"
         : `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action ${formTo}`;
-    const style = preview ? `<style>${css(theme)}</style>` : `<link rel="stylesheet" href="${STYLE}">`;
+    // The website: the Arabic letters of the font asked for at once (the page is read in them)
+    const style = preview ? `<style>${css(theme, { preview: true })}</style>`
+        : `${language === 'ar' ? '<link rel="preload" href="assets/fonts/cairo-arabic.woff2" as="font" type="font/woff2" crossorigin>\n' : ''}<link rel="stylesheet" href="${STYLE}">`;
     return `<!doctype html>
 <html lang="${language}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
 <head>

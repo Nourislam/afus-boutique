@@ -14,7 +14,7 @@ const ws = require('../electron/website/websiteState');
 const catalog = require('../electron/services/catalogService');
 const { formatMoney } = require('../electron/i18n');
 
-const IDS = ['fashion-modern', 'luxury', 'minimal', 'streetwear', 'classic', 'kids'];
+const IDS = ['fashion-modern', 'atelier', 'sport', 'luxury', 'minimal', 'streetwear', 'classic', 'kids'];
 const STORE = ['products', 'search', 'new', 'best', 'offers', 'categories', 'cart', 'checkout', 'contact', 'about', 'location'];
 const PAGES = [['home', null], ['category', 'all'], ['category', 'sale'], ['product', 'jean'], ...STORE.map(id => ['page', id])];
 // The only script of a published page: the website's own file (no inline script, no handler)
@@ -33,7 +33,7 @@ function shopData(api) {
 }
 
 describe('website themes: data only, checked, extensible', () => {
-    it('six built-in themes, all valid, named in the three languages, in order', () => {
+    it('eight built-in themes, all valid, named in the three languages, in order', () => {
         expect(registry.list().map(t => t.id)).toEqual(IDS);
         for (const m of BUILTIN) {
             const r = normalizeTheme(m);
@@ -189,6 +189,49 @@ describe('website themes: every theme draws the same shop data', () => {
                 for (const [, src] of html.matchAll(/src="([^"]*)"/g)) expect(src, src).toMatch(/^(images\/|data:image\/svg\+xml|assets\/store\.js$)/);
             }
         }
+    });
+
+    it('pay on delivery: one big "Order now", the cart second, what is true about paying and delivery, the bar for phones', () => {
+        for (const theme of registry.list()) {
+            const html = renderPage({ snapshot, theme, page: 'product', id: 'jean', lang: 'ar' });
+            const buttons = [...html.matchAll(/<button class="btn[^"]*" type="submit" name="action" value="(\w+)"/g)].map(m => m[1]);
+            expect(buttons, theme.id).toEqual(['buy', 'add']);
+            expect(html).toContain('الدفع عند الاستلام');
+            // Courier offices offered at checkout (none ticked = all companies): said here too
+            const trust = /<ul class="trust[^"]*">[\s\S]*?<\/ul>/.exec(html)[0];
+            expect(trust).toContain('التوصيل إلى ولايتك');
+            expect(trust).toContain('مكتب شركة التوصيل');
+            expect(html).toContain('data-buy-bar hidden');
+            // WhatsApp is a question, not a second way to order; no call button on the article
+            expect((html.match(/https:\/\/wa\.me\//g) || []).length).toBe(1);
+            expect(html).not.toMatch(/class="btn[^"]*" href="tel:/);
+            // The first photo is asked for first, the others when they come near
+            expect(html).toMatch(/class="pdp-img" src="[^"]*jean-1\.jpg" alt="[^"]*" fetchpriority="high"/);
+            expect(html).toMatch(/class="pdp-img" src="[^"]*jean-2\.jpg" alt="[^"]*" loading="lazy"/);
+        }
+        // No courier office at checkout: no promise of one on the article
+        const homeOnly = { ...snapshot, shop: { ...snapshot.shop, couriers: [] } };
+        const page = renderPage({ snapshot: homeOnly, theme: registry.get('sport'), page: 'product', id: 'jean', lang: 'ar' });
+        expect(/<ul class="trust[^"]*">[\s\S]*?<\/ul>/.exec(page)[0]).not.toContain('مكتب شركة التوصيل');
+        expect(renderPage({ snapshot: homeOnly, theme: registry.get('sport'), page: 'page', id: 'checkout', lang: 'ar' })).not.toContain('value="office"');
+    });
+
+    it('the font comes from the website itself (or inside the preview), never from an outside service', () => {
+        const { buildSite } = require('../electron/website/publish/siteBuilder');
+        const { css } = require('../electron/website/storefront/css');
+        const site = buildSite({ snapshot, theme: registry.get('atelier'), lang: 'ar' });
+        const fonts = site.files.filter(f => f.path.startsWith('assets/fonts/'));
+        expect(fonts.map(f => f.path).sort()).toEqual(['assets/fonts/cairo-arabic.woff2', 'assets/fonts/cairo-latin.woff2']);
+        expect(fonts.every(f => Buffer.isBuffer(f.content) && f.content.subarray(0, 4).toString() === 'wOF2')).toBe(true);
+        const sheet = site.files.find(f => f.path === 'assets/store.css').content;
+        expect(sheet).toContain("src:url(fonts/cairo-arabic.woff2) format('woff2')");
+        expect(sheet).not.toMatch(/url\((https?:)?\/\//);
+        const home = site.files.find(f => f.path === 'index.html').content;
+        expect(home).toContain('font-src \'self\'');
+        expect(home).toContain('<link rel="preload" href="assets/fonts/cairo-arabic.woff2" as="font" type="font/woff2" crossorigin>');
+        // Program's preview: the font is inside the page (it loads nothing from anywhere)
+        expect(css(registry.get('atelier'), { preview: true })).toContain('url(data:font/woff2;base64,');
+        expect(renderPage({ snapshot, theme: registry.get('atelier'), page: 'home', lang: 'ar', preview: true })).toContain("font-src data:");
     });
 
     it('in the program\'s preview: links go nowhere, pictures come from the program', () => {

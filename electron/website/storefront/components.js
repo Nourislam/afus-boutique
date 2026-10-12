@@ -24,10 +24,12 @@ function optionsOf(p) {
     return { colors: [...colors.values()], sizes: [...sizes.entries()].map(([name, available]) => ({ name, available })) };
 }
 
-function image(ctx, p, index = 0, cls = '') {
+function image(ctx, p, index = 0, cls = '', { eager = false } = {}) {
     const path = p.images[index];
     const src = path ? ctx.img(path) : placeholder(p.name, ctx.theme.tokens.colors);
-    return `<img class="${cls}" src="${esc(src)}" alt="${esc(p.name)}" loading="lazy" decoding="async">`;
+    // The first photo of an article page is what the buyer waits for: loaded first
+    const load = eager ? ' fetchpriority="high"' : ' loading="lazy"';
+    return `<img class="${cls}" src="${esc(src)}" alt="${esc(p.name)}"${load} decoding="async">`;
 }
 
 function priceTag(ctx, p) {
@@ -105,7 +107,23 @@ const ICONS = {
     home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-7 9 7"/><path d="M5 10v10h14V10"/></svg>',
     grid: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></svg>',
     phone: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 6a2 2 0 0 1 2-2Z"/></svg>',
+    cash: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9v.01M18 15v.01"/></svg>',
+    truck: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>',
+    check: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>',
+    chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.5-4A8 8 0 1 1 9 19.5Z"/></svg>',
 };
+
+/**
+ * What a buyer paying on delivery wants to know before ordering. Only what
+ * is always true of an Afus website: nothing is paid online, the order goes
+ * to the buyer's wilaya, the shop calls before sending it.
+ */
+function trustList(ctx, cls = '') {
+    const item = (icon, title, sub) => `<li>${ICONS[icon]}<span><b>${esc(ctx.t(title))}</b><small>${esc(ctx.t(sub))}</small></span></li>`;
+    // A courier office only when the shop works with courier companies (as at checkout)
+    const office = (ctx.snap.shop.couriers || []).length > 0;
+    return `<ul class="trust ${cls}">${item('cash', 'trustCod', 'trustCodSub')}${item('truck', 'trustDelivery', office ? 'trustDeliverySub' : 'deliveryHomeSub')}${item('check', 'trustCall', 'trustCallSub')}</ul>`;
+}
 
 /** The cart link with its count (filled in by the website's script). */
 const cartLink = (ctx, cls = 'hdr-icon') => `<a class="${cls}" href="${esc(ctx.link('page', 'cart'))}" aria-label="${esc(ctx.t('cart'))}">${ICONS.cart}<span class="cart-count" data-cart-count hidden>0</span></a>`;
@@ -137,7 +155,8 @@ function header(ctx) {
     // The menu of small screens (and of the "drawer" themes) opens without script
     const drawer = `<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-hidden="true"><label for="nav-toggle" class="nav-burger" aria-label="${esc(ctx.t('menu'))}"><span></span><span></span><span></span></label><nav class="drawer" aria-label="${esc(ctx.t('menu'))}">${links}</nav>`;
     return html(
-        h.announcement && promo && `<div class="announce">${esc(promo.name)} · ${esc(ctx.t('upTo'))} -${esc(promo.value)}%</div>`,
+        // The bar on top: the sale when there is one, else how the shop sells (pay on delivery)
+        h.announcement && `<div class="announce">${promo ? `${esc(promo.name)} · ${esc(ctx.t('upTo'))} -${esc(promo.value)}%` : `${esc(ctx.t('trustCod'))} · ${esc(ctx.t('trustDelivery'))}`}</div>`,
         `<header class="site-header hdr-${h.style}${h.sticky ? ' is-sticky' : ''}">`,
         `<div class="container hdr-row">`,
         drawer,
@@ -178,26 +197,21 @@ function footer(ctx) {
     return html(
         `<footer class="site-footer ftr-${ctx.theme.footer.style}"><div class="container ftr-grid">`,
         `<div><strong class="ftr-name">${esc(shop.name)}</strong>${shop.description ? `<p>${esc(shop.description)}</p>` : ''}</div>`,
-        cats && `<div><strong>${esc(ctx.t('categories'))}</strong><div class="ftr-links">${cats}</div></div>`,
-        `<div><strong>${esc(ctx.t('products'))}</strong><div class="ftr-links">${[...navItems(ctx).filter(i => i.page !== 'home'), { href: ctx.link('page', 'location'), label: ctx.t('location') }, { href: ctx.link('page', 'cart'), label: ctx.t('cart') }].map(i => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('')}</div></div>`,
+        cats && `<div class="ftr-nav"><strong>${esc(ctx.t('categories'))}</strong><div class="ftr-links">${cats}</div></div>`,
+        `<div class="ftr-nav"><strong>${esc(ctx.t('products'))}</strong><div class="ftr-links">${[...navItems(ctx).filter(i => i.page !== 'home'), { href: ctx.link('page', 'location'), label: ctx.t('location') }, { href: ctx.link('page', 'cart'), label: ctx.t('cart') }].map(i => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('')}</div></div>`,
         (shop.phone || where || shop.email || shop.mapUrl) && `<div><strong>${esc(ctx.t('contact'))}</strong>${shop.phone ? `<p>${phoneHtml(shop.phone)}</p>` : ''}${shop.email ? `<p>${esc(shop.email)}</p>` : ''}${where ? `<p>${esc(where)}</p>` : ''}${extras.map ? `<p>${extras.map}</p>` : ''}</div>`,
         (extras.hours || extras.social) && `<div>${extras.hours}${extras.social}</div>`,
         `</div><div class="container ftr-bottom">© ${year} ${esc(shop.name)} · ${esc(ctx.t('rights'))}</div></footer>`,
     );
 }
 
-/** WhatsApp / phone buttons: the order goes to the shop itself. */
-function orderButtons(ctx, p) {
+/** A question before ordering: one quiet WhatsApp link (the order itself is the button above). */
+function askLink(ctx, p) {
     const phone = phoneDigits(ctx.snap.shop.phone);
     if (!phone) return '';
     const text = `${ctx.t('orderText')} ${p.name} (${priceOf(ctx, onSale(p) ? p.salePrice : p.price)})`;
     const wa = ctx.preview ? '#' : `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-    return html(
-        `<div class="order">`,
-        `<a class="btn btn-primary" href="${esc(wa)}"${ctx.preview ? '' : ' rel="noopener" target="_blank"'}>${esc(ctx.t('order'))}</a>`,
-        `<a class="btn btn-ghost" href="${esc(ctx.preview ? '#' : `tel:+${phone}`)}">${esc(ctx.t('call'))}</a>`,
-        `</div>`,
-    );
+    return `<a class="ask-link" href="${esc(wa)}"${ctx.preview ? '' : ' rel="noopener" target="_blank"'}>${ICONS.chat}<span>${esc(ctx.t('askWhatsapp'))}</span></a>`;
 }
 
 /** After an order request: thanks, or why it was not sent. */
@@ -225,12 +239,18 @@ function addToCart(ctx, p, colors, sizes) {
         sizes.map(s => `<label class="pick pick-size${s.available ? '' : ' is-out'}"><input type="radio" name="size" value="${esc(s.name)}"${s.available ? '' : ' disabled'}${sizes.filter(x => x.available).length === 1 && s.available ? ' checked' : ''}><span class="size">${esc(s.name)}</span></label>`),
         `</div></fieldset>`,
     );
+    // Pay on delivery: "Order now" is the one big button (straight to the short
+    // order form); the cart is there for buyers who take several pieces
     return html(
         `<form class="add-form" data-add-form data-id="${esc(p.id)}" data-variants="${esc(JSON.stringify(variants))}" data-has-colors="${colors.length ? 1 : 0}" data-has-sizes="${sizes.length ? 1 : 0}">`,
         colorChoice, sizeChoice,
-        `<div class="add-row"><label class="qty"><span>${esc(ctx.t('quantityShort'))}</span><input type="number" name="qty" min="1" max="20" value="1"${off}></label>`,
-        `<button class="btn btn-primary" type="submit" name="action" value="add"${off}>${esc(ctx.t('addToCart'))}</button>`,
-        `<button class="btn btn-ghost" type="submit" name="action" value="buy"${off}>${esc(ctx.t('buyNow'))}</button></div>`,
+        `<div class="qty"><span class="opt-title">${esc(ctx.t('quantityShort'))}</span><div class="stepper">`,
+        `<button type="button" data-step="-1" aria-label="-"${off}>−</button>`,
+        `<input type="number" name="qty" min="1" max="20" value="1" inputmode="numeric" aria-label="${esc(ctx.t('quantityShort'))}"${off}>`,
+        `<button type="button" data-step="1" aria-label="+"${off}>+</button></div></div>`,
+        `<div class="add-row">`,
+        `<button class="btn btn-primary btn-order" type="submit" name="action" value="buy" data-buy${off}><span>${esc(ctx.t('orderNow'))}</span><small>${esc(ctx.t('trustCod'))}</small></button>`,
+        `<button class="btn btn-ghost" type="submit" name="action" value="add"${off}>${esc(ctx.t('addToCart'))}</button></div>`,
         `<p class="form-msg" data-form-msg role="status" aria-live="polite"></p>`,
         `<noscript><p class="hint">${esc(ctx.t('needScript'))}</p></noscript>`,
         `</form>`,
@@ -241,10 +261,14 @@ function addToCart(ctx, p, colors, sizes) {
 function productPage(ctx, p) {
     const pp = ctx.theme.productPage;
     const { colors, sizes } = optionsOf(p);
-    const pics = p.images.length ? p.images.map((_, i) => image(ctx, p, i, 'pdp-img')) : [image(ctx, p, 0, 'pdp-img')];
-    const gallery = pp.gallery === 'thumbs'
-        ? `<div class="pdp-gallery g-thumbs"><div class="g-main">${pics[0]}</div>${pics.length > 1 ? `<div class="g-strip">${pics.join('')}</div>` : ''}</div>`
-        : `<div class="pdp-gallery g-${pp.gallery}">${pics.join('')}</div>`;
+    const count = Math.max(1, p.images.length);
+    const pics = Array.from({ length: count }, (_, i) => image(ctx, p, i, 'pdp-img', { eager: i === 0 }));
+    // Phones: the photos side by side, swiped with the thumb, dots under them.
+    // Thumbs: one big photo, the others under it to choose (the same track)
+    const dots = count > 1 ? `<div class="g-dots" aria-hidden="true">${pics.map((_, i) => `<span${i ? '' : ' class="is-on"'}></span>`).join('')}</div>` : '';
+    const strip = pp.gallery === 'thumbs' && count > 1
+        ? `<div class="g-strip">${p.images.map((_, i) => `<button type="button" data-go="${i}" aria-label="${i + 1}/${count}">${image(ctx, p, i, 'g-thumb')}</button>`).join('')}</div>` : '';
+    const gallery = `<div class="pdp-gallery g-${pp.gallery}" data-gallery><div class="g-track" data-track>${pics.join('')}</div>${dots}${strip}</div>`;
     const colorBlock = colors.length && html(
         `<div class="opt"><span class="opt-title">${esc(ctx.t('colors'))}</span><div class="opt-colors opt-${pp.colors}">`,
         colors.map(c => pp.colors === 'swatches' && c.code
@@ -270,9 +294,12 @@ function productPage(ctx, p) {
         `<div class="pdp-price">${priceTag(ctx, p)}${onSale(p) ? ` <span class="badge badge-pill badge-sale">-${percentOff(p)}%</span>` : ''}</div>`,
         `<p class="stock ${p.available ? 'is-in' : 'is-out'}">${esc(p.available ? ctx.t('inStock') : ctx.t('soldOut'))}</p>`,
         p.available ? addToCart(ctx, p, colors, sizes) : html(colorBlock, sizeBlock),
-        p.available && orderButtons(ctx, p),
+        p.available && trustList(ctx),
+        p.available && askLink(ctx, p),
         p.description && `<div class="pdp-desc">${esc(p.description).replace(/\n/g, '<br>')}</div>`,
         `</div></main>`,
+        // Phones: once the button is out of sight, the price and "Order now" stay at the bottom
+        p.available && !ctx.preview && `<div class="buy-bar" data-buy-bar hidden><span class="bb-info"><span class="bb-name">${esc(p.name)}</span>${priceTag(ctx, p)}</span><button type="button" class="btn btn-primary" data-buy-now>${esc(ctx.t('orderNow'))}</button></div>`,
         related.length && `<section class="container section"><h2 class="section-title">${esc(ctx.t('related'))}</h2>${productGrid(ctx, related, { columns: Math.min(4, ctx.theme.categoryPage.desktopColumns) })}</section>`,
     );
 }
@@ -295,4 +322,4 @@ function categoryPage(ctx, id) {
     );
 }
 
-module.exports = { bottomBar, cartLink, ICONS, categoryName, shopExtras, messagePage, productCard, productGrid, header, footer, productPage, categoryPage, bestPromotion, onSale, optionsOf, navItems, priceOf };
+module.exports = { trustList, bottomBar, cartLink, ICONS, categoryName, shopExtras, messagePage, productCard, productGrid, header, footer, productPage, categoryPage, bestPromotion, onSale, optionsOf, navItems, priceOf };

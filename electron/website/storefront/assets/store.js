@@ -147,7 +147,72 @@
             if (action === 'buy') { location.href = base + 'checkout.html'; return; }
             say(added === 'capped' ? texts.maxQty || '' : texts.added || '', added !== 'capped', { label: texts.viewCart || '', href: base + 'cart.html' });
         });
+        // Quantity: - and + around the number (the number can still be typed)
+        form.querySelectorAll('[data-step]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var input = form.querySelector('input[name="qty"]');
+                var now = parseInt(input.value, 10) || 1;
+                input.value = String(Math.min(MAX_QTY, Math.max(1, now + Number(b.getAttribute('data-step')))));
+            });
+        });
+        setupBuyBar(form);
         refresh();
+    }
+
+    /* Phones: once "Order now" is scrolled away, a bar at the bottom keeps the price and the button */
+    function setupBuyBar(form) {
+        var bar = document.querySelector('[data-buy-bar]');
+        var buy = form.querySelector('[data-buy]');
+        if (!bar || !buy) return;
+        // Only once the button is above the screen (the buyer read on), never before it.
+        // Read on scroll, once per frame (a fast flick can jump over the button)
+        var pending = false;
+        function place() {
+            pending = false;
+            var show = buy.getBoundingClientRect().bottom < 0;
+            if (bar.hidden === !show) return;
+            bar.hidden = !show;
+            document.body.classList.toggle('buybar-on', show);
+        }
+        window.addEventListener('scroll', function () {
+            if (!pending) { pending = true; requestAnimationFrame(place); }
+        }, { passive: true });
+        place();
+        bar.querySelector('[data-buy-now]').addEventListener('click', function () {
+            buy.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            if (form.requestSubmit) form.requestSubmit(buy); else buy.click();
+        });
+    }
+
+    /* Article photos: swiped on phones (dots follow), chosen from the thumbnails */
+    function setupGallery(root) {
+        var track = root.querySelector('[data-track]');
+        if (!track) return;
+        var slides = track.children;
+        var dots = root.querySelectorAll('.g-dots span');
+        var thumbs = root.querySelectorAll('[data-go]');
+        function current() {
+            var w = track.clientWidth || 1;
+            return Math.min(slides.length - 1, Math.round(Math.abs(track.scrollLeft) / w));
+        }
+        function mark(i) {
+            dots.forEach(function (d, k) { d.classList.toggle('is-on', k === i); });
+            thumbs.forEach(function (t, k) { t.classList.toggle('is-on', k === i); });
+        }
+        var pending = false;
+        track.addEventListener('scroll', function () {
+            if (pending) return;
+            pending = true;
+            requestAnimationFrame(function () { pending = false; mark(current()); });
+        }, { passive: true });
+        thumbs.forEach(function (t) {
+            t.addEventListener('click', function () {
+                var i = Number(t.getAttribute('data-go')) || 0;
+                if (slides[i]) track.scrollTo({ left: slides[i].offsetLeft - slides[0].offsetLeft, behavior: 'smooth' });
+                mark(i);
+            });
+        });
+        mark(0);
     }
 
     /* ---------- Lists: search, filters, sort ---------- */
@@ -449,6 +514,7 @@
         afterOrder();
         badges();
         document.querySelectorAll('[data-add-form]').forEach(setupAddForm);
+        document.querySelectorAll('[data-gallery]').forEach(setupGallery);
         document.querySelectorAll('[data-listing]').forEach(setupListing);
         document.querySelectorAll('[data-cart-page]').forEach(setupCart);
         document.querySelectorAll('[data-checkout]').forEach(setupCheckout);

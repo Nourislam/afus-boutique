@@ -41,11 +41,11 @@ const SPEC = {
             body: font("'Helvetica Neue', Arial, 'Noto Sans Arabic', Tahoma, sans-serif"),
         },
         type: {
-            baseSize: int(14, 18, 16), scale: num(1.1, 1.5, 1.25), headingWeight: e(['400', '500', '600', '700', '800', '900'], '700'),
+            baseSize: int(14, 18, 16), scale: num(1.1, 1.5, 1.25), headingWeight: e(['300', '400', '500', '600', '700', '800', '900'], '700'),
             headingCase: e(['none', 'upper'], 'none'), headingTracking: num(-0.05, 0.3, 0), bodyTracking: num(0, 0.1, 0),
         },
         shape: { radius: int(0, 24, 6), buttonRadius: int(0, 999, 6), cardRadius: int(0, 32, 8) },
-        layout: { container: int(960, 1600, 1200), sectionGap: int(24, 120, 64), gridGap: int(8, 40, 20) },
+        layout: { container: int(960, 1600, 1200), sectionGap: int(24, 120, 64), gridGap: int(2, 40, 20) },
         style: { shadow: e(['none', 'soft', 'strong'], 'none'), border: int(0, 3, 1), imageFilter: e(['none', 'warm', 'mono-hover'], 'none') },
     },
     header: {

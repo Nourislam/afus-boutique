@@ -1,4 +1,6 @@
 // Classic: navy and brick, serif titles, framed cards with the sizes shown.
+const SANS = "'Afus Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
+
 module.exports = {
     id: 'classic',
     version: 1,
@@ -12,8 +14,8 @@ module.exports = {
     tokens: {
         colors: { background: '#ffffff', surface: '#f4f1ec', text: '#2b2b2b', muted: '#6f6a63', primary: '#1f3a5f', onPrimary: '#ffffff', accent: '#a0522d', sale: '#b4232a', border: '#e3ddd3' },
         fonts: {
-            heading: "Georgia, 'Times New Roman', 'Noto Naskh Arabic', 'Traditional Arabic', serif",
-            body: "'Segoe UI', 'Helvetica Neue', Arial, 'Noto Sans Arabic', Tahoma, sans-serif",
+            heading: "Georgia, 'Times New Roman', 'Afus Sans', serif",
+            body: SANS,
         },
         type: { baseSize: 16, scale: 1.25, headingWeight: '700', headingCase: 'none', headingTracking: 0, bodyTracking: 0 },
         shape: { radius: 4, buttonRadius: 4, cardRadius: 6 },
@@ -27,6 +29,7 @@ module.exports = {
     footer: { style: 'columns' },
     home: [
         { type: 'hero', variant: 'split', cta: 'all' },
+        { type: 'trust', style: 'cards' },
         { type: 'categories', style: 'tiles', limit: 6 },
         { type: 'products', source: 'featured', limit: 8, layout: 'grid', columns: 4 },
         { type: 'promo', style: 'split' },

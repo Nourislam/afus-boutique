@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const { renderPage, pagesOf, linkFor, scriptTexts, STYLE, SCRIPT } = require('../storefront/render');
 const { css } = require('../storefront/css');
+const { fontFiles } = require('../storefront/fonts');
 const { textsFor } = require('../storefront/texts');
 const { money, placeholder } = require('../storefront/html');
 
@@ -88,6 +89,7 @@ function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, l
     // The website's own style sheet and script (no inline script: Content-Security-Policy)
     files.push({ path: STYLE, content: css(theme) });
     files.push({ path: SCRIPT, content: fs.readFileSync(STORE_SCRIPT, 'utf8') });
+    for (const f of fontFiles()) files.push({ path: f.path, content: f.data });
     files.push({ path: 'search.json', content: JSON.stringify(searchCatalog(snap, theme, language, asset)) });
     files.push({ path: '404.html', content: renderPage({ snapshot: snap, theme, page: 'home', lang: language, assetUrl: asset, orderUrl }) });
     for (const [name, data] of images) if (data) files.push({ path: asset(name), content: data });
