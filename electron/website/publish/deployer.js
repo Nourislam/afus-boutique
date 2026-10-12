@@ -81,6 +81,7 @@ function reasonOf(error, provider) {
     if (r === 'private_data') return 'private_data';
     if (r === 'revoked' || r === 'not_connected') return `${provider}_revoked`;
     if (r === 'scope') return `${provider}_permission`;
+    if (r === 'email_unverified') return 'cloudflare_email';
     if (r) return `${provider}_failed`;
     return 'unknown';
 }
@@ -219,7 +220,7 @@ function createDeployer(deps) {
             }
             if (!name) throw new StepError('name_taken');
             const bindings = [
-                { type: 'd1', name: 'DB', database_id: ctx.database.id },
+                { type: 'd1', name: 'DB', id: ctx.database.id },
                 { type: 'secret_text', name: 'SHOP_KEY', text: shopKey() },
                 // This shop's own id: Afus sends it on every call (never another shop's Worker)
                 { type: 'plain_text', name: 'STORE_ID', text: storeId() },

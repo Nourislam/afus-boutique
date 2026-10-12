@@ -18,7 +18,7 @@
  *         readAccount(), allowed() (false: demo / training, nothing kept),
  *         openPage(url, userCode), onConnected(login), now, sleep }
  */
-const { canCreateRepos } = require('./github');
+const { canCreateRepos, canPublishPages, TOKEN_FORMAT } = require('./github');
 
 const ITEM = 'github';
 const MAX_NETWORK_RETRIES = 5;
@@ -109,6 +109,39 @@ function createGithubConnector({ client, store, saveAccount, readAccount, allowe
         onConnected(user.login);
     }
 
+    /**
+     * Link with a key the shop made itself on GitHub's page (no AFUS app
+     * needed). The key must be allowed "repo" (make the website's
+     * repository and switch GitHub Pages on): checked with GitHub before it
+     * is kept. -> { linked } | { linked: false, reason }
+     */
+    async function connectWithToken(raw) {
+        const token = String(raw || '').trim();
+        if (!TOKEN_FORMAT.test(token)) return { linked: false, reason: 'token_format' };
+        if (!store.available()) { failed('secure_storage'); return { linked: false, reason: 'secure_storage' }; }
+        cancel();
+        let user;
+        try {
+            user = await client.getUser(token);
+        } catch (error) {
+            const reason = error.reason === 'revoked' ? 'token_refused' : error.reason || 'unknown';
+            return { linked: false, reason };
+        }
+        if (!allowed()) return { linked: false, reason: 'blocked' };
+        // A fine-grained key does not say what it may do: a classic key with "repo" is asked
+        if (!user.scopes) return { linked: false, reason: 'token_classic' };
+        if (!canPublishPages(user.scopes)) return { linked: false, reason: 'scope' };
+        try {
+            store.set(ITEM, JSON.stringify({ token, scopes: user.scopes, login: user.login, userId: user.id, method: 'token', savedAt: new Date(now()).toISOString() }));
+        } catch {
+            failed('secure_storage');
+            return { linked: false, reason: 'secure_storage' };
+        }
+        saveAccount({ status: 'connected', login: user.login, connectedAt: new Date(now()).toISOString(), scopes: user.scopes, error: null, errorAt: null });
+        onConnected(user.login);
+        return { linked: true };
+    }
+
     /** GitHub no longer accepts the key (withdrawn by the shop on GitHub). */
     function revoked() {
         store.remove(ITEM);
@@ -159,7 +192,7 @@ function createGithubConnector({ client, store, saveAccount, readAccount, allowe
     /** For tests: the background wait of the current sign-in. */
     const pending = () => flow?.finished || Promise.resolve();
 
-    return { start, cancel, disconnect, revoked, check, token, linked, publicFlow, pending, manageUrl: client.manageUrl };
+    return { start, connectWithToken, cancel, disconnect, revoked, check, token, linked, publicFlow, pending, manageUrl: client.manageUrl, tokenPageUrl: client.tokenPageUrl };
 }
 
 module.exports = { createGithubConnector, ITEM };

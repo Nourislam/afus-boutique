@@ -25,6 +25,10 @@ const TIMEOUT_MS = 15000;
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 // Where the shop can see or withdraw the access it gave (GitHub's own page)
 const MANAGE_PATH = '/settings/applications';
+// GitHub's own page to make a key with the one permission needed (repo), already filled in
+const TOKEN_PAGE_PATH = '/settings/tokens/new?scopes=repo&description=Afus%20Boutique%20website';
+// A key the shop made on GitHub (classic personal access token, or an app key)
+const TOKEN_FORMAT = /^(gh[pousr]_[A-Za-z0-9]{30,251}|github_pat_[A-Za-z0-9_]{40,251})$/;
 
 class GithubError extends Error {
     constructor(reason, status = null) {
@@ -44,9 +48,15 @@ const canPublishPages = (scopes) => scopes.includes('repo');
 const crypto = require('crypto');
 /** Git's own name of a file's content (so unchanged files are not sent again). */
 const gitBlobSha = (buf) => crypto.createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${buf.length}\0`), buf])).digest('hex');
+// Content made in a row is kept a little apart (GitHub's secondary limits)
+const WRITE_GAP_MS = 700;
+const TEXT_FILE = /\.(html|css|js|mjs|json|txt|xml|svg|webmanifest|md)$|(^|\/)(CNAME|\.nojekyll)$/i;
+/** A text file of the website, sent inside the tree request (valid UTF-8 only). */
+const isText = (path, buf) => TEXT_FILE.test(path) && Buffer.from(buf.toString('utf8'), 'utf8').equals(buf);
 const SAFE_PATH = /^(?!\/)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._/-]{1,200}$/;
 
-function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase = API, timeoutMs = TIMEOUT_MS } = {}) {
+function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase = API, timeoutMs = TIMEOUT_MS, writeGapMs = WRITE_GAP_MS, sleep } = {}) {
+    const wait = sleep || ((ms) => new Promise(r => setTimeout(r, ms)));
     // Electron's own network (system proxy and certificates)
     const doFetch = fetchImpl || ((url, init) => require('electron').net.fetch(url, init));
     const id = String(clientId || '').trim();
@@ -146,6 +156,28 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
         throw new GithubError(r.status >= 500 ? 'network' : 'unknown', r.status);
     }
 
+    /**
+     * A call that makes content: when GitHub says "too fast" (403/429 with a
+     * rate-limit answer, or Retry-After), wait as asked and try again (a few
+     * times). Calls in a row are kept a little apart.
+     */
+    let lastWrite = 0;
+    async function paced(make, tries = 4) {
+        for (let attempt = 0; ; attempt++) {
+            const gap = lastWrite + writeGapMs - Date.now();
+            if (gap > 0) await wait(gap);
+            lastWrite = Date.now();
+            const r = await make();
+            const limited = r.status === 429 || (r.status === 403 && (/rate limit/i.test(String(r.data.message || '')) || header(r, 'retry-after') || header(r, 'x-ratelimit-remaining') === '0'));
+            if (!limited || attempt >= tries - 1) return r;
+            const after = Number(header(r, 'retry-after'));
+            const reset = Number(header(r, 'x-ratelimit-reset'));
+            const ms = after > 0 ? after * 1000 : reset > 0 ? Math.max(1000, reset * 1000 - Date.now()) : 60000 * (attempt + 1);
+            await wait(Math.min(ms, 5 * 60000));
+        }
+    }
+    const header = (r, name) => (r.headers && typeof r.headers.get === 'function' ? r.headers.get(name) : null);
+
     const repoPath = (owner, name) => `${apiBase}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
     const fail = (r) => {
         if (r.status === 401) throw new GithubError('revoked', 401);
@@ -171,22 +203,20 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
         const current = await call(`${base}/git/trees/${head.data.tree?.sha}?recursive=1`, { token });
         const known = new Set((current.ok && Array.isArray(current.data.tree) ? current.data.tree : []).filter(e => e.type === 'blob').map(e => e.sha));
 
+        // Text files (pages, style, script, catalogue) go inside the one tree request; only
+        // pictures are sent one by one, slowly, as GitHub asks for content made in a row
+        // (docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits)
         const entries = [];
-        const queue = [...list];
-        const worker = async () => {
-            for (let f = queue.shift(); f; f = queue.shift()) {
-                let sha = gitBlobSha(f.content);
-                if (!known.has(sha)) {
-                    const b = await call(`${base}/git/blobs`, { method: 'POST', token, body: { content: f.content.toString('base64'), encoding: 'base64' } });
-                    if (!b.ok || !b.data.sha) fail(b);
-                    sha = b.data.sha;
-                }
-                entries.push({ path: f.path, mode: '100644', type: 'blob', sha });
-            }
-        };
-        await Promise.all([1, 2, 3, 4].map(worker));
+        for (const f of list) {
+            const sha = gitBlobSha(f.content);
+            if (known.has(sha)) { entries.push({ path: f.path, mode: '100644', type: 'blob', sha }); continue; }
+            if (isText(f.path, f.content)) { entries.push({ path: f.path, mode: '100644', type: 'blob', content: f.content.toString('utf8') }); continue; }
+            const b = await paced(() => call(`${base}/git/blobs`, { method: 'POST', token, body: { content: f.content.toString('base64'), encoding: 'base64' } }));
+            if (!b.ok || !b.data.sha) fail(b);
+            entries.push({ path: f.path, mode: '100644', type: 'blob', sha: b.data.sha });
+        }
         entries.sort((a, b) => a.path.localeCompare(b.path));
-        const tree = await call(`${base}/git/trees`, { method: 'POST', token, body: { tree: entries } });
+        const tree = await paced(() => call(`${base}/git/trees`, { method: 'POST', token, body: { tree: entries } }));
         if (!tree.ok || !tree.data.sha) fail(tree);
         if (tree.data.sha === head.data.tree?.sha) return { commit: parent, changed: false };
         const commit = await call(`${base}/git/commits`, { method: 'POST', token, body: { message, tree: tree.data.sha, parents: [parent] } });
@@ -232,6 +262,7 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
         configured: !!id,
         webBase,
         manageUrl: `${webBase}${MANAGE_PATH}`,
+        tokenPageUrl: `${webBase}${TOKEN_PAGE_PATH}`,
         requestDeviceCode, pollToken, getUser, getRepository, createRepository,
         commitFiles, getPages, enablePages, updatePages,
     };
@@ -255,4 +286,4 @@ const repoOf = (d) => ({
     private: !!d.private,
 });
 
-module.exports = { createGithubClient, GithubError, SCOPES, parseScopes, canCreateRepos, canPublishPages, gitBlobSha, WEB, API };
+module.exports = { createGithubClient, GithubError, TOKEN_FORMAT, SCOPES, parseScopes, canCreateRepos, canPublishPages, gitBlobSha, WEB, API };

@@ -46,7 +46,7 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
             saveSetting: (key, value) => { settings[key] = JSON.parse(JSON.stringify(value)); },
             codedError: catalog.codedError,
             blockedMode: () => mode,
-            github: { client: createGithubClient({ clientId: 'gh-public', fetch: globalThis.fetch, webBase: cloud.base, apiBase: `${cloud.base}/api` }), store },
+            github: { client: createGithubClient({ clientId: 'gh-public', fetch: globalThis.fetch, webBase: cloud.base, apiBase: `${cloud.base}/api`, writeGapMs: 0 }), store },
             cloudflare: {
                 client: createCloudflareClient({ clientId: 'cf-public', fetch: globalThis.fetch, dashBase: cloud.base, apiBase: `${cloud.base}/client/v4`, workerUrl: (name) => `${cloud.base}/w/${name}` }),
                 store,
@@ -149,7 +149,7 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         const worker = cloud.cf.scripts.get('boutique-yasmine-api');
         expect(worker.enabled).toBe(true);
         const b = Object.fromEntries(worker.metadata.bindings.map(x => [x.name, x]));
-        expect(b.DB).toMatchObject({ type: 'd1', database_id: [...cloud.cf.databases.keys()][0] });
+        expect(b.DB).toEqual({ type: 'd1', name: 'DB', id: [...cloud.cf.databases.keys()][0] });
         expect(b.SHOP_KEY).toMatchObject({ type: 'secret_text', text: store.get('website-key') });
         expect(b.SITE_URL).toMatchObject({ type: 'plain_text', text: siteUrl });
 
@@ -345,6 +345,7 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         const first = service.view().site;
         api.run("UPDATE products SET price = 3200 WHERE id = 'jean'");
         const blobsBefore = cloud.requests.filter(r => r.path.endsWith('/git/blobs')).length;
+        const treesBefore = cloud.requests.filter(r => r.path.endsWith('/git/trees') && r.method === 'POST').length;
         service.publishSite();
         await service.publishPending();
         const v = service.view();
@@ -357,10 +358,9 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         expect(v.site.url).toBe(first.url);
         const page = await fetch(`${v.site.url}product-jean.html`).then(r => r.text());
         expect(page.replace(/<bdi dir="ltr">|<\/bdi>/g, '')).toContain('3\u00a0200');
-        // Only the pages that changed (and catalog.json) were sent, not the picture
-        const sent = cloud.requests.filter(r => r.path.endsWith('/git/blobs')).length - blobsBefore;
-        expect(sent).toBeGreaterThan(0);
-        expect(sent).toBeLessThan(10);
+        // The changed pages went inside the one tree request; the picture was not sent again
+        expect(cloud.requests.filter(r => r.path.endsWith('/git/blobs')).length - blobsBefore).toBe(0);
+        expect(cloud.requests.filter(r => r.path.endsWith('/git/trees') && r.method === 'POST').length - treesBefore).toBe(1);
     });
 
     const published = async (service) => {

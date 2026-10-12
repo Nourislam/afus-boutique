@@ -162,7 +162,8 @@ describe('website: the shop\'s GitHub account', () => {
 
     it('no AFUS app id in this copy: told plainly, no request sent; no secure key store: nothing saved, no request', async () => {
         const a = makeService({ clientId: '' });
-        expect(a.service.view().providers.github.available).toBe(false);
+        // Linking with the shop's own key stays possible; only the one-click sign-in is not offered
+        expect(a.service.view().providers.github).toEqual({ available: true, signIn: false });
         const r = await a.service.githubStart();
         expect(r.result).toEqual({ started: false, reason: 'not_configured' });
         expect(a.gh.calls).toEqual([]);

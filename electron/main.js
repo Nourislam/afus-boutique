@@ -1979,6 +1979,19 @@ ipcMain.handle('website:githubManage', async () => {
   await shell.openExternal(website.githubManageUrl());
   return { opened: true };
 });
+// Link with a key the shop made itself on the provider's page (the key goes to the main process only)
+ipcMain.handle('website:githubConnectToken', (_, { token } = {}) => website.githubConnectToken({ token }));
+ipcMain.handle('website:cloudflareConnectToken', (_, { token } = {}) => website.cloudflareConnectToken({ token }));
+// The provider's own page to make that key, already filled in (only GitHub's or Cloudflare's address)
+ipcMain.handle('website:openTokenPage', async (_, { provider } = {}) => {
+  const url = website.tokenPage(provider);
+  // Only the provider's own site (the same as its page for managing the access)
+  const home = provider === 'github' ? website.githubManageUrl() : provider === 'cloudflare' ? website.cloudflareManageUrl() : null;
+  const origin = (u) => { try { return new URL(u).origin; } catch { return null; } };
+  if (!url || !home || origin(url) !== origin(home)) return { opened: false };
+  await shell.openExternal(url);
+  return { opened: true };
+});
 ipcMain.handle('website:publish', () => website.publishSite());
 ipcMain.handle('website:setPublicInfo', (_, info = {}) => website.setPublicInfo(info));
 ipcMain.handle('website:setFeatures', (_, features = {}) => website.setFeatures(features));

@@ -92,6 +92,8 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
         refuse: {},
         // Domains another GitHub website already uses (GitHub refuses them); looks before a certificate
         takenDomains: new Set(), certPolls: 2, certFails: false,
+        // Content made in a row: at most this many per window, then 403 "secondary rate limit"
+        secondary: { max: 8, windowMs: 1000 },
     };
     const cf = {
         tokens: new Set(), codes: new Map(), revoked: [], accounts: accounts || [{ id: 'a'.repeat(32), name: 'Boutique' }],
@@ -125,7 +127,8 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
         }
         if (!gh.tokens.has(auth)) return send(401, { message: 'Bad credentials' });
         const p = url.pathname.replace(/^\/api/, '');
-        if (p === '/user') return send(200, { login: gh.login, id: 1 }, { 'x-oauth-scopes': gh.scopes });
+        // As GitHub: a fine-grained key does not list scopes (no X-OAuth-Scopes header)
+        if (p === '/user') return send(200, { login: gh.login, id: 1 }, auth.startsWith('github_pat_') ? {} : { 'x-oauth-scopes': gh.scopes });
         if (p === '/user/repos' && req.method === 'POST') {
             const j = JSON.parse(body || '{}');
             if (gh.repos.has(j.name)) return send(422, { message: 'Repository creation failed.', errors: [{ message: 'name already exists on this account' }] });
@@ -147,6 +150,18 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
         if (g) { const c = gh.commits.get(g[1]); return c ? send(200, { sha: g[1], tree: { sha: c.tree } }) : send(404, {}); }
         g = /^\/git\/trees\/([0-9a-f]+)$/.exec(rest);
         if (g && req.method === 'GET') { const t = gh.trees.get(g[1]); return t ? send(200, { sha: g[1], tree: t }) : send(404, {}); }
+        // As GitHub: content made too fast in a row is refused for a moment (secondary rate limit)
+        const tooFast = () => {
+            const t = Date.now();
+            gh.writes = (gh.writes || []).filter(x => t - x < gh.secondary.windowMs);
+            gh.writes.push(t);
+            if (gh.writes.length <= gh.secondary.max) return false;
+            gh.limited = (gh.limited || 0) + 1;
+            return true;
+        };
+        if ((rest === '/git/blobs' || rest === '/git/trees') && req.method === 'POST' && tooFast()) {
+            return send(403, { message: 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.' }, { 'retry-after': '1' });
+        }
         if (rest === '/git/blobs' && req.method === 'POST') {
             const buf = Buffer.from(JSON.parse(body).content, 'base64');
             const sha = gitSha(buf);
@@ -154,7 +169,16 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
             return send(201, { sha });
         }
         if (rest === '/git/trees' && req.method === 'POST') {
-            const entries = JSON.parse(body).tree.map(e => ({ path: e.path, type: 'blob', mode: e.mode, sha: e.sha }));
+            // As GitHub: an entry gives either the sha of a blob or its text content, not both
+            const given = JSON.parse(body).tree;
+            if (given.some(e => (e.sha === undefined) === (e.content === undefined))) return send(422, { message: 'Must supply either tree.sha or tree.content' });
+            const entries = given.map(e => {
+                if (e.content === undefined) return { path: e.path, type: 'blob', mode: e.mode, sha: e.sha };
+                const buf = Buffer.from(String(e.content), 'utf8');
+                const sha = gitSha(buf);
+                gh.blobs.set(sha, buf);
+                return { path: e.path, type: 'blob', mode: e.mode, sha };
+            });
             if (entries.some(e => !gh.blobs.has(e.sha))) return send(422, { message: 'tree.sha is not a valid blob' });
             entries.sort((a, b) => a.path.localeCompare(b.path));
             const sha = treeSha(entries);
@@ -227,7 +251,7 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
         if (!script.module) script.module = (await import(`data:text/javascript;base64,${Buffer.from(script.source).toString('base64')}`)).default;
         const env = {};
         for (const b of script.metadata.bindings) {
-            if (b.type === 'd1') env[b.name] = d1Binding(cf.databases.get(b.database_id).db);
+            if (b.type === 'd1') env[b.name] = d1Binding(cf.databases.get(b.id).db);
             else env[b.name] = b.text;
         }
         const target = `https://${m[1]}.${cf.subdomain}.workers.dev${m[2] || '/'}${url.search}`;
@@ -275,7 +299,8 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
             const metadata = JSON.parse(parts?.metadata?.value || '{}');
             const mod = parts?.[metadata.main_module];
             if (!mod || !/javascript\+module/.test(mod.type)) return send(400, { success: false, errors: [{ message: 'No such module' }] });
-            for (const b of metadata.bindings || []) if (b.type === 'd1' && !cf.databases.has(b.database_id)) return send(400, { success: false });
+            // As Cloudflare: a D1 binding names its database by "id" (database_id is only the wrangler.toml name)
+            for (const b of metadata.bindings || []) if (b.type === 'd1' && (!cf.databases.has(b.id) || 'database_id' in b)) return send(400, { success: false, errors: [{ code: 10021, message: 'binding DB of type d1 must have a valid `id` specified' }] });
             const prev = cf.scripts.get(w[1]);
             cf.scripts.set(w[1], { metadata, source: mod.value, module: null, enabled: prev?.enabled || false, uploads: (prev?.uploads || 0) + 1 });
             return send(200, { success: true, result: { id: w[1] } });
@@ -347,6 +372,11 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
     };
     /** Keys as if the shop had linked both accounts (for tests that skip the sign-in pages). */
     cloud.githubToken = () => { const t = `gho_fake_${crypto.randomBytes(8).toString('hex')}`; gh.tokens.add(t); return t; };
+    // A classic personal access token the shop made on GitHub's page (its scopes as the fake account has them)
+    cloud.githubPat = () => { const t = `ghp_${crypto.randomBytes(18).toString('hex')}`; gh.tokens.add(t); return t; };
+    // An API token the shop made on Cloudflare's page (no refresh: it does not end)
+    cloud.githubFineGrained = () => { const t = `github_pat_${crypto.randomBytes(30).toString('hex')}`; gh.tokens.add(t); return t; };
+    cloud.cloudflareApiToken = () => { const t = crypto.randomBytes(20).toString('hex'); cf.tokens.add(t); return t; };
     cloud.cloudflareTokens = () => { const at = `cf_at_${crypto.randomBytes(6).toString('hex')}`; const rt = `cf_rt_${crypto.randomBytes(6).toString('hex')}`; cf.tokens.add(at); cf.tokens.add(rt); return { at, rt }; };
     return cloud;
 }
