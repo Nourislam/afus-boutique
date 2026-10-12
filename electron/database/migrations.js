@@ -484,6 +484,26 @@ const MIGRATIONS = [
                     WHERE o.status <> 'new' AND NOT EXISTS (SELECT 1 FROM website_order_events e WHERE e.order_id = o.id AND e.status = o.status)`);
         },
     },
+    {
+        version: '2026_10_website_order_confirm',
+        description: 'Website orders: an order number for the shipping label, and the pieces put aside when an order is confirmed',
+        up(db) {
+            if (!tableExists(db, 'website_orders')) return;
+            addColumnIfMissing(db, 'website_orders', 'number', "TEXT NOT NULL DEFAULT ''");
+            // 1 while its pieces are put aside (confirmed until paid, cancelled or returned)
+            addColumnIfMissing(db, 'website_orders', 'reserved', 'INTEGER NOT NULL DEFAULT 0');
+            addColumnIfMissing(db, 'website_orders', 'label_printed_at', 'DATETIME');
+            addColumnIfMissing(db, 'website_order_items', 'variant_id', 'TEXT');
+            addColumnIfMissing(db, 'website_order_items', 'reserved_qty', 'INTEGER NOT NULL DEFAULT 0');
+            // Numbers for the orders already kept, in the order they came (W-000001, ...)
+            const rows = db.exec("SELECT id FROM website_orders WHERE number = '' ORDER BY julianday(received_at), id")[0]?.values || [];
+            const last = db.exec("SELECT MAX(CAST(SUBSTR(number, 3) AS INTEGER)) FROM website_orders WHERE number LIKE 'W-%'")[0]?.values?.[0]?.[0] || 0;
+            const stmt = db.prepare('UPDATE website_orders SET number = ? WHERE id = ?');
+            rows.forEach(([id], i) => stmt.run([`W-${String(last + i + 1).padStart(6, '0')}`, id]));
+            stmt.free();
+            db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_website_orders_number ON website_orders(number) WHERE number <> ''");
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

@@ -106,6 +106,8 @@ export default {
     'errors.WEBSITE_ORDER_CANCELLED': ["A cancelled order cannot be paid: set it back to New first", "Une commande annulée ne peut pas être payée : remettez-la d'abord en Nouvelle", "لا يمكن استلام مال طلب ملغى: أرجعه أولًا إلى «جديد»"],
     'errors.WEBSITE_ORDER_ITEM_GONE': ["{product} is no longer in the catalogue: the sale cannot be recorded", "{product} n'est plus au catalogue : la vente ne peut pas être enregistrée", "{product} لم يعد في الكتالوج: لا يمكن تسجيل البيع"],
     'errors.WEBSITE_CUSTOMER_NOT_FOUND': ["No website order with this phone number", "Aucune commande du site avec ce numéro", "لا يوجد طلب من الموقع بهذا الرقم"],
+    'errors.WEBSITE_ORDER_LOCKED': ["This order is on its way (or paid): its details cannot change any more", "Cette commande est partie (ou payée) : ses détails ne changent plus", "هذا الطلب في الطريق (أو مدفوع): لا يمكن تغيير تفاصيله"],
+    'errors.WEBSITE_ORDER_DETAILS': ["Check the order: {field}", "Vérifiez la commande : {field}", "تحقق من الطلب: {field}"],
     'errors.WEBSITE_ORDER_EMPTY': ["This order has no article", "Cette commande n'a aucun article", "هذا الطلب بلا سلعة"],
     'errors.WEBSITE_ACCOUNTS_BLOCKED': ["Accounts cannot be linked in the demo shop or in training: open the shop itself.", "Les comptes ne peuvent pas être liés dans la boutique de démo ni en formation : ouvrez le vrai magasin.", "لا يمكن ربط الحسابات في محل العرض ولا في وضع التدريب: افتح محلك الحقيقي."],
     'errors.WEBSITE_CLOUDFLARE_NOT_CONNECTED': ["Link the Cloudflare account first.", "Liez d'abord le compte Cloudflare.", "اربط حساب Cloudflare أولًا."],

@@ -113,7 +113,7 @@ describe('Website orders, cash on delivery: a sale only when the money is receiv
     const set = (id, status, now = new Date(NOW)) => orderBook.setStatus(api, { id, status, employeeId: 'owner', now, codedError });
     beforeEach(async () => { ({ api, v } = await createShop()); });
 
-    it('New, Confirmed, Preparing, Shipped, Delivered: no sale, nothing counted, stock untouched', () => {
+    it('New, Confirmed, Preparing, Shipped, Delivered: no sale, nothing counted; from Confirmed the pieces are only put aside', () => {
         expect(orderBook.importOrders(api, [remote('o1')])).toBe(1);
         const stock = api.get('SELECT stock_quantity AS n FROM product_variants WHERE id = ?', [v['J-N-40']]).n;
         for (const status of ['new', 'confirmed', 'preparing', 'shipped', 'delivered']) {
@@ -123,14 +123,19 @@ describe('Website orders, cash on delivery: a sale only when the money is receiv
             expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(0);
             expect(bestSellers(api, { now: NOW })).toEqual([]);
         }
+        // Put aside (2 pieces), not sold; cancelled: back in stock
+        expect(api.get('SELECT stock_quantity AS n FROM product_variants WHERE id = ?', [v['J-N-40']]).n).toBe(stock - 2);
+        set('o1', 'cancelled');
         expect(api.get('SELECT stock_quantity AS n FROM product_variants WHERE id = ?', [v['J-N-40']]).n).toBe(stock);
+        expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(0);
     });
 
     it('Money received = one completed sale: ticket, lines, colour / size, stock out, paid "cod"; counted once', () => {
         orderBook.importOrders(api, [remote('o1')]);
-        set('o1', 'delivered');
+        // Before the order touched anything: in the end the sale took 2 + 1 pieces, once
         const stock = api.get('SELECT stock_quantity AS n FROM product_variants WHERE id = ?', [v['J-N-40']]).n;
         const belt = api.get("SELECT stock_quantity AS n FROM products WHERE id = 'belt'").n;
+        set('o1', 'delivered');
         const r = set('o1', 'money_received');
         expect(r.order).toMatchObject({ status: 'money_received', sale_id: r.sale.saleId, receipt_number: r.sale.receipt });
         expect(r.sale.total).toBe(2 * 3000 + 800);
@@ -160,9 +165,9 @@ describe('Website orders, cash on delivery: a sale only when the money is receiv
 
     it('with the till: a till sale and a website order of the same article add up, each once', () => {
         at(api, sell(api, 't1', [{ product: 'jean', variant: v['J-N-38'], qty: 1, price: 3000 }]).id, 1);
-        orderBook.importOrders(api, [remote('o1'), remote('o2')]);
+        orderBook.importOrders(api, [remote('o1'), remote('o2', { items: JSON.stringify([{ product_id: 'jean', product_name: 'Jean', color: 'Noir', size: '38', quantity: 2, unit_price: 3000 }]) })]);
         set('o1', 'money_received');
-        set('o2', 'shipped'); // on its way: not a sale
+        set('o2', 'shipped'); // on its way: put aside, not a sale
         expect(soldOf(api)).toEqual({ jean: 1 + 2, belt: 1 });
     });
 

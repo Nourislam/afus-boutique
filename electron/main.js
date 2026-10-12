@@ -1936,6 +1936,59 @@ ipcMain.handle('website:setPublicInfo', (_, info = {}) => website.setPublicInfo(
 ipcMain.handle('website:recheck', () => website.recheckSite());
 ipcMain.handle('website:orders', (_, args = {}) => website.orders(args || {}));
 ipcMain.handle('website:customers', (_, args = {}) => website.customers(args || {}));
+ipcMain.handle('website:confirmOrder', (_, args = {}) => website.confirmOrder(args || {}));
+ipcMain.handle('website:updateOrder', (_, args = {}) => website.updateOrder(args || {}));
+ipcMain.handle('website:orderChoices', (_, args = {}) => website.orderChoices(args || {}));
+// The shipping label of a website order (100 x 150 mm): HTML for the preview,
+// the system print dialog (any printer), or a PDF
+function websiteLabelHtml(id) {
+  const { labelHtml } = require('./website/orders/shippingLabel');
+  const order = website.labelData({ id });
+  const shop = getShopSettingsForPrint();
+  return labelHtml({
+    order,
+    lang: ['ar', 'fr', 'en'].includes(shop.defaultLanguage) ? shop.defaultLanguage : 'ar',
+    shop: { name: shop.businessName || '', phone: shop.businessPhone || '', logo: shop.shopLogoDataUri || '', currency: shop.currency || 'DZD' },
+    codes: { barcode: (t) => labelService.codeSvg('code128', t, { includeText: false, height: 14 }), qr: (t) => labelService.qrSvg(t) },
+  });
+}
+ipcMain.handle('website:labelHtml', (_, args = {}) => websiteLabelHtml(args?.id));
+ipcMain.handle('website:printLabel', async (_, args = {}) => {
+  const html = websiteLabelHtml(args?.id);
+  const win = printDocument.hiddenWindow(BrowserWindow, { javascript: false });
+  try {
+    await printDocument.loadHtml(win, html);
+    // The dialog: the shop chooses the printer (label printer 100 x 150 mm, or an office printer)
+    const result = await printDocument.printContents(win.webContents, {
+      silent: false, printBackground: true, margins: { marginType: 'none' }, pageSize: { width: 100000, height: 150000 },
+    });
+    if (result.success) website.labelPrinted({ id: args.id });
+    return result.success;
+  } catch (error) {
+    throw printerError(error, '');
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+});
+ipcMain.handle('website:saveLabelPdf', async (_, args = {}) => {
+  const html = websiteLabelHtml(args?.id);
+  const order = website.labelData({ id: args?.id });
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: shopT('dialog.saveLabels'), defaultPath: `${order.number || 'order'}.pdf`,
+    filters: [{ name: shopT('dialog.pdfFiles'), extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) return null;
+  const win = printDocument.hiddenWindow(BrowserWindow, { javascript: false });
+  try {
+    await printDocument.loadHtml(win, html);
+    const pdf = await win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, pageSize: { width: 100 / 25.4, height: 150 / 25.4 }, margins: { top: 0, bottom: 0, left: 0, right: 0 } });
+    await fs.promises.writeFile(filePath, pdf);
+    website.labelPrinted({ id: args.id });
+    return filePath;
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+});
 ipcMain.handle('website:customerHistory', (_, args = {}) => website.customerHistory(args || {}));
 ipcMain.handle('website:setOrderStatus', (_, args = {}) => website.setOrderStatus(args));
 // The shop's own published website, in the browser (its address comes from GitHub Pages)

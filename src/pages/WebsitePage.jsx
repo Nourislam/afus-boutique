@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Globe, Github, Cloud, Copy, RefreshCw, Palette, CheckCircle2, Circle, Link2, Sparkles, Package, Tag, Image as ImageIcon, Shirt, PackageCheck, X,
-    XCircle, Clock, Loader2, ShoppingBag, Store, Users, Undo2,
+    XCircle, Clock, Loader2, ShoppingBag, Store, Users, Undo2, Printer, PhoneCall, FileDown,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -782,6 +782,8 @@ function WebsiteOrders() {
     const [status, setStatus] = useState(null);
     const [state, setState] = useState({ loading: false, data: null });
     const [history, setHistory] = useState(null);
+    const [confirming, setConfirming] = useState(null);
+    const [labelFor, setLabelFor] = useState(null);
     const load = (st = status) => {
         setState(s => ({ ...s, loading: true }));
         window.electronAPI.website.orders({ status: st }).then((data) => setState({ loading: false, data }), () => setState({ loading: false, data: { ok: false, reason: 'network', orders: [] } }));
@@ -876,7 +878,7 @@ function WebsiteOrders() {
                                         )}
                                         {o.note && <span className="block text-xs text-zinc-500">{o.note}</span>}
                                     </td>
-                                    <td className="py-2 px-2"><OrderStatus order={o} onChanged={() => load()} /></td>
+                                    <td className="py-2 px-2"><OrderStatus order={o} onChanged={() => load()} onConfirm={setConfirming} onLabel={setLabelFor} /></td>
                                 </tr>
                             ))}
                                 </tbody>
@@ -886,6 +888,8 @@ function WebsiteOrders() {
                 </>
             )}
             {history && <CustomerHistory phone={history} onClose={() => setHistory(null)} />}
+            {confirming && <ConfirmOrder order={confirming} onClose={() => setConfirming(null)} onDone={(o) => { setConfirming(null); load(); if (o) setLabelFor(o); }} />}
+            {labelFor && <ShippingLabel order={labelFor} onClose={() => { setLabelFor(null); load(); }} />}
         </section>
     );
 }
@@ -1000,7 +1004,7 @@ const ORDER_STATUSES = ['new', 'contacted', 'confirmed', 'preparing', 'shipped',
  * a sale: AFUS then records it once (ticket, stock out) and it can no longer
  * change; asked to confirm first.
  */
-function OrderStatus({ order, onChanged }) {
+function OrderStatus({ order, onChanged, onConfirm, onLabel }) {
     const { t } = useT();
     const [asking, setAsking] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -1018,16 +1022,31 @@ function OrderStatus({ order, onChanged }) {
             <span className="space-y-1 block" data-testid="website-order-status" data-status={order.status}>
                 <span className="badge bg-emerald-500/15 text-emerald-300 whitespace-nowrap">{t('website.orders.status.money_received')}</span>
                 {order.receipt && <span className="block text-xs text-zinc-500 whitespace-nowrap">{t('website.orders.ticket')} <bdi dir="ltr">{order.receipt}</bdi></span>}
+                <Button size="sm" variant="ghost" onClick={() => onLabel(order)} data-testid="website-order-label"><Printer className="w-4 h-4" /> {t('website.label.print')}</Button>
             </span>
         );
     }
+    const canConfirm = ['new', 'contacted'].includes(order.status);
     return (
         <span className="space-y-1 block min-w-[9rem]" data-testid="website-order-status" data-status={order.status}>
             <select className="input py-1 text-xs" value={asking ? 'money_received' : order.status} disabled={busy}
                 aria-label={t('website.orders.col.status')} data-testid="website-order-status-select"
-                onChange={(e) => (e.target.value === 'money_received' ? setAsking(true) : (setAsking(false), change(e.target.value)))}>
+                onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === 'money_received') return setAsking(true);
+                    setAsking(false);
+                    // Confirmed: after the call (what the customer confirmed, then the pieces are put aside)
+                    if (next === 'confirmed' && canConfirm) return onConfirm(order);
+                    return change(next);
+                }}>
                 {ORDER_STATUSES.filter(st => !(['cancelled', 'returned'].includes(order.status) && st === 'money_received')).map(st => <option key={st} value={st}>{t(`website.orders.status.${st}`)}</option>)}
             </select>
+            {order.reserved && <span className="block text-xs text-sky-300" data-testid="website-order-reserved">{t('website.orders.reservedHint')}</span>}
+            {order.number && <span className="block text-xs text-zinc-500"><bdi dir="ltr">{order.number}</bdi></span>}
+            <span className="flex flex-wrap gap-1">
+                {canConfirm && <Button size="sm" variant="secondary" onClick={() => onConfirm(order)} data-testid="website-order-confirm"><PhoneCall className="w-4 h-4" /> {t('website.confirm.open')}</Button>}
+                {!canConfirm && !['cancelled', 'returned'].includes(order.status) && <Button size="sm" variant="ghost" onClick={() => onLabel(order)} data-testid="website-order-label"><Printer className="w-4 h-4" /> {t('website.label.print')}</Button>}
+            </span>
             {asking && (
                 <span className="block space-y-1 rounded-lg bg-dark-tertiary/60 p-2">
                     <span className="block text-xs text-zinc-400">{t('website.orders.confirmMoney')}</span>
@@ -1038,6 +1057,143 @@ function OrderStatus({ order, onChanged }) {
                 </span>
             )}
         </span>
+    );
+}
+
+/**
+ * The call to the customer (COD): check each line (size, colour, quantity,
+ * price), the wilaya, commune and the address or courier office, then
+ * Confirm: the pieces are put aside (no sale yet). "Contacted" keeps the
+ * order waiting (no answer, call back later).
+ */
+function ConfirmOrder({ order, onClose, onDone }) {
+    const { t } = useT();
+    const [choices, setChoices] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [form, setForm] = useState(() => ({
+        lines: order.items.map(i => ({ line: i.line, productName: i.productName, size: i.size, color: i.color, quantity: String(i.quantity), unit_price: i.unitPrice === null ? '' : String(i.unitPrice), keep: true })),
+        wilaya: order.wilaya, commune: order.commune, delivery: order.delivery === 'office' ? 'office' : 'home', address: order.address,
+        courier_company: order.courier?.company || '', office_wilaya: order.courier?.wilaya || '', office_commune: order.courier?.commune || '', courier_office: order.courier?.office || '',
+    }));
+    useEffect(() => { window.electronAPI.website.orderChoices({ id: order.id }).then(setChoices, () => setChoices({ lines: {}, wilayas: [], couriers: [] })); }, [order.id]);
+    const setLine = (n, patch) => setForm(f => ({ ...f, lines: f.lines.map((l, i) => (i === n ? { ...l, ...patch } : l)) }));
+    const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+    const details = () => ({
+        ...form,
+        lines: form.lines.filter(l => l.keep).map(l => ({ line: l.line, size: l.size, color: l.color, quantity: Number(l.quantity), unit_price: l.unit_price === '' ? null : Number(l.unit_price) })),
+    });
+    const total = form.lines.filter(l => l.keep).reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.unit_price) || 0), 0);
+    const run = (fn, after) => {
+        setBusy(true);
+        fn().then((r) => { setBusy(false); after(r); }, (e) => { setBusy(false); toast.error(translateError(e)); });
+    };
+    const contacted = () => run(() => window.electronAPI.website.setOrderStatus({ id: order.id, status: 'contacted' }), () => { toast.success(t('website.confirm.contactedDone')); onDone(null); });
+    const confirm = () => run(() => window.electronAPI.website.confirmOrder({ id: order.id, details: details() }), (r) => { toast.success(t('website.confirm.done', { number: r.order.number })); onDone(r.order); });
+    const field = 'input w-full';
+    return (
+        <Modal isOpen onClose={onClose} title={t('website.confirm.title', { number: order.number })} size="lg">
+            <div className="space-y-4" data-testid="website-confirm">
+                <p className="text-sm text-zinc-300 leading-relaxed">{t('website.confirm.call')} <a className="font-mono text-indigo-300" dir="ltr" href={`tel:${order.phone}`}>{order.phone}</a> — <bdi>{order.customerName}</bdi></p>
+                <p className="text-xs text-zinc-500">{t('website.confirm.checklist')}</p>
+                <div className="space-y-2">
+                    {form.lines.map((l, n) => {
+                        const c = choices?.lines?.[l.line];
+                        const variants = c?.variants || [];
+                        const chosen = variants.find(v => v.color === l.color && v.size === l.size);
+                        const avail = variants.length ? (chosen ? chosen.stock + (c.reserved || 0) : 0) : c?.stock;
+                        return (
+                            <div key={l.line} className={`rounded-lg bg-dark-tertiary/50 p-3 space-y-2 ${l.keep ? '' : 'opacity-50'}`} data-testid="website-confirm-line">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="font-medium"><bdi>{l.productName}</bdi></span>
+                                    <label className="text-xs text-zinc-400 flex items-center gap-1"><input type="checkbox" checked={l.keep} onChange={(e) => setLine(n, { keep: e.target.checked })} /> {t('website.confirm.keepLine')}</label>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    {variants.length > 0 && (
+                                        <label className="col-span-2 space-y-1"><span className="text-xs text-zinc-400">{t('website.confirm.sizeColor')}</span>
+                                            <select className={field} value={`${l.color}\u0000${l.size}`} onChange={(e) => { const [color, size] = e.target.value.split('\u0000'); setLine(n, { color, size }); }} data-testid="website-confirm-variant">
+                                                {!chosen && <option value={`${l.color}\u0000${l.size}`}>{[l.size, l.color].filter(Boolean).join(' · ')} — {t('website.confirm.notInCatalogue')}</option>}
+                                                {variants.map(v => <option key={`${v.color}|${v.size}`} value={`${v.color}\u0000${v.size}`}>{[v.size, v.color].filter(Boolean).join(' · ')} ({t('website.confirm.inStock', { n: v.stock + (v.color === l.color && v.size === l.size ? c.reserved : 0) })})</option>)}
+                                            </select>
+                                        </label>
+                                    )}
+                                    <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.orders.col.quantity')}</span>
+                                        <input className={field} type="number" min="1" max="20" value={l.quantity} onChange={(e) => setLine(n, { quantity: e.target.value })} data-testid="website-confirm-qty" /></label>
+                                    <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.confirm.price')}</span>
+                                        <input className={field} type="number" min="0" step="10" value={l.unit_price} onChange={(e) => setLine(n, { unit_price: e.target.value })} dir="ltr" data-testid="website-confirm-price" /></label>
+                                </div>
+                                {avail !== null && avail !== undefined && <p className={`text-xs ${Number(l.quantity) > avail ? 'text-red-400' : 'text-zinc-500'}`}>{t('website.confirm.available', { n: avail })}</p>}
+                            </div>
+                        );
+                    })}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.confirm.wilaya')}</span>
+                        <input className={field} list="website-wilayas" value={form.wilaya} onChange={set('wilaya')} data-testid="website-confirm-wilaya" /></label>
+                    <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.confirm.commune')}</span>
+                        <input className={field} value={form.commune} onChange={set('commune')} data-testid="website-confirm-commune" /></label>
+                    <datalist id="website-wilayas">{(choices?.wilayas || []).map(w => <option key={w} value={w} />)}</datalist>
+                </div>
+                <div className="flex flex-wrap gap-3 text-sm">
+                    {['home', 'office'].map(d => (
+                        <label key={d} className="flex items-center gap-2"><input type="radio" name="delivery" checked={form.delivery === d} onChange={() => setForm(f => ({ ...f, delivery: d }))} /> {t(`website.orders.delivery.${d}`)}</label>
+                    ))}
+                </div>
+                {form.delivery === 'home' ? (
+                    <label className="block space-y-1"><span className="text-xs text-zinc-400">{t('website.confirm.address')}</span>
+                        <input className={field} value={form.address} onChange={set('address')} data-testid="website-confirm-address" /></label>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.confirm.courier')}</span>
+                            <input className={field} list="website-couriers" value={form.courier_company} onChange={set('courier_company')} data-testid="website-confirm-courier" /></label>
+                        <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.confirm.office')}</span>
+                            <input className={field} value={form.courier_office} onChange={set('courier_office')} data-testid="website-confirm-office" /></label>
+                        <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.confirm.officeWilaya')}</span>
+                            <input className={field} list="website-wilayas" value={form.office_wilaya} onChange={set('office_wilaya')} /></label>
+                        <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.confirm.officeCommune')}</span>
+                            <input className={field} value={form.office_commune} onChange={set('office_commune')} /></label>
+                        <datalist id="website-couriers">{(choices?.couriers || []).map(c => <option key={c} value={c} />)}</datalist>
+                    </div>
+                )}
+                <div className="flex items-center justify-between border-t border-dark-border pt-3">
+                    <span className="text-sm text-zinc-400">{t('website.confirm.totalCod')}</span>
+                    <span className="text-lg font-bold" data-testid="website-confirm-total"><bdi dir="ltr">{formatMoney(total)}</bdi></span>
+                </div>
+                <p className="text-xs text-sky-300">{t('website.confirm.reserveHint')}</p>
+                <div className="flex flex-wrap justify-end gap-2">
+                    <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
+                    {order.status === 'new' && <Button variant="secondary" onClick={contacted} loading={busy} data-testid="website-confirm-contacted">{t('website.confirm.contacted')}</Button>}
+                    <Button onClick={confirm} loading={busy} disabled={!form.lines.some(l => l.keep)} data-testid="website-confirm-save"><CheckCircle2 className="w-4 h-4" /> {t('website.confirm.save')}</Button>
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
+/** The shipping label (100 x 150 mm): seen here, printed on any printer, or saved as PDF. */
+function ShippingLabel({ order, onClose }) {
+    const { t } = useT();
+    const [html, setHtml] = useState('');
+    const [busy, setBusy] = useState(null);
+    useEffect(() => { window.electronAPI.website.labelHtml({ id: order.id }).then(setHtml, (e) => { toast.error(translateError(e)); onClose(); }); }, [order.id]);
+    const run = (key, fn, ok) => {
+        setBusy(key);
+        fn().then((r) => { setBusy(null); if (r) toast.success(ok); }, (e) => { setBusy(null); toast.error(translateError(e)); });
+    };
+    return (
+        <Modal isOpen onClose={onClose} title={t('website.label.title', { number: order.number })} size="lg">
+            <div className="space-y-3" data-testid="website-label">
+                <div className="flex justify-center bg-white rounded-lg p-2 overflow-auto">
+                    {/* No script in the label: a sandboxed frame without scripts */}
+                    {html && <iframe title={t('website.label.title', { number: order.number })} sandbox="" srcDoc={html} className="bg-white" style={{ width: '100mm', height: '150mm', border: 0 }} data-testid="website-label-frame" />}
+                </div>
+                <p className="text-xs text-zinc-500">{t('website.label.hint')}</p>
+                <div className="flex flex-wrap justify-end gap-2">
+                    <Button variant="ghost" onClick={onClose}>{t('common.close')}</Button>
+                    <Button variant="secondary" onClick={() => run('pdf', () => window.electronAPI.website.saveLabelPdf({ id: order.id }), t('website.label.saved'))} loading={busy === 'pdf'} data-testid="website-label-pdf"><FileDown className="w-4 h-4" /> {t('website.label.pdf')}</Button>
+                    <Button onClick={() => run('print', () => window.electronAPI.website.printLabel({ id: order.id }), t('website.label.printed'))} loading={busy === 'print'} data-testid="website-label-print"><Printer className="w-4 h-4" /> {t('website.label.print')}</Button>
+                </div>
+            </div>
+        </Modal>
     );
 }
 

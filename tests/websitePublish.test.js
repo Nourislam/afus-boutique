@@ -224,8 +224,8 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         expect(o.orders).toHaveLength(1);
         expect(o.orders[0]).toMatchObject({ customerName: 'Sofiane K.', phone: '0770112233', wilaya: '16 - Alger', commune: 'Kouba', delivery: 'home', quantity: 3, productId: 'jean' });
         expect(o.orders[0].items).toEqual([
-            { productId: 'jean', productName: 'Jean', size: '40', color: 'Noir', quantity: 2, unitPrice: 2000 },
-            { productId: 'belt', productName: 'Ceinture', size: '', color: '', quantity: 1, unitPrice: 900 },
+            { line: 0, productId: 'jean', productName: 'Jean', size: '40', color: 'Noir', quantity: 2, unitPrice: 2000, reserved: 0 },
+            { line: 1, productId: 'belt', productName: 'Ceinture', size: '', color: '', quantity: 1, unitPrice: 900, reserved: 0 },
         ]);
         // A quantity is kept within limits, a delivery outside the two choices is dropped
         await form({ ...cart, items: JSON.stringify([{ ...items[0], quantity: 500, unit_price: -4 }]), delivery: 'drone' });
@@ -307,7 +307,7 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         const byDelivery = Object.fromEntries(o.orders.map(x => [x.delivery, x]));
         expect(byDelivery.home).toMatchObject({ firstName: 'Amina', lastName: 'Benali', customerName: 'Amina Benali', phone: '0661223344', wilaya: '16 - Alger', commune: 'Kouba', address: 'Cité 200 logements, bât. 3', courier: null, status: 'new' });
         expect(byDelivery.office).toMatchObject({ phone: '0770112233', courier: { company: 'Yalidine', wilaya: '09 - Blida', commune: 'Boufarik', office: 'Stop desk Boufarik centre' }, status: 'new' });
-        expect(byDelivery.office.items).toEqual([{ productId: 'jean', productName: 'Jean', size: '40', color: 'Noir', quantity: 2, unitPrice: 3000 }]);
+        expect(byDelivery.office.items).toEqual([{ line: 0, productId: 'jean', productName: 'Jean', size: '40', color: 'Noir', quantity: 2, unitPrice: 3000, reserved: 0 }]);
         // Ordering is not selling: no sale and not one piece out of stock
         expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(0);
         expect(stock()).toEqual(before);

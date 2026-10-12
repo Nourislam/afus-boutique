@@ -34,6 +34,7 @@ const { canPublishPages } = require('./github');
 const publishPing = require('./publish/ping');
 const orderBook = require('./orders/orderBook');
 const { COURIERS } = require('./storefront/couriers');
+const { WILAYAS, wilayaLabel } = require('./storefront/wilayas');
 const fs = require('fs');
 const path = require('path');
 
@@ -451,14 +452,18 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     /** An order of the order book as the Website screen shows it. */
     function orderView(o) {
         const items = o.items.map(i => ({
-            productId: i.product_id, productName: i.product_name, size: i.size, color: i.color,
+            line: i.line, productId: i.product_id, productName: i.product_name, size: i.size, color: i.color,
             quantity: i.quantity, unitPrice: i.unit_price === null || i.unit_price === undefined ? null : Number(i.unit_price),
+            reserved: Number(i.reserved_qty) || 0,
         }));
         const first = items[0] || {};
-        const total = items.reduce((sum, i) => sum + (i.unitPrice === null ? 0 : i.unitPrice * i.quantity), 0);
+        // The price of a line the website sent without one: the article's own, now
+        const priced = orderBook.pricedLines(api, o.items);
+        const total = priced.reduce((sum, i) => sum + i.price * i.quantity, 0);
         return {
-            id: o.id, createdAt: o.received_at, status: o.status, statusAt: o.status_at || null, phoneKey: o.phone_key || '',
-            total: Math.round(total * 100) / 100,
+            id: o.id, number: o.number || '', createdAt: o.received_at, status: o.status, statusAt: o.status_at || null, phoneKey: o.phone_key || '',
+            total: Math.round(total * 100) / 100, reserved: !!o.reserved, labelPrintedAt: o.label_printed_at || null,
+            editable: orderBook.EDITABLE.includes(o.status) && !o.sale_id,
             moneyReceivedAt: o.money_received_at || null, receipt: o.receipt_number || null,
             productId: first.productId || '', productName: first.productName || '', size: first.size || '', color: first.color || '',
             quantity: items.reduce((n, i) => n + i.quantity, 0),
@@ -574,6 +579,70 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return { ok: true, synced: r.ok, reason: r.ok ? null : r.reason, orders: list, sync, counts };
     }
 
+    const one = (id) => {
+        const o = orderBook.listOrders(api, { id: String(id || '') })[0];
+        if (!o) throw codedError('WEBSITE_ORDER_NOT_FOUND', {});
+        return o;
+    };
+
+    /**
+     * The call to the customer: what they confirmed (size, colour, quantity,
+     * price of each line; wilaya, commune, address or courier office), then
+     * Confirmed: the pieces are put aside, no sale yet.
+     */
+    function confirmOrder({ id, details } = {}) {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        one(id);
+        const r = orderBook.confirmOrder(api, { id, details, employeeId: currentEmployee()?.id || null, codedError });
+        return { order: orderView(r.order) };
+    }
+
+    /** Change what the customer confirmed (before the order is on its way). */
+    function updateOrder({ id, details } = {}) {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        one(id);
+        return { order: orderView(orderBook.updateDetails(api, { id, details, employeeId: currentEmployee()?.id || null, codedError })) };
+    }
+
+    /** The colours / sizes an order line can be changed to (the article's active variants, with what can be sold). */
+    function orderChoices({ id } = {}) {
+        mustExist(read());
+        const o = one(id);
+        const lines = {};
+        for (const i of o.items) {
+            const product = api.get('SELECT has_variants, stock_quantity FROM products WHERE id = ?', [i.product_id]);
+            lines[i.line] = {
+                variants: product?.has_variants ? api.all(`SELECT color, size, stock_quantity AS stock, price FROM product_variants
+                                   WHERE product_id = ? AND COALESCE(is_active, 1) = 1 ORDER BY color, size`, [i.product_id]) : [],
+                // What can be sold now, with what this order already put aside
+                stock: product && !product.has_variants ? (Number(product.stock_quantity) || 0) + (Number(i.reserved_qty) || 0) : null,
+                reserved: Number(i.reserved_qty) || 0,
+            };
+        }
+        const lang = getSetting('store_config')?.defaultLanguage || 'ar';
+        return {
+            lines,
+            wilayas: WILAYAS.map(w => wilayaLabel(w, lang)),
+            couriers: [...new Set([...COURIERS.map(c => c[1]), ...o.items.length ? [o.courier_company].filter(Boolean) : []])],
+        };
+    }
+
+    /** What the shipping label shows (the order with its prices and total). */
+    function labelData({ id } = {}) {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        return orderView(one(id));
+    }
+
+    function labelPrinted({ id } = {}) {
+        mustExist(read());
+        one(id);
+        orderBook.markLabelPrinted(api, { id, employeeId: currentEmployee()?.id || null });
+        return orderView(one(id));
+    }
+
     /** The website's customers (one per phone), most recent first; search by name or phone. AFUS only. */
     function customers({ search = '' } = {}) {
         mustExist(read());
@@ -619,7 +688,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
-        publishSite, recheckSite, orders, customers, customerHistory, syncOrders, syncIfDue, setOrderStatus, setPublicInfo,
+        publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, setPublicInfo,
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),

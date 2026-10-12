@@ -126,6 +126,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         orders: (args) => ipcRenderer.invoke('website:orders', args),
         // The website's customers (by phone) and one customer's history: AFUS only
         customers: (args) => ipcRenderer.invoke('website:customers', args),
+        // The call to the customer: what they confirmed, then Confirmed (pieces put aside)
+        confirmOrder: (args) => ipcRenderer.invoke('website:confirmOrder', args),
+        updateOrder: (args) => ipcRenderer.invoke('website:updateOrder', args),
+        orderChoices: (args) => ipcRenderer.invoke('website:orderChoices', args),
+        // The shipping label (100 x 150 mm)
+        labelHtml: (args) => ipcRenderer.invoke('website:labelHtml', args),
+        printLabel: (args) => ipcRenderer.invoke('website:printLabel', args),
+        saveLabelPdf: (args) => ipcRenderer.invoke('website:saveLabelPdf', args),
         customerHistory: (args) => ipcRenderer.invoke('website:customerHistory', args),
         // An order's delivery status (money received: it becomes one sale)
         setOrderStatus: (args) => ipcRenderer.invoke('website:setOrderStatus', args),

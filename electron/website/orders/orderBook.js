@@ -10,6 +10,15 @@
  * one phone makes their history (customerStats / customerHistory). AFUS
  * only: none of it is published.
  *
+ * Stock (as the till's reservations, services/reservationService.js):
+ *   confirmed, preparing, shipped, delivered: the pieces are PUT ASIDE (out
+ *     of the stock that can be sold, inventory log "website_reserve"), not
+ *     sold: no sale, no figure counts them;
+ *   back to new / contacted, cancelled, returned: they come back in stock;
+ *   money received: they are released and the sale takes them out (the
+ *     same pieces, once: the stock does not move at that moment).
+ * Before it is confirmed nothing moves (an order alone never touches stock).
+ *
  * Only "money_received" is a completed sale: at that moment AFUS records
  * the order as ONE ordinary sale (lines, stock out, payment "cod"), in the
  * same transaction as the status. From then on the order counts in the
@@ -22,6 +31,8 @@
  *                                  changes an order already kept)
  *   listOrders(api, { limit })     newest first, with their lines
  *   setStatus(api, { id, status, employeeId, now })
+ *   updateDetails(api, { id, details, ... })   what the customer confirmed on
+ *                                              the phone (lines, place, delivery)
  *   customerStats(api, { phones?, search?, limit? })   per phone
  *   customerHistory(api, phone)                        one customer
  */
@@ -33,6 +44,11 @@ const STATUSES = ['new', 'contacted', 'confirmed', 'preparing', 'shipped', 'deli
 const COMPLETED = 'money_received';
 // Orders that stopped: never paid from there (set back to New first)
 const STOPPED = ['cancelled', 'returned'];
+// The pieces are put aside while the order is in one of these
+const RESERVING = ['confirmed', 'preparing', 'shipped', 'delivered'];
+// What the customer confirmed can still change (not on its way yet)
+const EDITABLE = ['new', 'contacted', 'confirmed', 'preparing'];
+const RELEASE_TYPE = { cancelled: 'website_cancel', returned: 'website_return', money_received: 'website_release' };
 const DELIVERY = ['home', 'office', 'pickup'];
 const MAX_LINES = 30;
 
@@ -59,12 +75,13 @@ function importOrders(api, remote = []) {
             const lines = linesOf(o).filter(i => i && i.product_id);
             if (!lines.length) continue;
             const at = new Date(o.created_at);
+            const number = nextOrderNumber(api);
             // An order only: no sale and no stock movement until the money is received
             const receivedAt = Number.isNaN(at.getTime()) ? sqlTime(new Date()) : sqlTime(at);
-            api.run(`INSERT INTO website_orders (id, received_at, customer_name, first_name, last_name, phone, phone_key, wilaya, commune, address, delivery,
+            api.run(`INSERT INTO website_orders (id, number, received_at, customer_name, first_name, last_name, phone, phone_key, wilaya, commune, address, delivery,
                                                  courier_company, office_wilaya, office_commune, courier_office, note, status, status_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`, [
-                id, receivedAt,
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`, [
+                id, number, receivedAt,
                 text(o.customer_name, 80), text(o.first_name, 40), text(o.last_name, 40), text(o.phone, 20), phoneKey(o.phone), text(o.wilaya, 60), text(o.commune, 60), text(o.address, 200),
                 DELIVERY.includes(o.delivery) ? o.delivery : '',
                 text(o.courier_company, 60), text(o.office_wilaya, 60), text(o.office_commune, 60), text(o.courier_office, 120),
@@ -84,6 +101,12 @@ function importOrders(api, remote = []) {
         }
     });
     return added;
+}
+
+/** The next order number (W-000001, W-000002, ...): on the shipping label and on the phone. */
+function nextOrderNumber(api) {
+    const last = api.get("SELECT MAX(CAST(SUBSTR(number, 3) AS INTEGER)) AS n FROM website_orders WHERE number LIKE 'W-%'")?.n || 0;
+    return `W-${String(last + 1).padStart(6, '0')}`;
 }
 
 /** Of these ids, the ones kept in SQLite (safe to remove from the website's waiting room). */
@@ -111,15 +134,22 @@ function listOrders(api, { limit = 200, id = null, status = null } = {}) {
 const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 
 /** One line of the order as an AFUS sale line: the article and its colour / size, as they are now. */
-function saleLine(api, item, codedError) {
-    const product = api.get('SELECT id, name, price, cost, has_variants FROM products WHERE id = ?', [item.product_id]);
+/** The article of a line and its colour / size, as they are now (the variant put aside first). */
+function articleOf(api, item, codedError) {
+    const product = api.get('SELECT id, name, price, cost, has_variants, stock_quantity FROM products WHERE id = ?', [item.product_id]);
     if (!product) throw codedError('WEBSITE_ORDER_ITEM_GONE', { product: item.product_name || item.product_id });
     let variant = null;
     if (product.has_variants) {
-        variant = api.all('SELECT * FROM product_variants WHERE product_id = ? AND COALESCE(is_active, 1) = 1', [product.id])
-            .find(v => same(v.color, item.color) && same(v.size, item.size));
+        variant = (item.variant_id && api.get('SELECT * FROM product_variants WHERE id = ? AND product_id = ?', [item.variant_id, product.id]))
+            || api.all('SELECT * FROM product_variants WHERE product_id = ? AND COALESCE(is_active, 1) = 1', [product.id])
+                .find(v => same(v.color, item.color) && same(v.size, item.size));
         if (!variant) throw codedError('WEBSITE_ORDER_ITEM_GONE', { product: [item.product_name || product.name, item.color, item.size].filter(Boolean).join(' ') });
     }
+    return { product, variant };
+}
+
+function saleLine(api, item, codedError) {
+    const { product, variant } = articleOf(api, item, codedError);
     const listed = variant && variant.price !== null && variant.price !== undefined ? variant.price : product.price;
     const unitPrice = item.unit_price !== null && item.unit_price !== undefined ? Number(item.unit_price) : Number(listed) || 0;
     const unitCost = variant && variant.cost !== null && variant.cost !== undefined ? variant.cost : (product.cost || 0);
@@ -152,6 +182,140 @@ function recordSale(api, order, { employeeId, now, codedError }) {
 }
 
 /**
+ * Put the order's pieces aside (inside the caller's transaction). Not more
+ * than the stock that can be sold (what other orders and reservations put
+ * aside is already out of it). Each line remembers its variant and how many
+ * were put aside, so exactly those come back.
+ */
+function reserve(api, order, { employeeId, codedError }) {
+    const lines = api.all('SELECT * FROM website_order_items WHERE order_id = ? ORDER BY line', [order.id]);
+    if (!lines.length) throw codedError('WEBSITE_ORDER_EMPTY', {});
+    for (const item of lines) {
+        const { product, variant } = articleOf(api, item, codedError);
+        // Read now: two lines of the same piece add up
+        const available = variant ? (api.get('SELECT stock_quantity AS n FROM product_variants WHERE id = ?', [variant.id]).n || 0)
+            : (api.get('SELECT stock_quantity AS n FROM products WHERE id = ?', [product.id]).n || 0);
+        if (item.quantity > available) {
+            throw codedError('STOCK_INSUFFICIENT', { product: variant ? `${product.name} (${catalog.variantLabel(variant)})` : product.name, available });
+        }
+        catalog.adjustStock(api, {
+            productId: product.id, variantId: variant ? variant.id : null, delta: -item.quantity,
+            type: 'website_reserve', reason: `Website order ${order.number || order.id}`, employeeId: employeeId || null,
+        });
+        api.run('UPDATE website_order_items SET variant_id = ?, reserved_qty = ? WHERE order_id = ? AND line = ?', [variant ? variant.id : null, item.quantity, order.id, item.line]);
+    }
+    api.run('UPDATE website_orders SET reserved = 1 WHERE id = ?', [order.id]);
+}
+
+/** The pieces put aside come back in the stock that can be sold. */
+function release(api, order, type, employeeId) {
+    for (const item of api.all('SELECT * FROM website_order_items WHERE order_id = ? AND reserved_qty > 0 ORDER BY line', [order.id])) {
+        const still = item.variant_id
+            ? api.get('SELECT id FROM product_variants WHERE id = ?', [item.variant_id])
+            : api.get('SELECT id FROM products WHERE id = ?', [item.product_id]);
+        // An article removed from the database meanwhile: nothing to put back
+        if (still) {
+            catalog.adjustStock(api, {
+                productId: item.product_id, variantId: item.variant_id || null, delta: item.reserved_qty,
+                type, reason: `Website order ${order.number || order.id}`, employeeId: employeeId || null,
+            });
+        }
+        api.run('UPDATE website_order_items SET reserved_qty = 0 WHERE order_id = ? AND line = ?', [order.id, item.line]);
+    }
+    api.run('UPDATE website_orders SET reserved = 0 WHERE id = ?', [order.id]);
+}
+
+const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v));
+
+/**
+ * What the customer confirmed on the phone: each line's size, colour,
+ * quantity and price (a line left out is removed; at least one stays), the
+ * wilaya, commune, and the address or the courier office. Only before the
+ * order is on its way. Pieces already put aside follow the change (back in
+ * stock, then put aside again as confirmed), all at once.
+ * details: { lines: [{ line, size, color, quantity, unit_price }], wilaya, commune,
+ *            delivery: 'home'|'office', address, courier_company, office_wilaya, office_commune, courier_office }
+ */
+function updateDetails(api, { id, details = {}, employeeId = null, now = new Date(), codedError }) {
+    api.transaction(() => {
+        const order = api.get('SELECT * FROM website_orders WHERE id = ?', [String(id || '')]);
+        if (!order) throw codedError('WEBSITE_ORDER_NOT_FOUND', {});
+        if (!EDITABLE.includes(order.status) || order.sale_id) throw codedError('WEBSITE_ORDER_LOCKED', {});
+        const current = api.all('SELECT * FROM website_order_items WHERE order_id = ? ORDER BY line', [order.id]);
+        const wanted = Array.isArray(details.lines) ? details.lines : current.map(l => ({ line: l.line }));
+        const lines = [];
+        for (const w of wanted) {
+            const base = current.find(l => l.line === Number(w.line));
+            if (!base) throw codedError('WEBSITE_ORDER_DETAILS', { field: 'line' });
+            const quantity = w.quantity === undefined ? base.quantity : num(w.quantity);
+            if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) throw codedError('WEBSITE_ORDER_DETAILS', { field: 'quantity' });
+            const price = w.unit_price === undefined ? base.unit_price : num(w.unit_price);
+            if (price !== null && (!Number.isFinite(price) || price < 0 || price >= 1e9)) throw codedError('WEBSITE_ORDER_DETAILS', { field: 'price' });
+            const next = { ...base, size: w.size === undefined ? base.size : text(w.size, 40), color: w.color === undefined ? base.color : text(w.color, 40), quantity, unit_price: price, variant_id: null };
+            // The colour / size must exist for this article
+            articleOf(api, next, codedError);
+            lines.push(next);
+        }
+        if (!lines.length) throw codedError('WEBSITE_ORDER_EMPTY', {});
+        const place = {
+            wilaya: details.wilaya === undefined ? order.wilaya : text(details.wilaya, 60).trim(),
+            commune: details.commune === undefined ? order.commune : text(details.commune, 60).trim(),
+            delivery: details.delivery === undefined ? order.delivery : (DELIVERY.includes(details.delivery) ? details.delivery : ''),
+            address: details.address === undefined ? order.address : text(details.address, 200).trim(),
+            courier_company: details.courier_company === undefined ? order.courier_company : text(details.courier_company, 60).trim(),
+            office_wilaya: details.office_wilaya === undefined ? order.office_wilaya : text(details.office_wilaya, 60).trim(),
+            office_commune: details.office_commune === undefined ? order.office_commune : text(details.office_commune, 60).trim(),
+            courier_office: details.courier_office === undefined ? order.courier_office : text(details.courier_office, 120).trim(),
+        };
+        if (!place.wilaya) throw codedError('WEBSITE_ORDER_DETAILS', { field: 'wilaya' });
+        if (!place.commune) throw codedError('WEBSITE_ORDER_DETAILS', { field: 'commune' });
+        if (place.delivery === 'home' && !place.address) throw codedError('WEBSITE_ORDER_DETAILS', { field: 'address' });
+        if (place.delivery === 'office' && (!place.courier_company || !place.courier_office)) throw codedError('WEBSITE_ORDER_DETAILS', { field: 'office' });
+        if (place.delivery !== 'office') Object.assign(place, { courier_company: '', office_wilaya: '', office_commune: '', courier_office: '' });
+
+        const wasReserved = !!order.reserved;
+        if (wasReserved) release(api, order, 'website_unreserve', employeeId);
+        api.run('DELETE FROM website_order_items WHERE order_id = ?', [order.id]);
+        lines.forEach((l, n) => api.run(`INSERT INTO website_order_items (order_id, line, product_id, product_name, size, color, quantity, unit_price)
+                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [order.id, n, l.product_id, l.product_name, l.size, l.color, l.quantity, l.unit_price]));
+        api.run(`UPDATE website_orders SET wilaya = ?, commune = ?, delivery = ?, address = ?, courier_company = ?, office_wilaya = ?, office_commune = ?, courier_office = ?
+                 WHERE id = ?`, [place.wilaya, place.commune, place.delivery, place.address, place.courier_company, place.office_wilaya, place.office_commune, place.courier_office, order.id]);
+        if (wasReserved) reserve(api, { ...order, reserved: 0 }, { employeeId, codedError });
+        api.run("INSERT INTO website_order_events (order_id, status, at, employee_id) VALUES (?, 'edited', ?, ?)", [order.id, sqlTime(now), employeeId]);
+    });
+    return listOrders(api, { id: String(id) })[0];
+}
+
+/** The label went to the printer (or a PDF): kept with the order. */
+function markLabelPrinted(api, { id, employeeId = null, now = new Date() }) {
+    api.transaction(() => {
+        api.run('UPDATE website_orders SET label_printed_at = ? WHERE id = ?', [sqlTime(now), String(id)]);
+        api.run("INSERT INTO website_order_events (order_id, status, at, employee_id) VALUES (?, 'label_printed', ?, ?)", [String(id), sqlTime(now), employeeId]);
+    });
+}
+
+/** Each line's price: the one confirmed or sent by the website, else the article's price now. */
+function pricedLines(api, items) {
+    return items.map(i => {
+        if (i.unit_price !== null && i.unit_price !== undefined) return { ...i, price: Number(i.unit_price) };
+        const v = i.variant_id ? api.get('SELECT price FROM product_variants WHERE id = ?', [i.variant_id]) : null;
+        const p = api.get('SELECT price FROM products WHERE id = ?', [i.product_id]);
+        const price = v && v.price !== null && v.price !== undefined ? v.price : p?.price;
+        return { ...i, price: Number(price) || 0 };
+    });
+}
+
+/** The call is done: the details the customer confirmed, then Confirmed (pieces put aside), at once. */
+function confirmOrder(api, { id, details, employeeId = null, now = new Date(), codedError }) {
+    let result;
+    api.transaction(() => {
+        updateDetails(api, { id, details, employeeId, now, codedError });
+        result = setStatus(api, { id, status: 'confirmed', employeeId, now, codedError });
+    });
+    return result;
+}
+
+/**
  * Change an order's status. "money_received" records its sale (once);
  * after it nothing changes. Returns the order as listOrders shows it.
  */
@@ -166,10 +330,16 @@ function setStatus(api, { id, status, employeeId = null, now = new Date(), coded
         if (status === order.status) return;
         if (status === COMPLETED) {
             if (STOPPED.includes(order.status)) throw codedError('WEBSITE_ORDER_CANCELLED', {});
+            // The pieces put aside are released; the sale takes the same pieces out
+            if (order.reserved) release(api, order, RELEASE_TYPE.money_received, employeeId);
             sale = recordSale(api, order, { employeeId, now, codedError });
             api.run('UPDATE website_orders SET status = ?, status_at = ?, sale_id = ?, money_received_at = ?, employee_id = ? WHERE id = ? AND sale_id IS NULL',
                 [COMPLETED, sqlTime(now), sale.saleId, sqlTime(now), employeeId, order.id]);
         } else {
+            // Confirmed (or further): put aside; back before it, cancelled or returned: back in stock
+            // Only when it enters these steps (an older order already on its way is not put aside after the fact)
+            if (RESERVING.includes(status) && !order.reserved && !RESERVING.includes(order.status)) reserve(api, order, { employeeId, codedError });
+            if (!RESERVING.includes(status) && order.reserved) release(api, order, RELEASE_TYPE[status] || 'website_unreserve', employeeId);
             api.run('UPDATE website_orders SET status = ?, status_at = ?, employee_id = ? WHERE id = ?', [status, sqlTime(now), employeeId, order.id]);
         }
         api.run('INSERT INTO website_order_events (order_id, status, at, employee_id) VALUES (?, ?, ?, ?)', [order.id, status, sqlTime(now), employeeId]);
@@ -237,4 +407,4 @@ function statusCounts(api) {
     return Object.fromEntries(api.all('SELECT status, COUNT(*) AS n FROM website_orders GROUP BY status').map(r => [r.status, r.n]));
 }
 
-module.exports = { statusCounts, STATUSES, COMPLETED, STOPPED, importOrders, knownIds, listOrders, setStatus, customerStats, customerHistory, sqlTime };
+module.exports = { markLabelPrinted, pricedLines, EDITABLE, statusCounts, STATUSES, COMPLETED, STOPPED, RESERVING, importOrders, knownIds, listOrders, setStatus, updateDetails, confirmOrder, nextOrderNumber, customerStats, customerHistory, sqlTime };
