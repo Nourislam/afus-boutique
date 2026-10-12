@@ -33,6 +33,7 @@ const { createCloudflareClient } = require('./cloudflare');
 const { createDeployer, dataHash } = require('./publish/deployer');
 const { createDomainManager } = require('./domain/domainManager');
 const { createLookup } = require('./domain/lookup');
+const { createHostingerClient } = require('./domain/hostinger');
 const domainProviders = require('./domain/providers');
 const { canPublishPages } = require('./github');
 const publishPing = require('./publish/ping');
@@ -51,6 +52,9 @@ const NO_STORE = { available: () => false, get: () => null, has: () => false, se
 const REPO_TRIES = 5;
 
 const KEY = 'website';
+
+// The shop's own Hostinger API key (secure store item)
+const HOSTINGER_ITEM = 'hostinger';
 
 function createWebsiteService({ api, getSetting, saveSetting, codedError, github = {}, cloudflare = {}, blockedMode = () => null, publish = {}, domain = {}, currentEmployee = () => null }) {
     const read = () => state.normalizeState(getSetting(KEY));
@@ -108,6 +112,8 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             try { const k = JSON.parse(store.get(item) || 'null'); add(k?.token); add(k?.accessToken); add(k?.refreshToken); } catch { /* none */ }
         }
         add(store.get('website-key'));
+        // The shop's own Hostinger key (automatic domain records): never on the website either
+        try { add(JSON.parse(store.get(HOSTINGER_ITEM) || 'null')?.token); } catch { /* none */ }
         return out;
     }
     /** The website's public data, from SQLite (publicData/: internal -> public, checked). */
@@ -170,6 +176,11 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         log: publish.log,
         blocked: () => !!blockedMode(),
         codedError,
+        // The shop's own Hostinger account (optional): its key in the secure store, main process only
+        hostinger: {
+            client: domain.hostinger || createHostingerClient({ fetch: domain.fetch || publish.fetch }),
+            vault: { get: () => store.get(HOSTINGER_ITEM), set: (v) => store.set(HOSTINGER_ITEM, v), remove: () => store.remove(HOSTINGER_ITEM) },
+        },
     });
 
     /** The Cloudflare account as shown: "connected" only while its keys are really kept here; no account id. */
@@ -354,6 +365,24 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         mustExist(read());
         if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
         await domains.retry();
+        return view();
+    }
+
+    /** The shop links its own Hostinger account (its API key, checked with Hostinger, kept encrypted here). */
+    async function domainHostingerLink({ token } = {}) {
+        mustExist(read());
+        await domains.hostingerLink({ token });
+        return view();
+    }
+    function domainHostingerForget() {
+        mustExist(read());
+        domains.hostingerForget();
+        return view();
+    }
+    /** The domain's records written at Hostinger by the program (no table to copy). */
+    async function domainHostingerSetup() {
+        mustExist(read());
+        await domains.hostingerSetup();
         return view();
     }
 
@@ -809,7 +838,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
         publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, changes,
-        domainCheck, domainRetry, domainSearch, domainOpenBuy, domainCheckIfDue: () => domains.checkIfDue(),
+        domainCheck, domainRetry, domainSearch, domainOpenBuy, domainHostingerLink, domainHostingerForget, domainHostingerSetup, domainCheckIfDue: () => domains.checkIfDue(),
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),

@@ -17,13 +17,20 @@
  * the provider's page with Afus' affiliate link and, for connecting, uses
  * the shop's own GitHub. Nothing secret goes to a provider.
  *
+ * Automatic records (optional): a shop whose domain is at Hostinger gives
+ * its own Hostinger API key once; Afus then writes the records itself (no
+ * table to copy) and takes them away when the domain is removed. The key
+ * is the shop's, kept encrypted on this computer (vault), used for this
+ * domain's DNS records only — never to buy anything.
+ *
  * deps: { read, write, github: { client, keys }, lookup, providers,
- *         startUpdate(), running(), ping, openExternal, now, log, blocked }
+ *         startUpdate(), running(), ping, openExternal, now, log, blocked,
+ *         hostinger: { client, vault: { get, set, remove } } }
  */
 const crypto = require('crypto');
 const state = require('../websiteState');
 const providerKit = require('./providers');
-const { recordsFor, checkPointing, CERT_READY, CERT_FAILED } = require('./connection');
+const { recordsFor, checkPointing, apexOf, isApex, GITHUB_A, GITHUB_AAAA, CERT_READY, CERT_FAILED } = require('./connection');
 
 const MINUTE = 60e3;
 const EVERY = { dns_needed: 2 * MINUTE, dns_wrong: 2 * MINUTE, connecting: 2 * MINUTE, https_pending: 2 * MINUTE, active: 6 * 60 * MINUTE };
@@ -56,6 +63,14 @@ function createDomainManager(deps) {
         return ref;
     }
 
+    // Hostinger: the shop's own key (vault), and whether the domain is in that account (last look)
+    const hostinger = deps.hostinger || null;
+    let hostingerOwns = null;
+    const hostingerKey = () => {
+        try { return JSON.parse(hostinger?.vault.get() || 'null')?.token || null; } catch { return null; }
+    };
+    const hostingerView = () => (hostinger ? { linked: !!hostingerKey(), owns: hostingerOwns } : null);
+
     function view() {
         const s = read();
         const d = s.domain;
@@ -66,6 +81,7 @@ function createDomainManager(deps) {
             records: d.name && owner(s) ? recordsFor(d.name, owner(s)) : [],
             found: d.name ? lastFound : null,
             providers: providers.filter(p => p.enabled).map(providerKit.describe),
+            hostinger: hostingerView(),
         };
     }
 
@@ -125,6 +141,7 @@ function createDomainManager(deps) {
         if (s.domain.name && s.domain.name !== clean && CONNECTED.includes(s.domain.status)) throw fail('WEBSITE_DOMAIN_EXISTS', { domain: s.domain.name });
         const known = providers.some(p => p.id === provider);
         lastFound = null;
+        hostingerOwns = null;
         write({
             ...s,
             domain: {
@@ -149,12 +166,22 @@ function createDomainManager(deps) {
         if (was.name && CONNECTED.includes(was.status) && !blocked()) {
             try { await detach(s); } catch (error) { throw fail('WEBSITE_DOMAIN_GITHUB', { reason: error.reason || 'unknown' }); }
         }
+        // Records Afus wrote at Hostinger: taken away too (nobody else can then point a website at them)
+        let cleaned = false;
+        if (was.name && was.autoDns === 'hostinger' && hostingerKey() && !blocked()) {
+            try {
+                await hostinger.client.remove(hostingerKey(), apexOf(was.name), autoRecords(was.name, owner(s)).map(r => ({ name: r.name, type: r.type })));
+                cleaned = true;
+            } catch (error) {
+                log({ event: 'hostinger_cleanup_failed', reason: error.reason || 'unknown' });
+            }
+        }
         lastFound = null;
         write({ ...read(), domain: { name: '', status: 'none', source: null, provider: null, reason: null, addedAt: null } });
         // The website without the CNAME file, the order service without the domain
         if (was.name && CONNECTED.includes(was.status) && !blocked()) deps.startUpdate();
         // The records at the provider are the shop's: told to take them away (nobody else can use them then)
-        return { ...view(), removed: was.name || null, cleanup: was.name && owner(s) ? recordsFor(was.name, owner(s)) : [] };
+        return { ...view(), removed: was.name || null, cleaned, cleanup: was.name && owner(s) && !cleaned ? recordsFor(was.name, owner(s)) : [] };
     }
 
     /** One look: moves the domain on as far as it can go now. */
@@ -249,7 +276,90 @@ function createDomainManager(deps) {
         return check();
     }
 
-    return { view, search, openBuy, set, remove, check, checkIfDue, retry, CONNECTED };
+    /** The records Afus writes at the shop's DNS provider, as names inside the domain's zone. */
+    function autoRecords(domain, ownerLogin) {
+        const target = `${String(ownerLogin || '').toLowerCase()}.github.io.`;
+        if (isApex(domain)) {
+            return [
+                { name: '@', type: 'A', ttl: 300, records: GITHUB_A },
+                { name: '@', type: 'AAAA', ttl: 300, records: GITHUB_AAAA },
+                { name: 'www', type: 'CNAME', ttl: 300, records: [target] },
+            ];
+        }
+        return [{ name: domain.slice(0, -(apexOf(domain).length + 1)), type: 'CNAME', ttl: 300, records: [target] }];
+    }
+
+    /**
+     * The shop links its own Hostinger account (an API key it made in hPanel
+     * › API). Checked with Hostinger before it is kept: a key Hostinger
+     * refuses is not saved. -> { linked, owns } (owns: the domain is in it).
+     */
+    async function hostingerLink({ token } = {}) {
+        if (!hostinger) throw fail('WEBSITE_DOMAIN_PROVIDER');
+        if (blocked()) throw fail('WEBSITE_ACCOUNTS_BLOCKED');
+        const key = String(token || '').trim();
+        if (!/^[A-Za-z0-9._~+/=-]{20,300}$/.test(key)) throw fail('WEBSITE_HOSTINGER_KEY');
+        let list;
+        try {
+            list = await hostinger.client.domains(key);
+        } catch (error) {
+            throw fail(error.reason === 'revoked' ? 'WEBSITE_HOSTINGER_KEY' : 'WEBSITE_HOSTINGER_FAILED', { reason: error.reason || 'unknown' });
+        }
+        hostinger.vault.set(JSON.stringify({ token: key, linkedAt: iso() }));
+        const d = read().domain;
+        hostingerOwns = d.name ? list.some(x => x.domain === apexOf(d.name)) : null;
+        log({ event: 'hostinger_linked', domains: list.length });
+        return view();
+    }
+
+    function hostingerForget() {
+        if (!hostinger) return view();
+        hostinger.vault.remove();
+        hostingerOwns = null;
+        return view();
+    }
+
+    /**
+     * Set up the domain's records automatically at Hostinger: only its
+     * website records (A / AAAA of the domain, www; or the sub-domain's
+     * CNAME) are replaced, the others (e-mail...) stay. Checked by Hostinger
+     * first. Then the usual looks connect it to the website.
+     */
+    async function hostingerSetup() {
+        if (!hostinger) throw fail('WEBSITE_DOMAIN_PROVIDER');
+        if (blocked()) throw fail('WEBSITE_ACCOUNTS_BLOCKED');
+        const s = read();
+        const d = s.domain;
+        const key = hostingerKey();
+        if (!key) throw fail('WEBSITE_HOSTINGER_KEY');
+        if (!d.name || !['dns_needed', 'dns_wrong'].includes(d.status)) throw fail('WEBSITE_DOMAIN_INVALID');
+        if (!owner(s)) throw fail('WEBSITE_NOT_PUBLISHED');
+        const zoneName = apexOf(d.name);
+        const records = autoRecords(d.name, owner(s));
+        try {
+            const list = await hostinger.client.domains(key);
+            hostingerOwns = list.some(x => x.domain === zoneName);
+            // Only a domain of the shop's own Hostinger account
+            if (!hostingerOwns) throw fail('WEBSITE_HOSTINGER_NOT_OWNED', { domain: zoneName });
+            const current = await hostinger.client.zone(key, zoneName);
+            const names = new Set(records.map(r => r.name));
+            // What would get in the way: an ALIAS on the domain, addresses where a CNAME goes
+            const clash = current.filter(r => names.has(r.name) && (r.type === 'ALIAS' || (records.some(x => x.name === r.name && x.type === 'CNAME') && ['A', 'AAAA'].includes(r.type))));
+            await hostinger.client.validate(key, zoneName, records);
+            if (clash.length) await hostinger.client.remove(key, zoneName, clash.map(r => ({ name: r.name, type: r.type })));
+            await hostinger.client.update(key, zoneName, records);
+        } catch (error) {
+            if (error.code) throw error;
+            if (error.reason === 'revoked') { hostinger.vault.remove(); throw fail('WEBSITE_HOSTINGER_KEY'); }
+            throw fail('WEBSITE_HOSTINGER_FAILED', { reason: error.reason || 'unknown' });
+        }
+        save({ autoDns: 'hostinger', autoAt: iso() });
+        log({ event: 'hostinger_records_written', records: records.length });
+        // A first look (Hostinger's change takes from a few minutes to spread)
+        return check();
+    }
+
+    return { view, search, openBuy, set, remove, check, checkIfDue, retry, hostingerLink, hostingerForget, hostingerSetup, CONNECTED };
 }
 
 module.exports = { createDomainManager, EVERY, MISSES_TO_DETACH };

@@ -137,7 +137,9 @@ function domainOf(d) {
         reason: DOMAIN_REASONS.includes(d.reason) ? d.reason : null,
         addedAt: d.addedAt || null,
     };
-    for (const key of ['checkedAt', 'dnsOkAt', 'connectedAt', 'activeAt']) if (isText(d[key], 40)) out[key] = d[key];
+    for (const key of ['checkedAt', 'dnsOkAt', 'connectedAt', 'activeAt', 'autoAt']) if (isText(d[key], 40)) out[key] = d[key];
+    // Its records were written by Afus at the shop's own DNS provider (taken away again on removal)
+    out.autoDns = d.autoDns === 'hostinger' ? 'hostinger' : null;
     out.misses = Number.isInteger(d.misses) && d.misses > 0 ? Math.min(d.misses, 99) : 0;
     return out;
 }

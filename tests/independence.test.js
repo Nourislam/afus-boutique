@@ -31,6 +31,8 @@ const NETWORK_ALLOWED = {
     'electron/website/publish/ping.js': "the shop's own published website and its API (Website Manager, optional module)",
     // Only when the owner uses Domain (optional): is a name registered (RDAP), does it point to the website (DNS over https)
     'electron/website/domain/lookup.js': "public domain look-ups for the shop's own domain (Website Manager › Domain, optional)",
+    // Only when the shop links its own Hostinger account (Domain, optional): its domain's DNS records
+    'electron/website/domain/hostinger.js': "the shop's own Hostinger account, its domain's records (Website Manager › Domain, optional)",
     // Not run by the program: uploaded to the shop's Cloudflare account as its website API
     'electron/website/worker/worker.mjs': "the shop's website API, run by Cloudflare (never by the program)",
     // Not run by the program: the published website's script reads its own search.json, in the customer's browser
@@ -72,7 +74,9 @@ describe('offline-first core', () => {
         // Cloudflare's own sign-in and API, in the Cloudflare module only
         const cloudflare = ([file, url]) => file === 'electron/website/cloudflare.js' && /^https:\/\/(dash|api)\.cloudflare\.com(\/|$)/.test(url);
         // The registries' public list (IANA) and a public DNS resolver, in the domain look-up module only
-        const domainLookup = ([file, url]) => file === 'electron/website/domain/lookup.js' && ['https://data.iana.org/rdap/dns.json', 'https://cloudflare-dns.com/dns-query'].includes(url);
+        const domainLookup = ([file, url]) => (file === 'electron/website/domain/lookup.js' && ['https://data.iana.org/rdap/dns.json', 'https://cloudflare-dns.com/dns-query'].includes(url))
+            // Hostinger's own API, in the Hostinger module only (the shop's own account)
+            || (file === 'electron/website/domain/hostinger.js' && url === 'https://developers.hostinger.com');
         expect(urls.filter((entry) => !allowed.test(entry[1]) && !shopAddress(entry) && !github(entry) && !cloudflare(entry) && !domainLookup(entry))).toEqual([]);
     });
 

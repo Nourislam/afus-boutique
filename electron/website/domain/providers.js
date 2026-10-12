@@ -25,6 +25,13 @@
  * The list comes from the installer profile (profile.json › domainProviders):
  * Afus fills its own affiliate links there; nothing about a company is
  * guessed in the code. A wrong entry is left out (and said why in the log).
+ * Hostinger, for example, once Afus has its affiliate link from the
+ * Hostinger affiliate dashboard (the link exactly as the dashboard gives it,
+ * with {domain} where the searched name goes):
+ *   { "id": "hostinger", "name": "Hostinger", "tlds": ["com", "net", "shop", "store", "online"],
+ *     "affiliateUrl": "<the affiliate link from the Hostinger dashboard, with {domain}>" }
+ * Connecting a domain bought there does not need this: the shop's own
+ * Hostinger key (domain/hostinger.js) writes its records automatically.
  */
 
 const ID = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;

@@ -30,6 +30,13 @@ function isApex(domain) {
     return parts.length === 3 && SECOND_LEVEL.includes(parts.slice(1).join('.'));
 }
 
+/** The registered domain a name belongs to (its DNS zone): shop.boutique.com -> boutique.com. */
+function apexOf(domain) {
+    const parts = String(domain).split('.');
+    const keep = parts.length >= 3 && SECOND_LEVEL.includes(parts.slice(-2).join('.')) ? 3 : 2;
+    return parts.slice(-keep).join('.');
+}
+
 /** The records to add at the provider: [{ type, host, value }] (host "@" = the domain itself). */
 function recordsFor(domain, owner) {
     const target = `${String(owner || '').toLowerCase()}.github.io`;
@@ -39,7 +46,8 @@ function recordsFor(domain, owner) {
             { type: 'CNAME', host: 'www', value: target },
         ];
     }
-    const host = String(domain).split('.')[0];
+    // The name inside its zone: shop.boutique.com -> "shop", a.shop.boutique.com -> "a.shop"
+    const host = String(domain).slice(0, -(apexOf(domain).length + 1));
     return [{ type: 'CNAME', host, value: target }];
 }
 
@@ -72,4 +80,4 @@ async function checkPointing(lookup, domain, owner) {
     return cname.includes(target) ? { ok: true, state: 'ok', found: { cname } } : { ok: false, state: 'wrong', found: { cname } };
 }
 
-module.exports = { GITHUB_A, GITHUB_AAAA, CERT_READY, CERT_FAILED, isApex, recordsFor, checkPointing };
+module.exports = { GITHUB_A, GITHUB_AAAA, CERT_READY, CERT_FAILED, isApex, apexOf, recordsFor, checkPointing };

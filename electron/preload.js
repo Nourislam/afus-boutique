@@ -115,6 +115,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         domainRetry: () => ipcRenderer.invoke('website:domainRetry'),
         domainSearch: (args) => ipcRenderer.invoke('website:domainSearch', args),
         domainOpenBuy: (args) => ipcRenderer.invoke('website:domainOpenBuy', args),
+        // The shop's own Hostinger account: records written automatically (the key never comes back to the window)
+        domainHostingerLink: (args) => ipcRenderer.invoke('website:domainHostingerLink', args),
+        domainHostingerForget: () => ipcRenderer.invoke('website:domainHostingerForget'),
+        domainHostingerSetup: () => ipcRenderer.invoke('website:domainHostingerSetup'),
         update: () => ipcRenderer.invoke('website:update'),
         connect: (provider) => ipcRenderer.invoke('website:connect', provider),
         // The shop's GitHub account (the key itself never comes to the window)

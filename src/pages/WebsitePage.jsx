@@ -568,6 +568,48 @@ const DOMAIN_STYLE = {
 };
 
 /**
+ * A domain at Hostinger: the shop links its own Hostinger account (an API
+ * key made in hPanel › API) and the program writes the records itself. The
+ * key goes to the program once and stays encrypted on this computer; it is
+ * never shown again and nothing is bought with it.
+ */
+function HostingerSetup({ d, busy, run }) {
+    const { t } = useT();
+    const api = window.electronAPI.website;
+    const [key, setKey] = useState('');
+    const h = d.hostinger;
+    return (
+        <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2" data-testid="website-hostinger" data-linked={h.linked ? '1' : '0'}>
+            <p className="text-sm font-medium">{t('website.hostinger.title')}</p>
+            {d.autoDns === 'hostinger' && d.autoAt ? (
+                <p className="text-xs text-emerald-300" data-testid="website-hostinger-done">{t('website.hostinger.done', { date: formatDate(d.autoAt, 'datetime') })}</p>
+            ) : h.linked ? (
+                <>
+                    <p className="text-xs text-zinc-400">{h.owns === false ? t('website.hostinger.notOwned', { domain: d.name }) : t('website.hostinger.ready')}</p>
+                    <div className="flex flex-wrap gap-2">
+                        <Button size="sm" onClick={() => run('hostinger', () => api.domainHostingerSetup(), () => toast.success(t('website.hostinger.written')))} loading={busy === 'hostinger'} data-testid="website-hostinger-setup">
+                            <Sparkles className="w-4 h-4" /> {t('website.hostinger.setup')}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => run('hostinger', () => api.domainHostingerForget())} data-testid="website-hostinger-forget">{t('website.hostinger.forget')}</Button>
+                    </div>
+                </>
+            ) : (
+                <>
+                    <p className="text-xs text-zinc-400 leading-relaxed">{t('website.hostinger.intro')}</p>
+                    <div className="flex flex-wrap gap-2">
+                        <input type="password" autoComplete="off" spellCheck={false} dir="ltr" className="input flex-1 min-w-[12rem] font-mono text-xs" value={key}
+                            onChange={(e) => setKey(e.target.value)} placeholder={t('website.hostinger.keyPlaceholder')} aria-label={t('website.hostinger.key')} data-testid="website-hostinger-key" />
+                        <Button size="sm" onClick={() => run('hostinger', () => api.domainHostingerLink({ token: key }), () => { setKey(''); toast.success(t('website.hostinger.linked')); })}
+                            loading={busy === 'hostinger'} disabled={key.trim().length < 20} data-testid="website-hostinger-link">{t('website.hostinger.link')}</Button>
+                    </div>
+                    <p className="text-xs text-zinc-500 leading-relaxed">{t('website.hostinger.keySafe')}</p>
+                </>
+            )}
+        </div>
+    );
+}
+
+/**
  * Domain: the free address (always there, works without buying anything)
  * and, optionally, the shop's own domain: one it already has, or one it
  * buys now at a provider (on its own account: the domain is the shop's).
@@ -714,6 +756,10 @@ function CustomDomain({ site, setSite, busy, run }) {
                         <p className="text-sm text-zinc-300 leading-relaxed" data-testid="website-domain-explain">
                             {t(`website.domain.explain.${d.reason || d.status}`, { domain: d.name, url: `https://${d.name}/` })}
                         </p>
+
+                        {d.hostinger && ['dns_needed', 'dns_wrong'].includes(d.status) && d.reason !== 'not_published' && (
+                            <HostingerSetup d={d} busy={busy} run={run} />
+                        )}
 
                         {['dns_needed', 'dns_wrong'].includes(d.status) && d.records?.length > 0 && d.reason !== 'not_published' && (
                             <div className="space-y-2" data-testid="website-domain-records">

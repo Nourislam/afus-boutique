@@ -1931,6 +1931,10 @@ ipcMain.handle('website:domainCheck', () => website.domainCheck());
 ipcMain.handle('website:domainRetry', () => website.domainRetry());
 ipcMain.handle('website:domainSearch', (_, args = {}) => website.domainSearch(args || {}));
 ipcMain.handle('website:domainOpenBuy', (_, args = {}) => website.domainOpenBuy(args || {}));
+// The shop's own Hostinger account: its key goes from the window to the main process once, then stays encrypted here
+ipcMain.handle('website:domainHostingerLink', (_, args = {}) => website.domainHostingerLink({ token: typeof args?.token === 'string' ? args.token : '' }));
+ipcMain.handle('website:domainHostingerForget', () => website.domainHostingerForget());
+ipcMain.handle('website:domainHostingerSetup', () => website.domainHostingerSetup());
 ipcMain.handle('website:update', () => website.update());
 ipcMain.handle('website:connect', (_, provider) => website.connect(provider));
 ipcMain.handle('website:githubStart', () => website.githubStart());

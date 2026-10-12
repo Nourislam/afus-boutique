@@ -127,7 +127,7 @@ describe('the records to add, and whether they are in place', () => {
 
     it('the saved domain: old "pending" reads as waiting for records; unknown fields and steps dropped', () => {
         expect(ws.normalizeState({ domain: { name: 'Shop.COM', status: 'pending' } }).domain).toMatchObject({ name: 'shop.com', status: 'dns_needed', source: 'own' });
-        expect(ws.normalizeState({ domain: { name: 'shop.com', status: 'hacked', provider: 'x'.repeat(50), secret: 1 } }).domain).toEqual({ name: 'shop.com', status: 'dns_needed', source: 'own', provider: null, reason: null, addedAt: null, misses: 0 });
+        expect(ws.normalizeState({ domain: { name: 'shop.com', status: 'hacked', provider: 'x'.repeat(50), secret: 1 } }).domain).toEqual({ name: 'shop.com', status: 'dns_needed', source: 'own', provider: null, reason: null, addedAt: null, misses: 0, autoDns: null });
         expect(ws.normalizeState({ domain: { name: 'yasmine.github.io' } }).domain.status).toBe('none');
         expect(ws.normalizeState({ affiliateRef: '<script>' }).affiliateRef).toBeNull();
     });
