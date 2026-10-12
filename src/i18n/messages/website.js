@@ -81,6 +81,18 @@ export default {
     'website.soon': ["Soon", "Bientôt", "قريبًا"],
 
     // Create Website / Update website
+    'website.status.updating': ["Updating…", "Mise à jour…", "جارٍ التحديث…"],
+    'website.statusText.updating': ["The program is sending the latest articles, prices and photos to your website. It stays online meanwhile.", "Le programme envoie les derniers articles, prix et photos à votre site. Il reste en ligne pendant ce temps.", "البرنامج يرسل آخر السلع والأسعار والصور إلى موقعك. يبقى الموقع يعمل خلال ذلك."],
+    'website.status.update_failed': ["Update failed", "Mise à jour échouée", "فشل التحديث"],
+    'website.statusText.update_failed': ["The last update did not finish. Your website is still online as it was before; press Try again.", "La dernière mise à jour n'a pas abouti. Votre site reste en ligne comme avant ; appuyez sur Réessayer.", "لم يكتمل التحديث الأخير. موقعك ما زال يعمل كما كان؛ اضغط «أعد المحاولة»."],
+    'website.update.running': ["Updating…", "Mise à jour…", "جارٍ التحديث…"],
+    'website.update.lastUpdated': ["Last updated {date}", "Dernière mise à jour {date}", "آخر تحديث {date}"],
+    'website.update.checkedAt': ["Checked {date}: nothing new to publish", "Vérifié {date} : rien de nouveau à publier", "تم التحقق {date}: لا جديد للنشر"],
+    'website.update.outdated': ["There are changes in Afus Boutique the website does not show yet: press Update website.", "Des changements dans Afus Boutique ne sont pas encore sur le site : appuyez sur Mettre à jour le site.", "توجد تغييرات في Afus Boutique لم تظهر بعد في الموقع: اضغط «تحديث الموقع»."],
+    'website.update.upToDate': ["The website shows the shop as it is now.", "Le site montre la boutique telle qu'elle est maintenant.", "الموقع يعرض المحل كما هو الآن."],
+    'website.update.doneToast': ["Website updated", "Site mis à jour", "تم تحديث الموقع"],
+    'website.update.unchangedToast': ["The website was already up to date", "Le site était déjà à jour", "الموقع محدَّث مسبقًا"],
+    'website.update.previousOnline': ["Nothing was lost: the previous version of your website is still online.", "Rien n'est perdu : la version précédente de votre site est toujours en ligne.", "لم يضع شيء: النسخة السابقة من موقعك ما زالت تعمل."],
     'website.publish.create': ["Create website", "Créer le site", "إنشاء الموقع"],
     'website.publish.running': ["Creating…", "Création…", "جارٍ الإنشاء…"],
     'website.publish.retry': ["Try again", "Réessayer", "أعد المحاولة"],
@@ -126,7 +138,7 @@ export default {
     'website.publish.reason.too_large': ["The catalogue is too large to publish at once.", "Le catalogue est trop grand pour être publié d'un coup.", "الكتالوج كبير جدًا لنشره دفعة واحدة."],
     'website.publish.reason.name_taken': ["The website's name is already used on your accounts: change the address name and try again.", "Le nom du site est déjà pris sur vos comptes : changez le nom de l'adresse et réessayez.", "اسم الموقع مستعمل في حساباتك: غيّر اسم الرابط وأعد المحاولة."],
     'website.publish.reason.pages_failed': ["GitHub could not publish the pages. Press Try again.", "GitHub n'a pas pu publier les pages. Appuyez sur Réessayer.", "لم يستطع GitHub نشر الصفحات. اضغط «أعد المحاولة»."],
-    'website.publish.reason.interrupted': ["The program was closed during the creation. Press Try again: it goes on where it stopped.", "Le programme a été fermé pendant la création. Appuyez sur Réessayer : il reprend où il s'est arrêté.", "أُغلق البرنامج أثناء الإنشاء. اضغط «أعد المحاولة»: يكمل من حيث توقف."],
+    'website.publish.reason.interrupted': ["The program was closed during the creation or update. Press Try again: it goes on where it stopped.", "Le programme a été fermé pendant la création ou la mise à jour. Appuyez sur Réessayer : il reprend où il s'est arrêté.", "أُغلق البرنامج أثناء الإنشاء أو التحديث. اضغط «أعد المحاولة»: يكمل من حيث توقف."],
     'website.publish.reason.private_data': ["Publishing stopped: the program found private data in what the website would show (for example a customer's phone in an article description). Remove it from the article and try again.", "Publication arrêtée : le programme a trouvé une donnée privée dans ce que le site montrerait (par exemple le téléphone d'un client dans une description). Retirez-la de l'article et réessayez.", "توقف النشر: وجد البرنامج بيانات خاصة فيما سيعرضه الموقع (مثل رقم زبون في وصف سلعة). احذفها من السلعة وأعد المحاولة."],
     'website.publish.reason.unknown': ["Something went wrong. Press Try again.", "Un problème est survenu. Appuyez sur Réessayer.", "حدث خطأ. اضغط «أعد المحاولة»."],
     // Shop information shown on the website only

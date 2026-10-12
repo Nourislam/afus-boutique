@@ -145,6 +145,7 @@ const RULES = {
     'website:publish': 'admin',
     'website:setPublicInfo': 'admin',
     'website:recheck': 'admin',
+    'website:changes': 'admin',
     'website:orders': 'admin',
     'website:setOrderStatus': 'admin',
     'website:checkReturn': 'admin',

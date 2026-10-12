@@ -18,6 +18,10 @@ const STATUS_STYLE = {
     ready: 'bg-sky-500/15 text-sky-300',
     live: 'bg-emerald-500/15 text-emerald-300',
     error: 'bg-red-500/15 text-red-300',
+    publishing: 'bg-sky-500/15 text-sky-300',
+    updating: 'bg-sky-500/15 text-sky-300',
+    // The update failed: the website is still online as it was
+    update_failed: 'bg-amber-500/15 text-amber-300',
 };
 const ACCOUNT_STYLE = {
     not_connected: 'bg-zinc-500/20 text-zinc-300',
@@ -673,6 +677,7 @@ function PublishPanel({ site, setSite, busy, run }) {
     const req = site.requirements || {};
     const theme = site.themes?.find(x => x.id === site.theme);
     const last = useRef(deploy.status);
+    const failToast = useRef(null);
 
     // Follow the run while it goes on
     useEffect(() => {
@@ -680,17 +685,28 @@ function PublishPanel({ site, setSite, busy, run }) {
         const timer = setInterval(() => { api.getState().then(setSite).catch(() => {}); }, 1500);
         return () => clearInterval(timer);
     }, [running]);
+    // Changes in the shop the website does not show yet (looked at when the screen opens and after each run)
+    const [outdated, setOutdated] = useState(null);
+    useEffect(() => {
+        if (running || !published) return;
+        api.changes().then(r => setOutdated(r?.outdated ?? null), () => setOutdated(null));
+    }, [running, published, site.publishedAt, site.site?.checkedAt]);
     // Say how it ended
     useEffect(() => {
         if (last.current === 'running' && deploy.status !== 'running') {
-            if (deploy.status === 'done') toast.success(t('website.publish.doneToast'));
+            if (deploy.status === 'done' && deploy.mode === 'update') toast.success(t(site.site?.unchanged ? 'website.update.unchangedToast' : 'website.update.doneToast'));
+            else if (deploy.status === 'done') toast.success(t('website.publish.doneToast'));
             else if (deploy.status === 'waiting') toast.info(t('website.publish.waitingToast'), 7000);
-            else if (deploy.status === 'failed') toast.error(t(`website.publish.reason.${deploy.reason || 'unknown'}`), 8000);
+            else if (deploy.status === 'failed') failToast.current = toast.error(t(`website.publish.reason.${deploy.reason || 'unknown'}`), 8000);
         }
         last.current = deploy.status;
     }, [deploy.status]);
 
-    const start = () => run('publish', () => api.publish(), (next) => {
+    const start = () => run('publish', () => {
+        // Try again: the message of the failed run goes away
+        if (failToast.current) { toast.dismiss(failToast.current); failToast.current = null; }
+        return api.publish();
+    }, (next) => {
         const r = next?.result;
         if (r && !r.started && r.reason !== 'running') toast.error(t(`website.publish.reason.${r.reason}`), 7000);
     });
@@ -726,8 +742,16 @@ function PublishPanel({ site, setSite, busy, run }) {
                         <Button size="sm" onClick={() => api.openSite().catch(() => {})} data-testid="website-open-site"><Globe className="w-4 h-4" /> {t('website.publish.open')}</Button>
                         <Button size="sm" variant="secondary" onClick={copy}><Copy className="w-4 h-4" /> {t('website.copy')}</Button>
                     </div>
-                    <p className="text-xs text-zinc-500">{t('website.publish.lastPublished', { date: formatDate(site.publishedAt, 'datetime') })}</p>
+                    <p className="text-xs text-zinc-500" data-testid="website-last-updated">{t('website.update.lastUpdated', { date: formatDate(site.publishedAt, 'datetime') })}</p>
+                    {site.site?.unchanged && site.site?.checkedAt && deploy.status === 'done' && outdated !== true && (
+                        <p className="text-xs text-zinc-500" data-testid="website-checked">{t('website.update.checkedAt', { date: formatDate(site.site.checkedAt, 'datetime') })}</p>
+                    )}
                 </div>
+            )}
+            {published && !running && outdated !== null && (
+                <p className={`text-sm rounded-lg px-3 py-2 ${outdated ? 'bg-amber-500/10 text-amber-300' : 'bg-emerald-500/5 text-emerald-300'}`} data-testid="website-outdated" data-outdated={outdated ? '1' : '0'}>
+                    {t(outdated ? 'website.update.outdated' : 'website.update.upToDate')}
+                </p>
             )}
 
             {/* What Create Website needs */}
@@ -755,7 +779,10 @@ function PublishPanel({ site, setSite, busy, run }) {
                 </ol>
             )}
             {deploy.status === 'failed' && (
-                <p className="text-sm text-red-300 leading-relaxed" data-testid="website-publish-error">{t(`website.publish.reason.${deploy.reason || 'unknown'}`)}</p>
+                <div className="space-y-1" data-testid="website-publish-error">
+                    <p className="text-sm text-red-300 leading-relaxed">{t(`website.publish.reason.${deploy.reason || 'unknown'}`)}</p>
+                    {published && <p className="text-xs text-zinc-400" data-testid="website-previous-online">{t('website.update.previousOnline')}</p>}
+                </div>
             )}
             {deploy.status === 'waiting' && (
                 <div className="flex flex-wrap items-center gap-3 text-sm text-amber-300">
@@ -768,7 +795,7 @@ function PublishPanel({ site, setSite, busy, run }) {
                 <p className="text-xs text-zinc-500 max-w-md leading-relaxed">{published ? t('website.publish.updateHint') : t('website.publish.createHint')}</p>
                 <Button onClick={start} loading={running || busy === 'publish'} disabled={!site.canPublish} data-testid="website-publish">
                     {published ? <RefreshCw className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
-                    {running ? t('website.publish.running') : deploy.status === 'failed' ? t('website.publish.retry') : published ? t('website.updateNow') : t('website.publish.create')}
+                    {running ? t(published ? 'website.update.running' : 'website.publish.running') : deploy.status === 'failed' ? t('website.publish.retry') : published ? t('website.updateNow') : t('website.publish.create')}
                 </Button>
             </div>
         </section>

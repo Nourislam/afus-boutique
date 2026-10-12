@@ -88,6 +88,8 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
     const gh = {
         tokens: new Set(), login, scopes, polls: 0, deny: false,
         repos: new Map(), blobs: new Map(), trees: new Map(), commits: new Map(), requests: [], pagesBuildPolls,
+        // 'PATCH /git/refs/heads/main' -> { status, times } (times: how many calls fail; none = always)
+        refuse: {},
     };
     const cf = {
         tokens: new Set(), codes: new Map(), revoked: [], accounts: accounts || [{ id: 'a'.repeat(32), name: 'Boutique' }],
@@ -135,6 +137,8 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
         const repo = m[1] === gh.login ? gh.repos.get(decodeURIComponent(m[2])) : null;
         if (!repo) return send(404, { message: 'Not Found' });
         const rest = m[3] || '';
+        const refused = gh.refuse[`${req.method} ${rest}`];
+        if (refused && (refused.times === undefined || refused.times-- > 0)) return send(refused.status, { message: 'refused by test' });
         if (!rest) return send(200, { id: 7, name: repo.name, full_name: `${repo.owner}/${repo.name}`, html_url: '', default_branch: 'main', owner: { login: repo.owner } });
         if (rest === '/git/ref/heads/main') return send(200, { object: { sha: repo.head } });
         let g = /^\/git\/commits\/([0-9a-f]+)$/.exec(rest);

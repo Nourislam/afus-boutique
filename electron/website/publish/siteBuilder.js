@@ -7,7 +7,9 @@
  *
  *   buildSite({ snapshot, theme, orderUrl, readImage, lang })
  *     readImage(name) -> Buffer | null  (one of the shop's pictures)
- *   -> { files: [{ path, content }], summary, hash }
+ *   -> { files: [{ path, content }], summary, hash, contentHash }
+ *      contentHash: the same files without the time they were made (the
+ *      build time in catalog.json): equal when nothing the customer sees changed
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -97,10 +99,17 @@ function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, l
     if (files.length > MAX_FILES) throw Object.assign(new Error('too many files'), { reason: 'too_large' });
 
     const hash = crypto.createHash('sha256');
-    for (const f of [...files].sort((a, b) => a.path.localeCompare(b.path))) hash.update(f.path).update(Buffer.isBuffer(f.content) ? f.content : Buffer.from(f.content));
+    const content = crypto.createHash('sha256');
+    const timeless = JSON.stringify({ theme: theme.id, shop: snap.shop, categories: snap.categories, products: snap.products });
+    for (const f of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
+        const body = Buffer.isBuffer(f.content) ? f.content : Buffer.from(f.content);
+        hash.update(f.path).update(body);
+        content.update(f.path).update(f.path === 'catalog.json' ? Buffer.from(timeless) : body);
+    }
     return {
         files,
         hash: hash.digest('hex'),
+        contentHash: content.digest('hex'),
         summary: {
             pages: files.filter(f => f.path.endsWith('.html')).length,
             images: [...images.values()].filter(Boolean).length,

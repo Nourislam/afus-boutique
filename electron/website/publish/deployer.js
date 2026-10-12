@@ -19,6 +19,15 @@
  * the same run. The shop sees the steps and the address only; names, ids
  * and keys stay in the main process (the key in the secure store).
  *
+ * Update website (once online): the latest SQLite data is read and the pages
+ * made again; only what changed is sent (pictures already there are not),
+ * as ONE change of the repository: the branch moves to it only when every
+ * file is there, so an update that fails leaves the published version
+ * online as it was. Nothing new to show: nothing is sent. The Worker is sent
+ * again only when its code or settings changed (orders keep coming in
+ * during an update). A step stopped by the network is tried again by itself
+ * a few times; "Try again" goes on safely from where it stopped.
+ *
  * deps: { github: { client, keys() -> { token, login, scopes } | null },
  *         cloudflare: { client, access() -> { token, accountId } },
  *         store, read(), write(next), snapshot(), theme(id), readImage(name),
@@ -40,7 +49,19 @@ const STEPS = ['repository', 'pages', 'database', 'worker', 'api', 'data', 'buil
 const KEY_ITEM = 'website-key';
 const STORE_ITEM = 'website-store';
 const TRIES = 5;
-const WAITS = { health: 60000, pages: 240000, site: 120000, every: 4000 };
+const WAITS = { health: 60000, pages: 240000, site: 120000, every: 4000, retry: 3000 };
+// Steps tried again by themselves when the network (or the provider, for a
+// moment) failed: each only reads, or writes what it would write again
+const RETRY_STEPS = ['pages', 'api', 'data', 'build', 'publish', 'live'];
+const RETRIES = 2;
+const transient = (e) => e?.reason === 'network' || e?.status === 429 || (Number(e?.status) >= 500);
+
+const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
+/** What the customer would see, without the time it was read: two equal hashes = nothing to publish. */
+function dataHash(snapshot, themeId) {
+    const { builtAt: _at, ...rest } = snapshot || {};
+    return sha256(JSON.stringify({ theme: themeId, data: rest }));
+}
 
 class StepError extends Error {
     constructor(reason) { super(reason); this.reason = reason; }
@@ -187,10 +208,14 @@ function createDeployer(deps) {
                 { type: 'plain_text', name: 'SITE_URL', text: ctx.siteUrl },
                 { type: 'plain_text', name: 'SHOP_NAME', text: ctx.shopName },
             ];
+            // The same code and settings already running: not sent again
+            const codeHash = sha256(JSON.stringify({ workerSource, bindings }));
+            const known = read().resources.worker;
+            ctx.apiUrl = cloudflare.client.workerUrl(name, subdomain);
+            if (known?.codeHash === codeHash && known.url === ctx.apiUrl && await cloudflare.client.workerExists(token, accountId, name)) return;
             await cloudflare.client.uploadWorker(token, accountId, name, { module: workerSource, bindings });
             await cloudflare.client.enableWorkersDev(token, accountId, name);
-            ctx.apiUrl = cloudflare.client.workerUrl(name, subdomain);
-            setResources({ worker: { name, subdomain, url: ctx.apiUrl } });
+            setResources({ worker: { name, subdomain, url: ctx.apiUrl, codeHash } });
         },
 
         /** A fresh workers.dev address can take a little while to answer. */
@@ -207,7 +232,14 @@ function createDeployer(deps) {
         async data(ctx) { ctx.snapshot = snapshot(); },
 
         async build(ctx) {
-            ctx.site = buildSite({ snapshot: ctx.snapshot, theme: theme(read().theme), orderUrl: `${ctx.apiUrl}/api/orders`, readImage });
+            const make = (snap) => buildSite({ snapshot: snap, theme: theme(read().theme), orderUrl: `${ctx.apiUrl}/api/orders`, readImage });
+            ctx.site = make(ctx.snapshot);
+            // Nothing the customer sees changed: the very files already published (their time kept)
+            const last = read().site;
+            if (last.contentHash === ctx.site.contentHash && last.builtAt && last.publishedAt) {
+                ctx.snapshot = { ...ctx.snapshot, builtAt: last.builtAt };
+                ctx.site = make(ctx.snapshot);
+            }
             // The pages, catalogue and README hold nothing private (keys, customers, tax numbers...)
             checkFiles(ctx.site.files, ctx.snapshot);
         },
@@ -218,7 +250,14 @@ function createDeployer(deps) {
                 files: ctx.site.files, message: `Website update ${iso().slice(0, 16).replace('T', ' ')} (Afus Boutique)`,
             });
             ctx.commit = r.commit;
-            patch(s => ({ ...s, site: { ...s.site, commit: r.commit, hash: ctx.site.hash, builtAt: iso(), summary: ctx.site.summary } }));
+            ctx.unchanged = r.changed === false;
+            patch(s => ({
+                ...s,
+                site: {
+                    ...s.site, commit: r.commit, hash: ctx.site.hash, contentHash: ctx.site.contentHash, dataHash: dataHash(ctx.snapshot, read().theme),
+                    builtAt: ctx.snapshot.builtAt || iso(), summary: ctx.site.summary, unchanged: ctx.unchanged,
+                },
+            }));
         },
 
         /** GitHub Pages built the change and the address answers. */
@@ -252,6 +291,11 @@ function createDeployer(deps) {
 
     async function markPublished(ctx) {
         const at = iso();
+        // Already up to date: the website kept as it was (its last update stays the date shown)
+        if (ctx.unchanged && read().publishedAt) {
+            patch(s => ({ ...s, lastError: null, site: { ...s.site, url: ctx.siteUrl, pending: false, checkedAt: at } }));
+            return;
+        }
         // What was published, kept with the website too (for the API's health answer)
         try {
             const db = read().resources.database;
@@ -280,7 +324,17 @@ function createDeployer(deps) {
                 }
                 provider = ['repository', 'pages', 'publish', 'live'].includes(id) ? 'github' : 'cloudflare';
                 log({ event: 'step', step: id });
-                const result = await run[id](ctx);
+                let result;
+                for (let attempt = 0; ; attempt++) {
+                    try {
+                        result = await run[id](ctx);
+                        break;
+                    } catch (error) {
+                        if (!RETRY_STEPS.includes(id) || attempt >= RETRIES || !transient(error)) throw error;
+                        log({ event: 'step_retry', step: id, attempt: attempt + 1, status: error.status || null });
+                        await sleep(waits.retry * (attempt + 1));
+                    }
+                }
                 setStep(id, result === 'waiting' ? 'waiting' : 'done');
             }
             const waiting = read().deploy.steps.some(x => x.status === 'waiting');
@@ -304,7 +358,7 @@ function createDeployer(deps) {
         patch(s => ({
             ...s,
             lastError: null,
-            deploy: { status: 'running', startedAt: iso(), finishedAt: null, failedStep: null, reason: null, steps: STEPS.map(id => ({ id, status: 'pending', reason: null, at: null })) },
+            deploy: { status: 'running', mode: s.publishedAt ? 'update' : 'create', startedAt: iso(), finishedAt: null, failedStep: null, reason: null, steps: STEPS.map(id => ({ id, status: 'pending', reason: null, at: null })) },
         }));
         job = execute();
         return { started: true };
@@ -334,4 +388,4 @@ function createDeployer(deps) {
     return { start, recheck, running, pending, blocker, key, storeId: store_, forgetKey, STEPS };
 }
 
-module.exports = { createDeployer, STEPS, KEY_ITEM };
+module.exports = { createDeployer, dataHash, STEPS, KEY_ITEM };

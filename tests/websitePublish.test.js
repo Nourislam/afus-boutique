@@ -17,6 +17,8 @@ const initSqlJs = require('sql.js');
 
 const ACCOUNT = 'c'.repeat(32);
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8]);
+const JPEG2 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9, 9, 8, 8, 8, 8]);
+const IMAGES = { 'jean-1.jpg': JPEG, 'logo.png': JPEG, 'jean-2.jpg': JPEG2 };
 const codeOf = async (fn) => { try { await fn(); } catch (e) { return e.code; } return null; };
 const fakeSafeStorage = () => ({
     isEncryptionAvailable: () => true,
@@ -51,8 +53,8 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
             },
             publish: {
                 fetch: globalThis.fetch,
-                readImage: (name) => (name === 'jean-1.jpg' || name === 'logo.png' ? JPEG : null),
-                waits: { health: 2000, pages: 3000, site: 2000, every: 20 },
+                readImage: (name) => IMAGES[name] || null,
+                waits: { health: 2000, pages: 3000, site: 2000, every: 20, retry: 10 },
                 log: (e) => logs.push(e),
                 // The fake cloud is a local http server (the program itself: https only)
                 allowHttp: true,
@@ -349,7 +351,8 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         expect(cloud.gh.repos.size).toBe(1);
         expect(cloud.cf.databases.size).toBe(1);
         expect(cloud.cf.scripts.size).toBe(1);
-        expect(cloud.cf.scripts.get('boutique-yasmine-api').uploads).toBe(2);
+        // The order service had nothing new: not sent again (orders keep coming in)
+        expect(cloud.cf.scripts.get('boutique-yasmine-api').uploads).toBe(1);
         expect(v.site.url).toBe(first.url);
         const page = await fetch(`${v.site.url}product-jean.html`).then(r => r.text());
         expect(page.replace(/<bdi dir="ltr">|<\/bdi>/g, '')).toContain('3\u00a0200');
@@ -357,6 +360,150 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         const sent = cloud.requests.filter(r => r.path.endsWith('/git/blobs')).length - blobsBefore;
         expect(sent).toBeGreaterThan(0);
         expect(sent).toBeLessThan(10);
+    });
+
+    const published = async (service) => {
+        service.publishSite();
+        await service.publishPending();
+        return service.view();
+    };
+    const fileOf = (name) => cloud.filesOf('boutique-yasmine').get(name);
+    const textOf = (name) => fileOf(name)?.toString('utf8') || '';
+    const headOf = () => cloud.gh.repos.get('boutique-yasmine').head;
+
+    it('Update website after changing an article, a price, a picture, the stock, an offer, sizes / colours, a category and the shop: all of it online', async () => {
+        const { service } = makeService();
+        let v = await published(service);
+        expect(v.deploy).toMatchObject({ status: 'done', mode: 'create' });
+        const firstAt = v.publishedAt;
+        expect(service.changes()).toEqual({ outdated: false });
+        expect(fileOf('images/jean-1.jpg')).toBeDefined();
+
+        // In Afus Boutique only (the website is not touched until Update)
+        api.run("UPDATE products SET name = 'Jean slim' WHERE id = 'jean'");
+        api.run("UPDATE products SET price = 950 WHERE id = 'belt'");
+        api.run("UPDATE products SET image_path = 'jean-2.jpg', gallery = '[]' WHERE id = 'jean'");
+        api.run("UPDATE products SET stock_quantity = 0 WHERE id = 'belt'");
+        api.run("UPDATE product_variants SET stock_quantity = 0 WHERE sku = 'J-B-40'");
+        api.run("INSERT INTO product_variants (id, product_id, color, size, sku, qr_code, stock_quantity, is_active) VALUES ('v-rouge', 'jean', 'Rouge', '46', 'J-R-46', 'QR-J-R-46', 3, 1)");
+        api.run("INSERT INTO promotions (id, name, type, value, is_active, applies_to, auto_apply) VALUES ('soldes', 'Soldes', 'percentage', 20, 1, 'all', 1)");
+        api.run("INSERT INTO categories (id, name) VALUES ('c-acc', 'Accessoires')");
+        api.run("UPDATE products SET category_id = 'c-acc' WHERE id = 'belt'");
+        api.run("UPDATE settings SET value = ? WHERE key = 'store_config'", [JSON.stringify({ businessName: 'Boutique Yasmine', businessPhone: '0661 99 88 77', defaultLanguage: 'fr' })]);
+        // A completed sale today: the belt becomes a best seller
+        api.run("INSERT INTO sales (id, receipt_number, subtotal, total, status, created_at) VALUES ('s1', 'R-1', 800, 800, 'completed', datetime('now'))");
+        api.run("INSERT INTO sale_items (id, sale_id, product_id, product_name, quantity, unit_price, total) VALUES ('si1', 's1', 'belt', 'Ceinture', 1, 800, 800)");
+        expect(textOf('product-jean.html')).not.toContain('Jean slim');
+        expect(service.changes()).toEqual({ outdated: true });
+
+        const headBefore = headOf();
+        await new Promise(r => setTimeout(r, 1100)); // a later "last updated" time
+        v = await published(service);
+        expect(v.deploy).toMatchObject({ status: 'done', mode: 'update' });
+        expect(v.status).toBe('live');
+        expect(v.site.unchanged).toBe(false);
+        expect(Date.parse(v.publishedAt)).toBeGreaterThan(Date.parse(firstAt));
+        expect(service.changes()).toEqual({ outdated: false });
+        // One new version on top of the previous one
+        expect(cloud.gh.commits.get(headOf()).parents).toEqual([headBefore]);
+
+        const search = JSON.parse(textOf('search.json'));
+        const jean = search.products.find(p => p.id === 'jean');
+        const belt = search.products.find(p => p.id === 'belt');
+        const catalogJson = JSON.parse(textOf('catalog.json'));
+        expect(jean.name).toBe('Jean slim');
+        expect(textOf('product-jean.html')).toContain('Jean slim');
+        // The new picture is online, the old one gone from the website
+        expect(fileOf('images/jean-2.jpg')).toEqual(JPEG2);
+        expect(fileOf('images/jean-1.jpg')).toBeUndefined();
+        expect(jean.image).toBe('images/jean-2.jpg');
+        // Price, offer (20 %), availability
+        expect(catalogJson.products.find(p => p.id === 'belt')).toMatchObject({ price: 950, salePrice: 760, available: false });
+        expect(belt.available).toBe(false);
+        expect(catalogJson.products.find(p => p.id === 'jean').salePrice).toBe(2400);
+        // Sizes / colours: the blue 40 sold out, the new red 46
+        expect(jean.variants).toEqual(expect.arrayContaining([['Bleu', '40', false, null], ['Rouge', '46', true, null]]));
+        // Categories, the shop's phone, best sellers
+        expect(catalogJson.categories.map(c => c.id)).toEqual(expect.arrayContaining(['c-jeans', 'c-acc']));
+        expect(fileOf('category-c-acc.html')).toBeDefined();
+        expect(textOf('index.html')).toContain('0661 99 88 77');
+        expect(textOf('best.html')).toContain('product-belt.html');
+        expect(textOf('new.html')).toContain('product-jean.html');
+        // Nothing of the shop changed by the update
+        expect(api.get("SELECT name FROM products WHERE id = 'jean'").name).toBe('Jean slim');
+        // The website answers with the new version
+        const page = await fetch(`${v.site.url}product-jean.html`).then(r => r.text());
+        expect(page).toContain('Jean slim');
+    });
+
+    it('Update website with nothing new: nothing sent, the website kept as it was, "already up to date"', async () => {
+        const { service } = makeService();
+        let v = await published(service);
+        const head = headOf();
+        const at = v.publishedAt;
+        const blobs = cloud.requests.filter(r => r.path.endsWith('/git/blobs')).length;
+        await new Promise(r => setTimeout(r, 1100));
+        v = await published(service);
+        expect(v.deploy).toMatchObject({ status: 'done', mode: 'update' });
+        expect(headOf()).toBe(head);
+        expect(cloud.requests.filter(r => r.path.endsWith('/git/blobs')).length).toBe(blobs);
+        expect(v.publishedAt).toBe(at);
+        expect(v.site.unchanged).toBe(true);
+        expect(Date.parse(v.site.checkedAt)).toBeGreaterThan(Date.parse(at));
+        // A change afterwards is published again
+        api.run("UPDATE products SET price = 990 WHERE id = 'belt'");
+        v = await published(service);
+        expect(v.site.unchanged).toBe(false);
+        expect(headOf()).not.toBe(head);
+        expect(JSON.parse(textOf('catalog.json')).products.find(p => p.id === 'belt').price).toBe(990);
+    });
+
+    it('the update fails (GitHub refuses the new version): the published website stays online as it was; Try again publishes it', async () => {
+        const { service } = makeService();
+        let v = await published(service);
+        const head = headOf();
+        const at = v.publishedAt;
+        api.run("UPDATE products SET price = 1200 WHERE id = 'belt'");
+        cloud.gh.refuse['PATCH /git/refs/heads/main'] = { status: 422 };
+        v = await published(service);
+        expect(v.deploy).toMatchObject({ status: 'failed', mode: 'update', failedStep: 'publish', reason: 'github_failed' });
+        expect(v.status).toBe('update_failed');
+        expect(v.canPublish).toBe(true);
+        // Nothing lost: same version, same date, same address, the old price online
+        expect(headOf()).toBe(head);
+        expect(v.publishedAt).toBe(at);
+        expect(JSON.parse(textOf('catalog.json')).products.find(p => p.id === 'belt').price).toBe(800);
+        const online = await fetch(`${v.site.url}search.json`).then(r => r.json());
+        expect(online.products.find(p => p.id === 'belt').price).toBe(800);
+        expect(service.changes()).toEqual({ outdated: true });
+
+        delete cloud.gh.refuse['PATCH /git/refs/heads/main'];
+        v = await published(service);
+        expect(v.deploy).toMatchObject({ status: 'done', mode: 'update' });
+        expect(v.status).toBe('live');
+        expect(v.lastError).toBeNull();
+        expect(JSON.parse(textOf('catalog.json')).products.find(p => p.id === 'belt').price).toBe(1200);
+        expect(cloud.gh.repos.size).toBe(1);
+    });
+
+    it('the network fails for a moment during the update: the step is tried again by itself; a lasting failure stops safely', async () => {
+        const { service } = makeService();
+        let v = await published(service);
+        api.run("UPDATE products SET price = 1100 WHERE id = 'belt'");
+        cloud.gh.refuse['POST /git/trees'] = { status: 502, times: 1 };
+        v = await published(service);
+        expect(v.deploy.status).toBe('done');
+        expect(logs.filter(e => e.event === 'step_retry' && e.step === 'publish')).toHaveLength(1);
+        expect(JSON.parse(textOf('catalog.json')).products.find(p => p.id === 'belt').price).toBe(1100);
+
+        const head = headOf();
+        api.run("UPDATE products SET price = 1300 WHERE id = 'belt'");
+        cloud.gh.refuse['POST /git/trees'] = { status: 503 };
+        v = await published(service);
+        expect(v.deploy).toMatchObject({ status: 'failed', failedStep: 'publish' });
+        expect(logs.filter(e => e.event === 'step_retry' && e.step === 'publish')).toHaveLength(3);
+        expect(headOf()).toBe(head);
+        expect(v.status).toBe('update_failed');
     });
 
     it('a step fails (Cloudflare refuses D1): told which and why; Try again goes on without making anything twice', async () => {

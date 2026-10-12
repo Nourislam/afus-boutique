@@ -101,7 +101,11 @@ function resourcesOf(r) {
     const out = {};
     if (isText(r?.repo?.owner, 39) && isText(r?.repo?.name, 100)) out.repo = { owner: r.repo.owner, name: r.repo.name };
     if (isText(r?.database?.id, 64) && isText(r?.database?.name, 64)) out.database = { id: r.database.id, name: r.database.name };
-    if (isText(r?.worker?.name, 63) && isText(r?.worker?.subdomain, 63) && isText(r?.worker?.url, 300)) out.worker = { name: r.worker.name, subdomain: r.worker.subdomain, url: r.worker.url };
+    if (isText(r?.worker?.name, 63) && isText(r?.worker?.subdomain, 63) && isText(r?.worker?.url, 300)) {
+        out.worker = { name: r.worker.name, subdomain: r.worker.subdomain, url: r.worker.url };
+        // What was uploaded (a hash: the Worker is sent again only when it changes)
+        if (isText(r.worker.codeHash, 64)) out.worker.codeHash = r.worker.codeHash;
+    }
     return out;
 }
 
@@ -109,8 +113,10 @@ function siteOf(x) {
     if (!x || typeof x !== 'object') return {};
     const out = {};
     if (isText(x.url, 300) && /^https?:\/\//.test(x.url)) out.url = x.url;
-    for (const key of ['commit', 'hash', 'builtAt', 'publishedAt']) if (isText(x[key], 100)) out[key] = x[key];
+    for (const key of ['commit', 'hash', 'contentHash', 'dataHash', 'builtAt', 'publishedAt', 'checkedAt']) if (isText(x[key], 100)) out[key] = x[key];
     if (typeof x.pending === 'boolean') out.pending = x.pending;
+    // The last update found nothing new to publish (the website kept as it was)
+    if (typeof x.unchanged === 'boolean') out.unchanged = x.unchanged;
     if (x.summary && typeof x.summary === 'object') out.summary = Object.fromEntries(Object.entries(x.summary).filter(([, v]) => Number.isFinite(v)));
     return out;
 }
@@ -123,6 +129,8 @@ function deployOf(d) {
     const status = DEPLOY_STATUSES.includes(d?.status) ? d.status : 'idle';
     return {
         status, steps,
+        // Create website (the first time) or Update website (once it is online)
+        mode: d?.mode === 'update' ? 'update' : 'create',
         startedAt: d?.startedAt || null, finishedAt: d?.finishedAt || null,
         failedStep: isText(d?.failedStep, 20) ? d.failedStep : null, reason: isText(d?.reason, 40) ? d.reason : null,
     };
@@ -231,8 +239,9 @@ function stepsOf(state) {
  */
 function statusOf(state) {
     if (!state.created) return 'none';
-    if (state.deploy?.status === 'running') return 'publishing';
-    if (state.lastError) return 'error';
+    // Once online, a run is an update, and a failed one leaves the website as it was
+    if (state.deploy?.status === 'running') return state.publishedAt ? 'updating' : 'publishing';
+    if (state.lastError) return state.publishedAt ? 'update_failed' : 'error';
     if (state.publishedAt) return 'live';
     if (!githubLinked(state) || !cloudflareLinked(state)) return 'accounts';
     return 'ready';

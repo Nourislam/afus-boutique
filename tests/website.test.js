@@ -39,6 +39,15 @@ describe('website: names, domains, steps', () => {
         expect(ws.statusOf(linked)).toBe('ready');
         expect(ws.statusOf({ ...linked, publishedAt: '2026-10-11' })).toBe('live');
         expect(ws.statusOf({ ...linked, lastError: 'x' })).toBe('error');
+        // Once online: a run is an update, a failed update leaves the website online
+        const online = { ...linked, publishedAt: '2026-10-11' };
+        expect(ws.statusOf({ ...linked, deploy: { status: 'running' } })).toBe('publishing');
+        expect(ws.statusOf({ ...online, deploy: { status: 'running' } })).toBe('updating');
+        expect(ws.statusOf({ ...online, lastError: 'network' })).toBe('update_failed');
+        const kept = ws.normalizeState({ ...online, deploy: { status: 'done', mode: 'update' }, site: { url: 'https://a.github.io/b/', contentHash: 'c'.repeat(64), dataHash: 'd'.repeat(64), unchanged: true, checkedAt: '2026-10-12', secret: 'x' } });
+        expect(kept.deploy.mode).toBe('update');
+        expect(kept.site).toEqual({ url: 'https://a.github.io/b/', contentHash: 'c'.repeat(64), dataHash: 'd'.repeat(64), unchanged: true, checkedAt: '2026-10-12' });
+        expect(ws.normalizeState({ deploy: { mode: 'other' } }).deploy.mode).toBe('create');
         // Unknown theme or fields are dropped
         expect(ws.normalizeState({ theme: 'neon', hacker: 1 })).not.toHaveProperty('hacker');
         expect(ws.normalizeState({ theme: 'neon' }).theme).toBe('fashion-modern');

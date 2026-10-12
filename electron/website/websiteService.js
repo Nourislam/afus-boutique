@@ -29,7 +29,7 @@ const { createGithubConnector } = require('./githubConnector');
 const { createGithubClient } = require('./github');
 const { createCloudflareConnector } = require('./cloudflareConnector');
 const { createCloudflareClient } = require('./cloudflare');
-const { createDeployer } = require('./publish/deployer');
+const { createDeployer, dataHash } = require('./publish/deployer');
 const { canPublishPages } = require('./github');
 const publishPing = require('./publish/ping');
 const orderBook = require('./orders/orderBook');
@@ -180,7 +180,11 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         const owner = saved.resources.repo?.owner || (saved.accounts.github.status === 'connected' ? saved.accounts.github.login : '');
         return {
             ...s,
-            site: { url: saved.site.url || null, publishedAt: saved.site.publishedAt || null, pending: !!saved.site.pending, summary: saved.site.summary || null },
+            site: {
+                url: saved.site.url || null, publishedAt: saved.site.publishedAt || null, pending: !!saved.site.pending, summary: saved.site.summary || null,
+                // The last update found nothing new (the website kept as it was), and when it looked
+                unchanged: !!saved.site.unchanged, checkedAt: saved.site.checkedAt || null,
+            },
             // Delivery companies the shop can offer for pick up at their office
             couriersList: COURIERS.map(([id, name]) => ({ id, name })),
             status: state.statusOf(s),
@@ -442,6 +446,22 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return { ...view(), result: { refused } };
     }
 
+    /**
+     * Are there changes in Afus Boutique the website does not show yet
+     * (articles, prices, pictures, stock, offers, categories, shop details,
+     * new in / best sellers)? { outdated: true | false | null (not known) }.
+     * Read only: the public data of now against what was last published.
+     */
+    function changes() {
+        const s = read();
+        if (!s.created || !s.publishedAt || !s.site.dataHash || blockedMode()) return { outdated: null };
+        try {
+            return { outdated: dataHash(publicData(), s.theme) !== s.site.dataHash };
+        } catch {
+            return { outdated: null };
+        }
+    }
+
     /** The address was not answering yet after publishing: look again. */
     async function recheckSite() {
         if (blockedMode()) return { ...view(), result: { checked: false } };
@@ -699,7 +719,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
-        publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo,
+        publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, changes,
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),
