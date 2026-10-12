@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    Globe, Github, Cloud, Copy, RefreshCw, Palette, CheckCircle2, Circle, Link2, Sparkles, Package, Tag, Image as ImageIcon, Shirt, PackageCheck, X,
+    Globe, Github, Cloud, Copy, RefreshCw, Palette, CheckCircle2, Circle, Sparkles, Package, Tag, Image as ImageIcon, Shirt, PackageCheck, X,
     XCircle, Clock, Loader2, ShoppingBag, Store, Users, Undo2, Printer, PhoneCall, FileDown,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
@@ -252,10 +252,14 @@ function ThemeStudio({ site, busy, run }) {
     // Slightly under the measured width, so rounding never pushes the frame out
     const scale = Math.min(1, Math.max(0.1, (boxWidth - 2) / width));
     const chosen = site.themes.find(x => x.id === picked);
-    const keep = () => run('theme', () => api.setTheme(picked), () => toast.success(t('website.themeSaved')));
+    const online = !!site.publishedAt;
+    // Online already: the website's pages are made again with the new look (the shop's data is only read)
+    const keep = () => run('theme', () => api.setTheme(picked, { publish: online }), (next) => {
+        toast.success(t(next?.result?.published ? 'website.themeSavedUpdating' : 'website.themeSaved'));
+    });
 
     return (
-        <section className="card space-y-4 xl:col-span-2" data-testid="website-theme">
+        <section className="card space-y-4 xl:col-span-2" data-testid="website-theme" id="website-theme">
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <h2 className="font-semibold flex items-center gap-2"><Palette className="w-4 h-4 text-indigo-300" /> {t('website.theme')}</h2>
@@ -314,11 +318,176 @@ function ThemeStudio({ site, busy, run }) {
                         <div className="flex gap-2">
                             <Button size="sm" variant="ghost" onClick={() => setPicked(site.theme)}>{t('common.cancel')}</Button>
                             <Button size="sm" onClick={keep} loading={busy === 'theme'} data-testid="website-theme-use">
-                                <CheckCircle2 className="w-4 h-4" /> {t('website.themeUse', { name: themeText(chosen, 'name', lang) })}
+                                <CheckCircle2 className="w-4 h-4" /> {t(online ? 'website.themeUseUpdate' : 'website.themeUse', { name: themeText(chosen, 'name', lang) })}
                             </Button>
                         </div>
                     )}
             </div>
+        </section>
+    );
+}
+
+/** The website's page drawn by the program, in a frame that runs no script and cannot reach the program. */
+function PreviewFrame({ html, device = 'desktop', title, testId = 'website-preview-frame', theme }) {
+    const box = useRef(null);
+    const [boxWidth, setBoxWidth] = useState(800);
+    useEffect(() => {
+        if (!box.current || typeof ResizeObserver === 'undefined') return undefined;
+        const ro = new ResizeObserver(([entry]) => setBoxWidth(entry.contentRect.width));
+        ro.observe(box.current);
+        return () => ro.disconnect();
+    }, []);
+    const width = PREVIEW_WIDTH[device];
+    const scale = Math.min(1, Math.max(0.1, (boxWidth - 2) / width));
+    return (
+        <div ref={box} className="w-full">
+            <div className="relative rounded-xl border border-dark-border bg-white overflow-hidden mx-auto" style={{ width: Math.floor(width * scale), maxWidth: '100%', height: PREVIEW_HEIGHT }}>
+                {html && (
+                    <iframe title={title} sandbox="" referrerPolicy="no-referrer" srcDoc={html} data-testid={testId} data-theme={theme}
+                        style={{ position: 'absolute', top: 0, left: 0, width, height: PREVIEW_HEIGHT / scale, transform: `scale(${scale})`, transformOrigin: 'top left', border: 0, display: 'block' }} />
+                )}
+            </div>
+        </div>
+    );
+}
+
+// Every page of the website, as the preview offers them
+const SITE_PAGES = ['home', 'products', 'categories', 'category', 'product', 'new', 'best', 'offers', 'cart', 'checkout', 'about', 'contact', 'location'];
+
+/**
+ * Preview Website: the website as Update would publish it now (the shop's
+ * data as it is, the theme in use), every page, computer or phone — before
+ * anything is sent. Read only.
+ */
+function WebsitePreview({ site, onClose, onUpdate }) {
+    const { t, lang } = useT();
+    const api = window.electronAPI.website;
+    const [page, setPage] = useState('home');
+    const [id, setId] = useState(null);
+    const [device, setDevice] = useState('desktop');
+    const [preview, setPreview] = useState(null);
+    const [failed, setFailed] = useState(false);
+    const theme = site.themes?.find(x => x.id === site.theme);
+    useEffect(() => {
+        let alive = true;
+        setFailed(false);
+        api.previewTheme({ theme: site.theme, page, id }).then((r) => { if (alive) setPreview(r); }, () => { if (alive) setFailed(true); });
+        return () => { alive = false; };
+    }, [page, id, site.theme]);
+    return (
+        <Modal isOpen onClose={onClose} title={t('website.sitePreview.title')} size="xl">
+            <div className="space-y-3" data-testid="website-site-preview">
+                <p className="text-xs text-zinc-400 leading-relaxed">{t(site.publishedAt ? 'website.sitePreview.hintOnline' : 'website.sitePreview.hintFirst', { theme: themeText(theme, 'name', lang) })}</p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <select className="input py-1.5 text-sm" value={page} onChange={(e) => { setPage(e.target.value); setId(null); }} aria-label={t('website.previewPage')} data-testid="website-site-preview-page">
+                            {SITE_PAGES.map(p => <option key={p} value={p}>{t(`website.sitePreview.page.${p}`)}</option>)}
+                        </select>
+                        {page === 'category' && preview?.categories?.length > 0 && (
+                            <select className="input py-1.5 text-sm" value={id || ''} onChange={(e) => setId(e.target.value || null)} aria-label={t('website.previewPages.category')}>
+                                <option value="">{t('website.sitePreview.page.products')}</option>
+                                {preview.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        )}
+                    </div>
+                    <div className="flex gap-1 rounded-lg bg-dark-tertiary/60 p-1" role="tablist" aria-label={t('website.previewDevice')}>
+                        {['desktop', 'mobile'].map(d => (
+                            <button key={d} type="button" role="tab" aria-selected={device === d} onClick={() => setDevice(d)} data-testid={`website-site-preview-device-${d}`}
+                                className={`px-3 py-1.5 rounded-md text-sm ${device === d ? 'bg-dark-secondary text-white' : 'text-zinc-400 hover:text-white'}`}>
+                                {t(`website.previewDevices.${d}`)}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {failed ? <p className="p-6 text-sm text-zinc-500">{t('website.previewFailed')}</p>
+                    : <PreviewFrame html={preview?.html} device={device} title={t('website.sitePreview.title')} testId="website-site-preview-frame" theme={preview?.theme} />}
+                {preview && page === 'new' && preview.newProducts === 0 && <p className="text-xs text-zinc-500">{t('website.sitePreview.noNew')}</p>}
+                {preview && page === 'best' && preview.bestSellers === 0 && <p className="text-xs text-zinc-500">{t('website.sitePreview.noBest')}</p>}
+                <div className="flex flex-wrap justify-end gap-2">
+                    <Button variant="ghost" onClick={onClose}>{t('common.close')}</Button>
+                    {site.canPublish && <Button onClick={onUpdate} data-testid="website-site-preview-publish"><RefreshCw className="w-4 h-4" /> {t(site.publishedAt ? 'website.updateNow' : 'website.publish.create')}</Button>}
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
+/**
+ * Website management in one place: where the website is (status), its
+ * free address, its own domain, the theme in use, when it was last
+ * updated, and the three actions: Update website, Preview website, Change theme.
+ */
+function WebsiteOverview({ site, busy, run }) {
+    const { t, lang } = useT();
+    const api = window.electronAPI.website;
+    const [previewing, setPreviewing] = useState(false);
+    const [outdated, setOutdated] = useState(null);
+    const running = site.deploy?.status === 'running';
+    const published = !!site.publishedAt;
+    const theme = site.themes?.find(x => x.id === site.theme);
+    const d = site.domain || { name: '', status: 'none' };
+    const free = site.site?.freeUrl || site.freeUrl;
+    useEffect(() => {
+        if (running || !published) { setOutdated(null); return; }
+        api.changes().then(r => setOutdated(r?.outdated ?? null), () => setOutdated(null));
+    }, [running, published, site.publishedAt, site.theme]);
+    const update = () => run('publish', () => api.publish(), (next) => {
+        const r = next?.result;
+        if (r && !r.started && r.reason !== 'running') toast.error(t(`website.publish.reason.${r.reason}`), 7000);
+    });
+    const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const Row = ({ label, children, testId }) => (
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 py-2 border-t border-dark-border first:border-t-0" data-testid={testId}>
+            <span className="text-xs text-zinc-500 pt-0.5">{label}</span>
+            <div className="min-w-0 text-sm text-end">{children}</div>
+        </div>
+    );
+    return (
+        <section className="card space-y-2" data-testid="website-url">
+            <h2 className="font-semibold flex items-center gap-2"><Store className="w-4 h-4 text-indigo-300" /> {t('website.manage.title')}</h2>
+            <div data-testid="website-overview">
+                <Row label={t('website.manage.status')} testId="website-overview-status">
+                    <span className={`badge ${STATUS_STYLE[site.status] || STATUS_STYLE.none}`} data-status={site.status}>{t(`website.status.${site.status}`)}</span>
+                </Row>
+                <Row label={t('website.manage.free')} testId="website-overview-free">
+                    <p dir="ltr" className="font-mono text-xs [overflow-wrap:anywhere] text-start" data-testid="website-free-url">{free}</p>
+                    <span className="flex flex-wrap justify-end gap-1 mt-1">
+                        <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard?.writeText(free).then(() => toast.success(t('website.copied')), () => {}); }}>
+                            <Copy className="w-4 h-4" /> {t('website.copy')}
+                        </Button>
+                        {!published && <RenameAddress site={site} busy={busy} run={run} />}
+                    </span>
+                    <p className="text-xs text-zinc-500">{published ? t('website.urlLive') : site.freeOwner ? t('website.urlSoon') : t('website.urlAfterGithub')}</p>
+                </Row>
+                <Row label={t('website.manage.custom')} testId="website-overview-domain">
+                    {d.name ? (
+                        <span className="flex flex-col items-end gap-1">
+                            <span dir="ltr" className="font-mono text-xs [overflow-wrap:anywhere]">{d.name}</span>
+                            <span className={`badge ${DOMAIN_STYLE[d.status] || ''}`} data-status={d.status}>{t(`website.domain.status.${d.status}`)}</span>
+                        </span>
+                    ) : <span className="text-zinc-400">{t('website.manage.noDomain')}</span>}
+                    <button type="button" className="block ms-auto text-xs text-indigo-300 hover:underline mt-1" onClick={() => scrollTo('website-domain')}>{t('website.manage.manageDomain')}</button>
+                </Row>
+                <Row label={t('website.manage.theme')} testId="website-overview-theme">
+                    <span>{themeText(theme, 'name', lang)}</span>
+                    <button type="button" className="block ms-auto text-xs text-indigo-300 hover:underline mt-1" onClick={() => scrollTo('website-theme')} data-testid="website-overview-change-theme">{t('website.manage.changeTheme')}</button>
+                </Row>
+                <Row label={t('website.manage.lastUpdated')} testId="website-overview-updated">
+                    <span data-testid="website-overview-updated-at">{published ? formatDate(site.publishedAt, 'datetime') : t('website.manage.never')}</span>
+                    {outdated !== null && (
+                        <span className={`block text-xs ${outdated ? 'text-amber-300' : 'text-emerald-300'}`} data-testid="website-overview-outdated" data-outdated={outdated ? '1' : '0'}>
+                            {t(outdated ? 'website.manage.outdated' : 'website.manage.upToDate')}
+                        </span>
+                    )}
+                </Row>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+                <Button variant="secondary" onClick={() => setPreviewing(true)} data-testid="website-overview-preview"><Globe className="w-4 h-4" /> {t('website.manage.preview')}</Button>
+                <Button onClick={update} loading={running || busy === 'publish'} disabled={!site.canPublish} data-testid="website-overview-update">
+                    <RefreshCw className="w-4 h-4" /> {running ? t(published ? 'website.update.running' : 'website.publish.running') : published ? t('website.updateNow') : t('website.publish.create')}
+                </Button>
+            </div>
+            {previewing && <WebsitePreview site={site} onClose={() => setPreviewing(false)} onUpdate={() => { setPreviewing(false); update(); }} />}
         </section>
     );
 }
@@ -331,18 +500,8 @@ function WebsiteDashboard({ site, setSite, preview, busy, run }) {
             {/* Create Website / Update website: requirements, progress, address */}
             <PublishPanel site={site} setSite={setSite} busy={busy} run={run} />
 
-            {/* Free Website URL */}
-            <section className="card space-y-3" data-testid="website-url">
-                <h2 className="font-semibold flex items-center gap-2"><Link2 className="w-4 h-4 text-indigo-300" /> {t('website.freeUrl')}</h2>
-                <p dir="ltr" className="font-mono text-sm break-all rounded-lg bg-dark-tertiary/60 px-3 py-2" data-testid="website-free-url">{site.freeUrl}</p>
-                <p className="text-xs text-zinc-500">{site.status === 'live' ? t('website.urlLive') : site.freeOwner ? t('website.urlSoon') : t('website.urlAfterGithub')}</p>
-                <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => { navigator.clipboard?.writeText(site.freeUrl).then(() => toast.success(t('website.copied')), () => {}); }}>
-                        <Copy className="w-4 h-4" /> {t('website.copy')}
-                    </Button>
-                    {!site.publishedAt && <RenameAddress site={site} busy={busy} run={run} />}
-                </div>
-            </section>
+            {/* Website management: status, addresses, theme, last update, Update / Preview */}
+            <WebsiteOverview site={site} busy={busy} run={run} />
 
             {/* Theme: pick, see the shop's own website in it, keep */}
             <ThemeStudio site={site} busy={busy} run={run} />
@@ -451,7 +610,7 @@ function CustomDomain({ site, setSite, busy, run }) {
     const reached = DOMAIN_REACHED[d.status] ?? 0;
 
     return (
-        <section className="card space-y-4" data-testid="website-domain">
+        <section className="card space-y-4" data-testid="website-domain" id="website-domain">
             <h2 className="font-semibold flex items-center gap-2"><Globe className="w-4 h-4 text-indigo-300" /> {t('website.domain.title')}</h2>
 
             {/* 1. The free address: always there */}

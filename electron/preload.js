@@ -105,7 +105,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         // A page of the website in a theme (HTML without script, shown in a sandboxed frame)
         previewTheme: (args) => ipcRenderer.invoke('website:previewTheme', args),
         create: (args) => ipcRenderer.invoke('website:create', args),
-        setTheme: (theme) => ipcRenderer.invoke('website:setTheme', theme),
+        // Change Theme (the look only); { publish: true }: the online website made again with it
+        setTheme: (theme, options) => ipcRenderer.invoke('website:setTheme', theme, options),
         setName: (name) => ipcRenderer.invoke('website:setName', name),
         setDomain: (domain) => ipcRenderer.invoke('website:setDomain', domain),
         removeDomain: () => ipcRenderer.invoke('website:removeDomain'),

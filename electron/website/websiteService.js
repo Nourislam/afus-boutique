@@ -25,6 +25,7 @@ const { summarize } = require('./catalogSnapshot');
 const { buildPublicData, checkSiteFiles, publicInfo } = require('./publicData');
 const { registry } = require('./themes/registry');
 const { renderPage } = require('./storefront/render');
+const { STORE_PAGES } = require('./storefront/pages');
 const { createGithubConnector } = require('./githubConnector');
 const { createGithubClient } = require('./github');
 const { createCloudflareConnector } = require('./cloudflareConnector');
@@ -250,12 +251,24 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return view();
     }
 
-    function setTheme(theme) {
+    /**
+     * Change Theme: only the website's look. The theme's name is kept with
+     * the website; the shop's data (articles, stock, orders, sales, its
+     * SQLite tables) is only read, never changed. Online already and
+     * { publish: true }: the website's pages are made again with it and
+     * published (Update website: same data, new look).
+     */
+    function setTheme(theme, { publish = false } = {}) {
         const s = mustExist(read());
         if (!registry.has(theme)) throw codedError('WEBSITE_THEME_UNKNOWN');
-        // Only the theme's name is kept: the shop's data stays as it is
-        write({ ...s, theme: registry.resolveId(theme) });
-        return view();
+        const id = registry.resolveId(theme);
+        write({ ...s, theme: id });
+        let result = { published: false };
+        if (publish && s.publishedAt && !blockedMode() && id !== s.theme) {
+            const r = deployer.start();
+            result = { published: !!r.started, reason: r.started ? null : r.reason };
+        }
+        return { ...view(), result };
     }
 
     /** The check found private data: said plainly (how many places), never what. */
@@ -266,7 +279,8 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         }
     }
 
-    const PAGES = ['home', 'category', 'product'];
+    // Every page the website publishes can be seen before it is published
+    const PAGES = ['home', 'category', 'product', ...Object.keys(STORE_PAGES)];
     /**
      * A page of the website as it would look with a theme (the chosen one when
      * none is given), made from the shop's own data as it is now. Read only:
@@ -281,14 +295,22 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         const t = registry.get(chosen);
         if (!t) throw codedError('WEBSITE_THEME_UNKNOWN');
         const snapshot = publicData({ preview: true });
-        const kind = PAGES.includes(page) ? page : 'home';
+        const asked = PAGES.includes(page) ? page : 'home';
+        // The store's own pages (new in, best sellers, offers, cart...) are "page" + their name
+        const kind = STORE_PAGES[asked] ? 'page' : asked;
         const productId = kind === 'product' ? (snapshot.products.some(p => p.id === id) ? id : (snapshot.products.find(p => p.images.length) || snapshot.products[0])?.id) : id;
+        const category = snapshot.categories.some(c => c.id === id) ? id : 'all';
         const html = renderPage({
-            snapshot, theme: t, page: kind, id: kind === 'category' ? (id || 'all') : productId,
+            snapshot, theme: t, page: kind, id: kind === 'category' ? category : kind === 'page' ? asked : productId,
             lang: snapshot.shop.language, preview: true,
             assetUrl: (path) => `app://${encodeURIComponent(path)}`,
         });
-        return { theme: t.id, page: kind, html, products: snapshot.products.length };
+        return {
+            theme: t.id, page: asked, html, products: snapshot.products.length,
+            // What the page list of the preview offers (the shop's own categories and articles)
+            categories: snapshot.categories.map(c => ({ id: c.id, name: c.name })),
+            newProducts: snapshot.newProducts?.length || 0, bestSellers: snapshot.bestSellers?.length || 0,
+        };
     }
 
     /** The name of the free address can change until the website is published. */

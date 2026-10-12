@@ -1923,7 +1923,7 @@ ipcMain.handle('website:getState', () => website.view());
 ipcMain.handle('website:preview', () => website.preview());
 ipcMain.handle('website:previewTheme', (_, args = {}) => website.previewTheme(args));
 ipcMain.handle('website:create', (_, args = {}) => website.create(args));
-ipcMain.handle('website:setTheme', (_, theme) => website.setTheme(theme));
+ipcMain.handle('website:setTheme', (_, theme, options = {}) => website.setTheme(theme, { publish: !!options?.publish }));
 ipcMain.handle('website:setName', (_, name) => website.setName(name));
 ipcMain.handle('website:setDomain', (_, domain) => website.setDomain(domain));
 ipcMain.handle('website:removeDomain', () => website.removeDomain());
