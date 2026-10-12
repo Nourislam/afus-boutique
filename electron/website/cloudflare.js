@@ -28,6 +28,12 @@ const TIMEOUT_MS = 15000;
 // Where the shop sees (and can withdraw) the access it gave (Cloudflare's own page)
 const MANAGE_PATH = '/profile/access-management';
 const DEFAULT_SCOPES = ['account-settings.read', 'workers-scripts.write', 'd1.write', 'offline_access'];
+// Cloudflare's own page to make an API token with exactly what the website needs, already filled in
+// (developers.cloudflare.com/fundamentals/api/how-to/account-owned-token-template)
+const TOKEN_PERMISSIONS = [{ key: 'workers_scripts', type: 'edit' }, { key: 'd1', type: 'edit' }, { key: 'account_settings', type: 'read' }];
+const TOKEN_PAGE_PATH = `/profile/api-tokens?permissionGroupKeys=${encodeURIComponent(JSON.stringify(TOKEN_PERMISSIONS))}&accountId=*&zoneId=all&name=${encodeURIComponent('Afus Boutique website')}`;
+// An API token as Cloudflare gives it
+const TOKEN_FORMAT = /^[A-Za-z0-9_-]{30,200}$/;
 
 class CloudflareError extends Error {
     constructor(reason, status = null) {
@@ -163,6 +169,8 @@ function createCloudflareClient({ clientId, scopes, fetch: fetchImpl, dashBase =
     const acct = (accountId) => `${apiBase}/accounts/${encodeURIComponent(accountId)}`;
     const fail = (r) => {
         if (r.status === 401) throw new CloudflareError('revoked', 401);
+        // Cloudflare asks the account's e-mail address to be confirmed before Workers can be made
+        if ((Array.isArray(r.data.errors) ? r.data.errors : []).some(e => e?.code === 10034 || /verify your email/i.test(String(e?.message || '')))) throw new CloudflareError('email_unverified', r.status);
         if (r.status === 403) throw new CloudflareError('scope', 403);
         throw new CloudflareError(r.status >= 500 ? 'network' : 'unknown', r.status);
     };
@@ -248,8 +256,11 @@ function createCloudflareClient({ clientId, scopes, fetch: fetchImpl, dashBase =
         dashBase,
         scopes: wanted,
         manageUrl: `${dashBase}${MANAGE_PATH}`,
+        tokenPageUrl: `${dashBase}${TOKEN_PAGE_PATH}`,
+        // Cloudflare's own page to open a free account
+        signupUrl: `${dashBase}/sign-up`,
         authorizeUrl, exchangeCode, refresh, revoke, listAccounts, checkAccess,
     };
 }
 
-module.exports = { createCloudflareClient, CloudflareError, DEFAULT_SCOPES, DASH, API, parseScopes };
+module.exports = { createCloudflareClient, CloudflareError, TOKEN_FORMAT, TOKEN_PERMISSIONS, DEFAULT_SCOPES, DASH, API, parseScopes };

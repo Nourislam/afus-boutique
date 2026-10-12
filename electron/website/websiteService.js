@@ -255,7 +255,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             canPublish: !blocked && !deployer.running() && !deployer.blocker(),
             hasOrders: !!saved.resources.worker?.url,
             suggestedName: s.created ? s.name : state.suggestName(shopName()),
-            providers: providers.describeProviders({ github: client.configured && !blocked, cloudflare: cfClient.configured && !blocked }),
+            providers: providers.describeProviders({ github: !blocked, cloudflare: !blocked, githubSignIn: client.configured, cloudflareSignIn: cfClient.configured }),
             githubFlow: connector.publicFlow(),
             cloudflareFlow: cf.publicFlow(),
             githubBlocked: blocked || null,
@@ -436,6 +436,19 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return { ...view(), result };
     }
 
+    /**
+     * Link GitHub with a key the shop made on GitHub's page (classic
+     * personal access token with "repo"). The key is checked with GitHub and
+     * kept encrypted; it never comes back to the window.
+     * result: { linked } | { linked: false, reason }
+     */
+    async function githubConnectToken({ token } = {}) {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_GITHUB_BLOCKED');
+        const result = await connector.connectWithToken(token);
+        return { ...view(), result };
+    }
+
     function githubCancel() {
         connector.cancel();
         return view();
@@ -506,6 +519,32 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
         const result = await cf.start();
         return { ...view(), result };
+    }
+
+    /**
+     * Link Cloudflare with an API token the shop made on Cloudflare's page
+     * (Workers Scripts edit, D1 edit, Account Settings read). Checked with
+     * Cloudflare and kept encrypted; it never comes back to the window.
+     * result: { linked } | { linked: false, reason } (choose_account: several accounts)
+     */
+    async function cloudflareConnectToken({ token } = {}) {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        const result = await cf.connectWithToken(token);
+        return { ...view(), result };
+    }
+
+    /** The provider's own page where the shop makes its key (already filled in). */
+    function tokenPage(provider) {
+        if (provider === 'github') return connector.tokenPageUrl;
+        if (provider === 'cloudflare') return cf.tokenPageUrl();
+        return null;
+    }
+    /** The provider's own page to open a free account. */
+    function signupPage(provider) {
+        if (provider === 'github') return client.signupUrl || null;
+        if (provider === 'cloudflare') return cfClient.signupUrl || null;
+        return null;
     }
 
     function cloudflareCancel() {
@@ -1069,7 +1108,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
 
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
-        githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
+        githubStart, githubConnectToken, cloudflareConnectToken, tokenPage, signupPage, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
         publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, setFeatures, setSettings, blockPhone, unblockPhone, blockSuggestions, confirmMessage, setTracking,
         yalidineLink, yalidineForget, yalidineSend, yalidineRefresh, stats, apiConfig, changes,
         domainCheck, domainRetry, domainSearch, domainOpenBuy, domainHostingerLink, domainHostingerForget, domainHostingerSetup, domainCheckIfDue: () => domains.checkIfDue(),

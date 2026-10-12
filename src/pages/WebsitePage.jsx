@@ -961,12 +961,15 @@ function GithubAccount({ site, setSite, busy, run }) {
                         <p className="text-xs text-red-300 leading-relaxed" data-testid="website-github-error">{t(`website.github.error.${account.error || 'unknown'}`)}</p>
                     )}
                     {site.githubBlocked && <p className="text-xs text-amber-300">{t('errors.WEBSITE_GITHUB_BLOCKED')}</p>}
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Button size="sm" variant="secondary" onClick={start} loading={busy === 'github'} disabled={!!site.githubBlocked} data-testid="website-connect-github">
-                            {account.status === 'failed' ? t('website.github.retry') : t('website.account.connect.github')}
-                            {!available && !site.githubBlocked && <span className="badge bg-indigo-500/15 text-indigo-300">{t('website.soon')}</span>}
-                        </Button>
-                    </div>
+                    {site.providers?.github?.signIn && (
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button size="sm" onClick={start} loading={busy === 'github'} disabled={!!site.githubBlocked} data-testid="website-connect-github">
+                                <Github className="w-4 h-4" /> {account.status === 'failed' ? t('website.github.retry') : t('website.account.connect.github')}
+                            </Button>
+                        </div>
+                    )}
+                    {available && <SignupLink provider="github" />}
+                    {available && <TokenLink provider="github" busy={busy} run={run} folded={!!site.providers?.github?.signIn} />}
                     <p className="text-xs text-zinc-500 leading-relaxed">{t('website.github.permissions')}</p>
                 </div>
             )}
@@ -1079,14 +1082,84 @@ function CloudflareAccount({ site, setSite, busy, run }) {
                         <p className="text-xs text-red-300 leading-relaxed" data-testid="website-cloudflare-error">{t(`website.cloudflare.error.${account.error || 'unknown'}`)}</p>
                     )}
                     {blocked && <p className="text-xs text-amber-300">{t('errors.WEBSITE_ACCOUNTS_BLOCKED')}</p>}
-                    <Button size="sm" variant="secondary" onClick={start} loading={busy === 'cloudflare'} disabled={!!blocked} data-testid="website-connect-cloudflare">
-                        {account.status === 'failed' ? t('website.cloudflare.retry') : t('website.account.connect.cloudflare')}
-                        {!available && !blocked && <span className="badge bg-indigo-500/15 text-indigo-300">{t('website.soon')}</span>}
-                    </Button>
+                    {site.providers?.cloudflare?.signIn && (
+                        <Button size="sm" onClick={start} loading={busy === 'cloudflare'} disabled={!!blocked} data-testid="website-connect-cloudflare">
+                            <Cloud className="w-4 h-4" /> {account.status === 'failed' ? t('website.cloudflare.retry') : t('website.account.connect.cloudflare')}
+                        </Button>
+                    )}
+                    {available && <SignupLink provider="cloudflare" />}
+                    {available && <TokenLink provider="cloudflare" busy={busy} run={run} folded={!!site.providers?.cloudflare?.signIn} />}
                     <p className="text-xs text-zinc-500 leading-relaxed">{t('website.cloudflare.permissions')}</p>
                 </div>
             )}
         </li>
+    );
+}
+
+/**
+ * Link an account with a key the shop makes itself on the provider's own
+ * page (already filled in with what the website needs): open the page, make
+ * the key, paste it here. The key goes to the main process, is checked with
+ * the provider and kept encrypted; it is never shown again.
+ */
+/** No account yet: the provider's own page to open one, free (the only thing the shop has to do). */
+function SignupLink({ provider }) {
+    const { t } = useT();
+    return (
+        <p className="text-xs text-zinc-400">
+            {t(`website.signup.${provider}.question`)}{' '}
+            <button type="button" className="text-indigo-300 underline" onClick={() => window.electronAPI.website.openSignupPage(provider).catch(() => {})} data-testid={`website-${provider}-signup`}>
+                {t(`website.signup.${provider}.create`)}
+            </button>
+        </p>
+    );
+}
+
+/** folded: the one-click sign-in is offered above; the key is the other way, folded away. */
+function TokenLink({ provider, busy, run, folded = false }) {
+    const { t } = useT();
+    const api = window.electronAPI.website;
+    const [token, setToken] = useState('');
+    const key = `${provider}-token`;
+    const link = () => run(key, () => (provider === 'github' ? api.githubConnectToken(token) : api.cloudflareConnectToken(token)), (next) => {
+        const r = next?.result;
+        setToken('');
+        if (r?.linked) toast.success(t('website.account.linked', { name: t(`website.account.${provider}`) }));
+        else if (r?.reason === 'choose_account') toast.info(t('website.cloudflare.chooseHint'), 6000);
+        else if (r) toast.error(t(`website.token.error.${r.reason || 'unknown'}`), 8000);
+    });
+    const body = (
+        <>
+            <ol className="text-xs text-zinc-400 leading-relaxed list-decimal ps-5 space-y-1">
+                <li>{t(`website.token.${provider}.step1`)}</li>
+                <li>{t(`website.token.${provider}.step2`)}</li>
+                <li>{t('website.token.step3')}</li>
+            </ol>
+            <Button size="sm" variant="secondary" onClick={() => api.openTokenPage(provider).catch(() => {})} data-testid={`website-${provider}-token-page`}>
+                {provider === 'github' ? <Github className="w-4 h-4" /> : <Cloud className="w-4 h-4" />} {t(`website.token.${provider}.open`)}
+            </Button>
+            <div className="flex flex-wrap gap-2">
+                <input type="password" className="input flex-1 min-w-[12rem] font-mono" dir="ltr" autoComplete="off" spellCheck={false} value={token}
+                    onChange={(e) => setToken(e.target.value)} placeholder={t(`website.token.${provider}.placeholder`)} aria-label={t('website.token.paste')}
+                    maxLength={260} data-testid={`website-${provider}-token-input`} />
+                <Button size="sm" onClick={link} disabled={!token.trim()} loading={busy === key} data-testid={`website-${provider}-token-link`}>{t('website.token.link')}</Button>
+            </div>
+            <p className="text-xs text-zinc-500 leading-relaxed">{t('website.token.safe')}</p>
+        </>
+    );
+    if (folded) {
+        return (
+            <details className="rounded-lg bg-dark-tertiary/40 p-3" data-testid={`website-${provider}-token`}>
+                <summary className="text-xs text-zinc-400 cursor-pointer">{t('website.token.otherWay')}</summary>
+                <div className="space-y-2 mt-2">{body}</div>
+            </details>
+        );
+    }
+    return (
+        <div className="rounded-lg bg-dark-tertiary/50 p-3 space-y-2" data-testid={`website-${provider}-token`}>
+            <p className="text-sm font-medium">{t('website.token.title')}</p>
+            {body}
+        </div>
     );
 }
 

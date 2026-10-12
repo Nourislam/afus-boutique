@@ -36,8 +36,11 @@ function fakeGithub({ answers = ['pending', 'token'], scope = 'public_repo', use
     let i = 0;
     const json = (status, body, headers = {}) => ({ status, ok: status >= 200 && status < 300, json: async () => body, headers: { get: (k) => headers[k.toLowerCase()] ?? null } });
     const fetch = async (url, init = {}) => {
-        const body = init.body ? JSON.parse(init.body) : null;
+        const isForm = String(init.headers?.['Content-Type'] || '').startsWith('application/x-www-form-urlencoded');
+        const body = init.body ? (isForm ? Object.fromEntries(new URLSearchParams(init.body)) : JSON.parse(init.body)) : null;
         calls.push({ url, method: init.method || 'GET', body, headers: init.headers, redirect: init.redirect });
+        // As GitHub documents the device flow: a form with the app's client_id
+        if (url.startsWith('https://github.com/login/') && (!isForm || !body?.client_id)) return json(400, { error: 'incorrect_client_credentials' });
         if (url === 'https://github.com/login/device/code') {
             return json(200, { device_code: DEVICE, user_code: 'WDJB-MJHT', verification_uri: verification, expires_in: 900, interval: 5 });
         }
@@ -162,7 +165,8 @@ describe('website: the shop\'s GitHub account', () => {
 
     it('no AFUS app id in this copy: told plainly, no request sent; no secure key store: nothing saved, no request', async () => {
         const a = makeService({ clientId: '' });
-        expect(a.service.view().providers.github.available).toBe(false);
+        // Linking with the shop's own key stays possible; only the one-click sign-in is not offered
+        expect(a.service.view().providers.github).toEqual({ available: true, signIn: false });
         const r = await a.service.githubStart();
         expect(r.result).toEqual({ started: false, reason: 'not_configured' });
         expect(a.gh.calls).toEqual([]);

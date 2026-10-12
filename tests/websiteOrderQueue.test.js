@@ -44,7 +44,7 @@ describe('the order queue, end to end (the real Worker on a fake Cloudflare, AFU
         return createWebsiteService({
             api, getSetting: (k) => settings[k] ?? null, saveSetting: (k, v) => { settings[k] = JSON.parse(JSON.stringify(v)); },
             codedError: catalog.codedError, blockedMode: () => mode,
-            github: { client: createGithubClient({ clientId: 'gh', fetch: globalThis.fetch, webBase: cloud.base, apiBase: `${cloud.base}/api` }), store },
+            github: { client: createGithubClient({ clientId: 'gh', fetch: globalThis.fetch, webBase: cloud.base, apiBase: `${cloud.base}/api`, writeGapMs: 0 }), store },
             cloudflare: { client: createCloudflareClient({ clientId: 'cf', fetch: globalThis.fetch, dashBase: cloud.base, apiBase: `${cloud.base}/client/v4`, workerUrl: (n) => `${cloud.base}/w/${n}` }), store },
             publish: { fetch: (u, i) => fetchImpl(u, i), readImage: () => null, waits: { health: 2000, pages: 3000, site: 2000, every: 20 }, log: () => {}, allowHttp: true },
         });

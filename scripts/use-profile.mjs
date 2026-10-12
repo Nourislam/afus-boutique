@@ -10,7 +10,11 @@ import { fileURLToPath } from 'url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const name = process.argv[2];
 const target = path.join(root, 'electron/shared/profile.json');
-const EMPTY = { reseller: '', supportPhone: '', supportEmail: '', supportWebsite: '', updateUrl: '', licensePublicKey: '' };
+const EMPTY = {
+    reseller: '', supportPhone: '', supportEmail: '', supportWebsite: '', updateUrl: '', licensePublicKey: '',
+    // The AFUS sign-in apps (docs/WEBSITE-ACCOUNTS-SETUP.md): with them a shop only presses "Sign in"
+    githubClientId: '', cloudflareClientId: '', cloudflareScopes: [], cloudflareRedirectPorts: [47651, 47652, 47653], domainProviders: [],
+};
 if (!name) { console.error('usage: use-profile.mjs <name>|default'); process.exit(1); }
 let profile = EMPTY;
 if (name !== 'default') {

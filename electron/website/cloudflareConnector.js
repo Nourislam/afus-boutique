@@ -24,6 +24,7 @@
  *         now, timeoutMs }
  */
 const { listen, pkce, randomState } = require('./oauthLoopback');
+const { TOKEN_FORMAT } = require('./cloudflare');
 
 const ITEM = 'cloudflare';
 const RENEW_BEFORE_MS = 2 * 60 * 1000;
@@ -54,7 +55,8 @@ function createCloudflareConnector({
 
     /** Withdraw at Cloudflare, without waiting (the keys are forgotten here anyway). */
     function revokeQuietly(keys) {
-        if (!keys) return;
+        // An API token the shop made itself is withdrawn on Cloudflare's page, by the shop
+        if (!keys || keys.method === 'token') return;
         if (keys.refreshToken) client.revoke(keys.refreshToken, 'refresh_token').catch(() => {});
         if (keys.accessToken) client.revoke(keys.accessToken, 'access_token').catch(() => {});
     }
@@ -146,6 +148,38 @@ function createCloudflareConnector({
         onConnected();
     }
 
+    /**
+     * Link with an API token the shop made itself on Cloudflare's page (no
+     * AFUS app needed). It does not end: no renewal. Checked with Cloudflare
+     * (its accounts, Workers, D1) before it is kept.
+     * -> { linked } | { linked: false, reason } (several accounts: choose_account)
+     */
+    async function connectWithToken(raw) {
+        const token = String(raw || '').trim();
+        if (!TOKEN_FORMAT.test(token)) return { linked: false, reason: 'token_format' };
+        if (!store.available()) { failed('secure_storage'); return { linked: false, reason: 'secure_storage' }; }
+        cancel();
+        let accounts;
+        try {
+            accounts = await client.listAccounts(token);
+        } catch (error) {
+            return { linked: false, reason: error.reason === 'revoked' ? 'token_refused' : error.reason || 'unknown' };
+        }
+        if (!allowed()) return { linked: false, reason: 'blocked' };
+        if (!accounts.length) return { linked: false, reason: 'no_account' };
+        const keys = { accessToken: token, refreshToken: null, expiresAt: null, scopes: [], accountId: null, method: 'token', savedAt: iso() };
+        try {
+            writeKeys(keys);
+        } catch {
+            failed('secure_storage');
+            return { linked: false, reason: 'secure_storage' };
+        }
+        if (accounts.length === 1) return useAccount(accounts[0], keys);
+        save({ status: 'choose_account', accounts });
+        onConnected();
+        return { linked: false, reason: 'choose_account' };
+    }
+
     /** Unusable keys: withdrawn at Cloudflare and forgotten here. */
     function drop(keys) {
         revokeQuietly(keys);
@@ -223,6 +257,7 @@ function createCloudflareConnector({
 
     /** The keys, with the short one renewed when it is about to end. One renewal at a time. */
     async function renewIfNeeded(keys) {
+        if (keys.method === 'token') return keys;
         if (keys.expiresAt - now() > RENEW_BEFORE_MS) return keys;
         if (!keys.refreshToken) { revoked(); throw Object.assign(new Error('session ended'), { reason: 'revoked' }); }
         if (!renewing) {
@@ -244,10 +279,13 @@ function createCloudflareConnector({
         return renewing;
     }
 
+    /** Keys that can still be used: an API token, or a sign-in with its refresh key. */
+    const usable = (keys) => !!keys?.accessToken && (keys.method === 'token' || !!keys.refreshToken);
+
     /** Linked = the state says so AND the keys of the chosen account are readable here. */
     function linked() {
         const keys = readKeys();
-        return readAccount().status === 'connected' && !!keys?.refreshToken && !!keys.accountId;
+        return readAccount().status === 'connected' && usable(keys) && !!keys.accountId;
     }
 
     /** { token, accountId } for the main process (later phases). Throws { reason }. */
@@ -265,7 +303,7 @@ function createCloudflareConnector({
         const saved = readAccount();
         if (saved.status !== 'connected') return { checked: false };
         const keys = readKeys();
-        if (!keys?.refreshToken || !keys.accountId) { store.remove(ITEM); failed('token_missing'); return { checked: true, ok: false, reason: 'token_missing' }; }
+        if (!usable(keys) || !keys.accountId) { store.remove(ITEM); failed('token_missing'); return { checked: true, ok: false, reason: 'token_missing' }; }
         try {
             const { token, accountId } = await access();
             const reach = await client.checkAccess(token, accountId);
@@ -286,7 +324,7 @@ function createCloudflareConnector({
     /** For tests: the background wait of the current sign-in. */
     const pending = () => flow?.finished || Promise.resolve();
 
-    return { start, chooseAccount, cancel, disconnect, revoked, check, access, linked, publicFlow, flowUrl, pending };
+    return { start, connectWithToken, tokenPageUrl: () => client.tokenPageUrl, chooseAccount, cancel, disconnect, revoked, check, access, linked, publicFlow, flowUrl, pending };
 }
 
 module.exports = { createCloudflareConnector, ITEM };

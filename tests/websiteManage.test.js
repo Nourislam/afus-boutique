@@ -45,7 +45,7 @@ describe('Website management (simulated GitHub and Cloudflare, the real Worker)'
         return createWebsiteService({
             api, getSetting: (key) => settings[key] ?? null, saveSetting: (key, value) => { settings[key] = JSON.parse(JSON.stringify(value)); },
             codedError: catalog.codedError, blockedMode: () => mode,
-            github: { client: createGithubClient({ clientId: 'gh-public', fetch: globalThis.fetch, webBase: cloud.base, apiBase: `${cloud.base}/api` }), store },
+            github: { client: createGithubClient({ clientId: 'gh-public', fetch: globalThis.fetch, webBase: cloud.base, apiBase: `${cloud.base}/api`, writeGapMs: 0 }), store },
             cloudflare: { client: createCloudflareClient({ clientId: 'cf-public', fetch: globalThis.fetch, dashBase: cloud.base, apiBase: `${cloud.base}/client/v4`, workerUrl: (name) => `${cloud.base}/w/${name}` }), store },
             publish: { fetch: globalThis.fetch, readImage: (n) => IMAGES[n] || null, waits: { health: 2000, pages: 3000, site: 2000, every: 20, retry: 10 }, log: () => {}, allowHttp: true },
             domain: { providers: [], lookup: { records: async () => [], availability: async () => ({ status: 'unknown' }) } },

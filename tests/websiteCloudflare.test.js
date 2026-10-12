@@ -335,7 +335,7 @@ describe('website: the shop\'s Cloudflare account', () => {
 
     it('not set up in this copy, demo shop / training: refused without any request', async () => {
         const a = makeService({ clientId: '' });
-        expect(a.service.view().providers.cloudflare.available).toBe(false);
+        expect(a.service.view().providers.cloudflare).toEqual({ available: true, signIn: false });
         expect((await a.service.cloudflareStart()).result).toEqual({ started: false, reason: 'not_configured' });
         expect(opened).toEqual([]);
 

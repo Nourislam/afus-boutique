@@ -158,7 +158,7 @@ describe('connecting the shop\'s own domain to its website (simulated GitHub and
         return createWebsiteService({
             api, getSetting: (key) => settings[key] ?? null, saveSetting: (key, value) => { settings[key] = JSON.parse(JSON.stringify(value)); },
             codedError: catalog.codedError, blockedMode: () => mode,
-            github: { client: createGithubClient({ clientId: 'gh-public', fetch: globalThis.fetch, webBase: cloud.base, apiBase: `${cloud.base}/api` }), store },
+            github: { client: createGithubClient({ clientId: 'gh-public', fetch: globalThis.fetch, webBase: cloud.base, apiBase: `${cloud.base}/api`, writeGapMs: 0 }), store },
             cloudflare: { client: createCloudflareClient({ clientId: 'cf-public', fetch: globalThis.fetch, dashBase: cloud.base, apiBase: `${cloud.base}/client/v4`, workerUrl: (name) => `${cloud.base}/w/${name}` }), store },
             publish: { fetch: siteFetch, readImage: () => null, waits: { health: 2000, pages: 3000, site: 2000, every: 20, retry: 10 }, log: (e) => logs.push(e), allowHttp: true },
             domain: {

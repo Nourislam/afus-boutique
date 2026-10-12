@@ -75,7 +75,8 @@ describe('website service (settings key "website", catalogue read only)', () => 
         expect(await codeOf(() => service.create({ name: 'x' }))).toBe('WEBSITE_NAME_INVALID');
         const v = service.create({ name: 'Boutique-Yasmine', theme: 'elegant' });
         expect(v).toMatchObject({ created: true, name: 'boutique-yasmine', theme: 'luxury', status: 'accounts', freeUrl: `https://….${ws.FREE_HOST}/boutique-yasmine/` });
-        expect(v.providers).toEqual({ github: { available: false }, cloudflare: { available: false } });
+        // Linking with the shop's own keys is always offered; the one-click sign-in only with AFUS app ids
+        expect(v.providers).toEqual({ github: { available: true, signIn: false }, cloudflare: { available: true, signIn: false } });
         expect(JSON.stringify(v)).not.toMatch(/token|secret|api_key|account_id/i);
         expect(await codeOf(() => service.create({ name: 'other-name' }))).toBe('WEBSITE_EXISTS');
     });
