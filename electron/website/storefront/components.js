@@ -309,7 +309,7 @@ function addToCart(ctx, p, colors, sizes) {
         `</div></fieldset>`,
     );
     return html(
-        `<form class="add-form" data-add-form data-id="${esc(p.id)}" data-variants="${esc(JSON.stringify(variants))}" data-has-colors="${colors.length ? 1 : 0}" data-has-sizes="${sizes.length ? 1 : 0}">`,
+        `<form class="add-form" novalidate data-add-form data-id="${esc(p.id)}" data-variants="${esc(JSON.stringify(variants))}" data-has-colors="${colors.length ? 1 : 0}" data-has-sizes="${sizes.length ? 1 : 0}">`,
         colorChoice, sizeChoice,
         `<div class="qty"><span class="opt-title">${esc(ctx.t('quantityShort'))}</span><div class="stepper">`,
         `<button type="button" data-step="-1" aria-label="-"${off}>−</button>`,

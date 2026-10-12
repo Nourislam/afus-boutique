@@ -118,6 +118,8 @@
             }
         }
         form.addEventListener('change', function (e) {
+            // A colour or a size chosen: an old "choose first" message goes
+            if ((e.target.name === 'color' || e.target.name === 'size') && msg && msg.classList.contains('is-bad')) { msg.textContent = ''; msg.className = 'form-msg'; }
             if (e.target.name === 'color') {
                 // A new colour: the sizes of that colour become choosable again
                 form.querySelectorAll('input[name="size"]').forEach(function (input) { input.disabled = false; });
