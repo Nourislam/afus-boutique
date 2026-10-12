@@ -1,20 +1,25 @@
 import { t } from '../i18n';
 import { formatDate as formatLocalDate } from '../i18n/format';
-import { formatMoney } from '../i18n/format';
+import { formatMoney, formatNumber } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { Package, AlertTriangle, Plus, Minus, History, ArrowUpDown } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Package, AlertTriangle, Plus, Minus, History, ArrowUpDown, ClipboardCheck, Boxes, Coins } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input, SearchInput } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import { Table, TableHead, TableBody, TableRow, TableCell, TableHeader } from '../components/ui/Table';
 import { StatusBadge } from '../components/ui/Badge';
-import { StatCard } from '../components/ui/Card';
+import { StatTile } from '../components/ui/StatTile';
+import { PageHeader } from '../components/ui/PageHeader';
 import { toast } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/authStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { variantLabel } from '../lib/clothing';
 import { MANUAL_REASONS, stockReasonLabel } from '../lib/stockReasons';
+import { readFilter, stockMatches, STOCK_FILTERS } from '../lib/listFilters';
+import { PERMISSIONS } from '../lib/permissions';
+import StockCountModal from '../components/inventory/StockCountModal';
 
 export default function InventoryPage() {
     const [products, setProducts] = useState([]);
@@ -22,12 +27,23 @@ export default function InventoryPage() {
     const [inventoryLogs, setInventoryLogs] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [showAdjustModal, setShowAdjustModal] = useState(false);
+    const [showAllLow, setShowAllLow] = useState(false);
     const [showLogsModal, setShowLogsModal] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [loading, setLoading] = useState(true);
     const [variantsByProduct, setVariantsByProduct] = useState({});
+    const [showCount, setShowCount] = useState(false);
+    // Sold out / running low: read from the address (?stock=out|low), so a link from the home screen opens filtered
+    const [searchParams, setSearchParams] = useSearchParams();
+    const stockFilter = readFilter(searchParams, 'stock', STOCK_FILTERS);
+    const setStockFilter = (value) => {
+        const next = new URLSearchParams(searchParams);
+        if (value === 'all') next.delete('stock'); else next.set('stock', value);
+        setSearchParams(next, { replace: true });
+    };
 
-    const { currentEmployee } = useAuthStore();
+    const { currentEmployee, hasPermission } = useAuthStore();
+    const canCount = hasPermission(PERMISSIONS.INVENTORY_ADJUST);
     const { loadSettings } = useSettingsStore();
 
     useEffect(() => {
@@ -35,13 +51,20 @@ export default function InventoryPage() {
         loadSettings();
     }, []);
 
+    // Stock value at purchase price: the owner's, the same figure as on the home screen
+    const [worth, setWorth] = useState(null);
+    useEffect(() => {
+        if (currentEmployee?.role !== 'admin') return;
+        window.electronAPI.insights.stockWorth({}).then(setWorth).catch(() => setWorth(null));
+    }, [currentEmployee?.role]);
+
     const loadData = async () => {
         try {
             const [productsData, lowStock, logs, allVariants] = await Promise.all([
                 window.electronAPI.products.getAll(),
                 window.electronAPI.inventory.getLowStock(),
                 window.electronAPI.inventory.getLogs(),
-                window.electronAPI.catalog.searchVariants('', 10000),
+                window.electronAPI.catalog.searchVariants(''),
             ]);
             const byProduct = {};
             for (const v of allVariants) (byProduct[v.product_id] = byProduct[v.product_id] || []).push(v);
@@ -57,20 +80,23 @@ export default function InventoryPage() {
     };
 
     const filteredProducts = products.filter(product =>
-        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.sku?.toLowerCase().includes(searchQuery.toLowerCase())
+        (product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            product.sku?.toLowerCase().includes(searchQuery.toLowerCase())) &&
+        stockMatches(product, variantsByProduct[product.id] || [], stockFilter)
     );
+    const stockCount = (filter) => products.filter(p => stockMatches(p, variantsByProduct[p.id] || [], filter)).length;
 
     const totalStock = products.reduce((sum, p) => sum + p.stock_quantity, 0);
-    const totalValue = products.reduce((sum, p) => sum + (p.stock_quantity * p.cost), 0);
 
     const formatCurrency = (amount) => {
         return formatMoney(amount);
     };
 
+    // Same rule as the filters: an article with a colour / size sold out or low is "low"
     const getStockStatus = (product) => {
-        if (product.stock_quantity <= 0) return 'out-of-stock';
-        if (product.stock_quantity <= product.min_stock_level) return 'low-stock';
+        const variants = variantsByProduct[product.id] || [];
+        if ((Number(product.stock_quantity) || 0) <= 0) return 'out-of-stock';
+        if (stockMatches(product, variants, 'out') || stockMatches(product, variants, 'low')) return 'low-stock';
         return 'in-stock';
     };
 
@@ -85,80 +111,75 @@ export default function InventoryPage() {
         }
     };
 
+    const owner = currentEmployee?.role === 'admin';
+    const soldOutRows = lowStockProducts.filter(r => (Number(r.stock_quantity) || 0) <= 0);
+    const lowRows = lowStockProducts.filter(r => (Number(r.stock_quantity) || 0) > 0);
+    const alertRows = [...soldOutRows, ...lowRows];
+
     return (
-        <div className="h-full flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="p-6 border-b border-dark-border">
-                <div className="flex items-center justify-between mb-6">
-                    <div>
-                        <h1 className="text-2xl font-bold">{t('inventory.title')}</h1>
-                        <p className="text-zinc-500">{t('inventory.subtitle')}</p>
+        <div className="page">
+            <PageHeader
+                icon={Boxes}
+                title={t('inventory.title')}
+                subtitle={t('inventory.subtitle')}
+                actions={canCount && (
+                    <Button variant="secondary" onClick={() => setShowCount(true)}>
+                        <ClipboardCheck className="w-4 h-4" /> {t('count.open')}
+                    </Button>
+                )}
+            >
+                <div className="flex flex-wrap items-center gap-3">
+                    <SearchInput
+                        value={searchQuery}
+                        onChange={setSearchQuery}
+                        placeholder={t('inventory.search')}
+                        className="flex-1 min-w-[240px] max-w-md"
+                    />
+                    <div className="segmented" role="tablist" data-testid="stock-filter">
+                        {STOCK_FILTERS.map(id => (
+                            <button key={id} type="button" role="tab" aria-selected={stockFilter === id} className={stockFilter === id ? 'active' : ''} onClick={() => setStockFilter(id)}>
+                                {t(`inventory.filter.${id}`)}
+                                {!loading && <span className="ms-1.5 text-xs text-zinc-500 tabular">{stockCount(id)}</span>}
+                            </button>
+                        ))}
                     </div>
                 </div>
+            </PageHeader>
 
-                {/* Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                    <StatCard
-                        label={t('inventory.totalProducts')}
-                        value={products.length}
-                        icon={Package}
-                        color="primary"
-                    />
-                    <StatCard
-                        label={t('inventory.totalStock')}
-                        value={totalStock.toLocaleString()}
-                        icon={Package}
-                        color="primary"
-                    />
-                    <StatCard
-                        label={t('inventory.stockValue')}
-                        value={formatCurrency(totalValue)}
-                        icon={Package}
-                        color="success"
-                    />
-                    <StatCard
-                        label={t('inventory.lowStockItems')}
-                        value={lowStockProducts.length}
-                        icon={AlertTriangle}
-                        color={lowStockProducts.length > 0 ? 'warning' : 'success'}
-                    />
+            <div className="page-body">
+                {/* Articles, pieces and the stock value of the home screen (sold out / low: on the filters above) */}
+                <div className="grid fit-grid-sm gap-3 mb-5" data-testid="inventory-tiles">
+                    <StatTile icon={Package} label={t('inventory.totalProducts')} value={formatNumber(products.length)} />
+                    <StatTile icon={Boxes} label={t('inventory.totalStock')} value={formatNumber(totalStock)} />
+                    {owner && worth && <StatTile icon={Coins} label={t('inventory.stockValue')} value={formatCurrency(worth.cost)} tone="text-emerald-300" iconTone="bg-emerald-500/15 text-emerald-300" />}
                 </div>
 
-                <SearchInput
-                    value={searchQuery}
-                    onChange={setSearchQuery}
-                    placeholder={t('inventory.search')}
-                    className="max-w-md"
-                />
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
-                {/* Low Stock Alert */}
-                {lowStockProducts.length > 0 && (
+                {/* Colours / sizes sold out first, then running low */}
+                {alertRows.length > 0 && (
                     <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
-                        <div className="flex items-center gap-2 text-amber-400 mb-3">
+                        <div className="flex items-center gap-2 text-amber-300 mb-3">
                             <AlertTriangle className="w-5 h-5" />
                             <span className="font-semibold">{t('inventory.lowAlert')}</span>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {lowStockProducts.slice(0, 8).map(row => (
-                                <div
-                                    key={row.variant_id || row.product_id}
-                                    className="p-3 rounded-lg bg-dark-tertiary/50"
-                                >
-                                    <p className="font-medium truncate">{row.product_name}</p>
-                                    {(row.color || row.size) && (
-                                        <p className="text-xs text-zinc-300 truncate">{variantLabel(row)}</p>
-                                    )}
-                                    <p className="text-sm text-amber-400">
-                                        {t('inventory.remainingN', { n: row.stock_quantity })}
-                                    </p>
-                                </div>
-                            ))}
+                        <div className="grid fit-grid-sm gap-3">
+                            {(showAllLow ? alertRows : alertRows.slice(0, 8)).map(row => {
+                                const out = (Number(row.stock_quantity) || 0) <= 0;
+                                return (
+                                    <div key={row.variant_id || row.product_id} className="p-3 rounded-lg bg-dark-tertiary/50 min-w-0">
+                                        <p dir="auto" className="font-medium line-clamp-2 break-words">{row.product_name}</p>
+                                        {(row.color || row.size) && <p className="text-xs text-zinc-300">{variantLabel(row)}</p>}
+                                        <span className={`badge mt-1 ${out ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                                            {out ? t('inventory.filter.out') : t('inventory.remainingN', { n: row.stock_quantity })}
+                                        </span>
+                                    </div>
+                                );
+                            })}
                         </div>
-                        {lowStockProducts.length > 8 && (
-                            <p className="text-xs text-amber-400 mt-2">{t('inventory.moreLow', { n: lowStockProducts.length - 8 })}</p>
+                        {/* A summary of 8; the whole list on demand */}
+                        {alertRows.length > 8 && !showAllLow && (
+                            <button type="button" onClick={() => setShowAllLow(true)} className="text-sm text-amber-300 mt-3 hover:underline" data-testid="inventory-more-low">
+                                {t('inventory.moreLow', { n: alertRows.length - 8 })}
+                            </button>
                         )}
                     </div>
                 )}
@@ -173,11 +194,11 @@ export default function InventoryPage() {
                         <TableHead>
                             <TableRow>
                                 <TableHeader>{t('inventory.product')}</TableHeader>
-                                <TableHeader>{t('products.sku')}</TableHeader>
+                                <TableHeader className="hidden xl:table-cell">{t('products.sku')}</TableHeader>
                                 <TableHeader>{t('inventory.current')}</TableHeader>
-                                <TableHeader>{t('inventory.minLevel')}</TableHeader>
+                                <TableHeader className="hidden xl:table-cell">{t('inventory.minLevel')}</TableHeader>
                                 <TableHeader>{t('inventory.status')}</TableHeader>
-                                <TableHeader>{t('inventory.value')}</TableHeader>
+                                {owner && <TableHeader className="hidden xl:table-cell">{t('inventory.value')}</TableHeader>}
                                 <TableHeader>{t('inventory.actions')}</TableHeader>
                             </TableRow>
                         </TableHead>
@@ -190,7 +211,7 @@ export default function InventoryPage() {
                                                 <Package className="w-5 h-5 text-zinc-600" />
                                             </div>
                                             <div className="min-w-0">
-                                                <span className="font-medium">{product.name}</span>
+                                                <span dir="auto" className="font-medium break-words">{product.name}</span>
                                                 {variantsByProduct[product.id]?.length > 0 && (
                                                     <div className="flex flex-wrap gap-1 mt-1">
                                                         {variantsByProduct[product.id].map(v => (
@@ -207,7 +228,7 @@ export default function InventoryPage() {
                                             </div>
                                         </div>
                                     </TableCell>
-                                    <TableCell className="text-zinc-400">{product.sku || '-'}</TableCell>
+                                    <TableCell className="hidden xl:table-cell text-zinc-400 font-mono text-xs whitespace-nowrap">{product.sku || '—'}</TableCell>
                                     <TableCell>
                                         <span className={`font-semibold ${product.stock_quantity <= 0 ? 'text-red-400' :
                                             product.stock_quantity <= product.min_stock_level ? 'text-amber-400' :
@@ -216,25 +237,29 @@ export default function InventoryPage() {
                                             {product.stock_quantity}
                                         </span>
                                     </TableCell>
-                                    <TableCell className="text-zinc-400">{product.min_stock_level}</TableCell>
+                                    <TableCell className="hidden xl:table-cell text-zinc-400">{product.min_stock_level}</TableCell>
                                     <TableCell><StatusBadge status={getStockStatus(product)} /></TableCell>
-                                    <TableCell>{formatCurrency(product.stock_quantity * product.cost)}</TableCell>
+                                    {owner && <TableCell className="hidden xl:table-cell whitespace-nowrap">{formatCurrency(product.stock_quantity * product.cost)}</TableCell>}
                                     <TableCell>
-                                        <div className="flex items-center gap-2">
-                                            <Button
-                                                variant="secondary"
-                                                size="sm"
-                                                onClick={() => { setSelectedProduct(product); setShowAdjustModal(true); }}
-                                            >
-                                                <ArrowUpDown className="w-3 h-3" />
-                                                {t('inventory.adjustShort')}
-                                            </Button>
+                                        <div className="flex items-center gap-1.5 flex-nowrap">
+                                            {canCount && (
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    onClick={() => { setSelectedProduct(product); setShowAdjustModal(true); }}
+                                                >
+                                                    <ArrowUpDown className="w-3 h-3" />
+                                                    {t('inventory.adjustShort')}
+                                                </Button>
+                                            )}
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
                                                 onClick={() => handleViewLogs(product)}
+                                                title={t('inventory.history')}
+                                                aria-label={t('inventory.history')}
                                             >
-                                                <History className="w-3 h-3" />
+                                                <History className="w-4 h-4" />
                                             </Button>
                                         </div>
                                     </TableCell>
@@ -311,6 +336,7 @@ export default function InventoryPage() {
                     )}
                 </ModalBody>
             </Modal>
+            <StockCountModal isOpen={showCount} onClose={() => setShowCount(false)} onConfirmed={loadData} />
         </div>
     );
 }

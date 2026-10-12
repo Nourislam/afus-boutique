@@ -96,7 +96,11 @@
         }
       ],
       "icon": "public/icon.ico",
-      "publisherName": "Afus"
+      "publisherName": "Afus",
+      "signingHashAlgorithms": [
+        "sha256"
+      ],
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
@@ -128,7 +132,11 @@
       ],
       "category": "public.app-category.business",
       "icon": "public/icon-512.png",
-      "artifactName": "Afus-Boutique-${version}-${arch}-mac.${ext}"
+      "artifactName": "Afus-Boutique-${version}-${arch}-mac.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "signing/entitlements.mac.plist",
+      "entitlementsInherit": "signing/entitlements.mac.plist"
     },
     "linux": {
       "target": [

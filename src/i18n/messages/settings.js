@@ -48,6 +48,8 @@ export default {
     'settings.feature.emailHint': ["Send receipts and purchase orders by e-mail (needs internet).", "Envoyer tickets et bons de commande par e-mail (Internet requis).", "إرسال التذاكر وطلبيات الشراء بالبريد (يتطلب الإنترنت)."],
     'settings.feature.ecommerce': ["Online store", "Boutique en ligne", "المتجر الإلكتروني"],
     'settings.feature.ecommerceHint': ["Connection to Shopify / WooCommerce (needs internet).", "Connexion à Shopify / WooCommerce (Internet requis).", "ربط مع Shopify / WooCommerce (يتطلب الإنترنت)."],
+    'settings.feature.website': ["My website", "Mon site web", "موقعي على الإنترنت"],
+    'settings.feature.websiteHint': ["The shop's own website with a free address (a domain of your own is optional).", "Le site web du magasin avec une adresse gratuite (un nom de domaine à vous est facultatif).", "موقع المحل على الإنترنت برابط مجاني (الدومين الخاص اختياري)."],
     'settings.email.text': ["SMTP server used to send e-mails", "Serveur SMTP pour envoyer les e-mails", "خادم SMTP لإرسال الرسائل"],
     'settings.email.host': ["SMTP server", "Serveur SMTP", "خادم SMTP"],
     'settings.email.port': ["Port", "Port", "المنفذ"],

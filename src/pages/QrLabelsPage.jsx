@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button';
 import { toast } from '../components/ui/Toast';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { variantLabel } from '../lib/clothing';
+import { readArrivedPieces } from '../lib/receiving';
 import { LabelPrintPanel, useLabelSetup, cleanError } from '../components/labels/LabelLayoutPanel';
 
 /**
@@ -41,7 +42,7 @@ export default function QrLabelsPage() {
             setVariantResults([]);
             return undefined;
         }
-        window.electronAPI.catalog.searchVariants(query, 30).then((rows) => {
+        window.electronAPI.catalog.searchVariants(query).then((rows) => {
             if (!cancelled) setVariantResults(rows);
         });
         return () => { cancelled = true; };
@@ -52,7 +53,7 @@ export default function QrLabelsPage() {
         const q = query.toLowerCase();
         return products.filter(p => (perArticle || !(p.variant_count > 0)) && (
             p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.barcode?.toLowerCase().includes(q) || p.brand?.toLowerCase().includes(q)
-        )).slice(0, 12);
+        ));
     }, [query, products, perArticle]);
 
     const pushLine = (line) => setQueue(prev => {
@@ -136,6 +137,33 @@ export default function QrLabelsPage() {
         }
         return undefined;
     };
+
+    // Opened after receiving an order: one label per piece that arrived, nothing else
+    useEffect(() => {
+        const pieces = readArrivedPieces(searchParams);
+        if (!pieces.length || products.length === 0 || !setup.layout) return;
+        setSearchParams({}, { replace: true });
+        (async () => {
+            const variantsOf = new Map();
+            for (const piece of pieces) {
+                const product = products.find(p => p.id === piece.productId);
+                if (!product) continue;
+                if (!piece.variantId) {
+                    if (perArticle) pushLine(articleLine(product, piece.quantity));
+                    else pushLine({
+                        key: product.id, productId: product.id, name: product.name, label: '',
+                        code: codeType === 'ean13' ? (product.barcode || '') : (product.sku || product.barcode || ''),
+                        price: product.price, stock: product.stock_quantity, quantity: piece.quantity,
+                    });
+                    continue;
+                }
+                if (!variantsOf.has(product.id)) variantsOf.set(product.id, await window.electronAPI.catalog.getVariants(product.id));
+                const variant = variantsOf.get(product.id).find(v => v.id === piece.variantId);
+                if (variant) addVariant(variant, product, piece.quantity);
+            }
+            toast.success(t('labels.arrivedAdded', { n: pieces.reduce((sum, p) => sum + p.quantity, 0) }));
+        })();
+    }, [searchParams, products, setup.layout]);
 
     // Opened from the products page: label that article (every piece in stock)
     useEffect(() => {

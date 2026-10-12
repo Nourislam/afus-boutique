@@ -8,12 +8,19 @@ import { Select } from '../ui/Select';
 import { toast } from '../ui/Toast';
 import { translateError } from '../../i18n/errors';
 import { useAuthStore } from '../../stores/authStore';
+import { withManagerApproval } from '../../lib/approval';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { lineRefund } from '../../../electron/shared/refund.mjs';
 
 export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) {
     const { user } = useAuthStore();
     const [items, setItems] = useState([]);
     const [returnReason, setReturnReason] = useState('');
     const [loading, setLoading] = useState(false);
+    // Money back, or a store credit (avoir) spent later like a gift card
+    const giftCardsOn = useSettingsStore(state => state.settings.features?.giftCards);
+    const [refundMethod, setRefundMethod] = useState('cash');
+    const [credit, setCredit] = useState(null);
 
     useEffect(() => {
         if (sale && isOpen) {
@@ -25,6 +32,7 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
     const fetchSaleDetails = async () => {
         try {
             const fullSale = await window.electronAPI.sales.getById(sale.id);
+            setFullSale(fullSale);
             setItems(fullSale.items.map(item => ({
                 ...item,
                 // Pieces that can still come back on this line
@@ -56,8 +64,11 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
         ));
     };
 
+    // What the pieces were really paid (discounts taken off), as the main process counts it
+    const [fullSale, setFullSale] = useState(null);
+    const refundOf = (item, qty = item.returnQty) => lineRefund(fullSale || sale, item, qty);
     const calculateTotalRefund = () => {
-        return items.reduce((sum, item) => sum + (item.returnQty * item.unit_price), 0);
+        return Math.round(items.reduce((sum, item) => sum + refundOf(item), 0) * 100) / 100;
     };
 
     const handleSubmit = async () => {
@@ -77,19 +88,25 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
                 total_refund: calculateTotalRefund(),
                 reason: returnReason,
                 employee_id: user?.id || null,
+                refund_method: giftCardsOn && refundMethod === 'store_credit' ? 'store_credit' : 'cash',
                 items: itemsToReturn.map(item => ({
                     sale_item_id: item.id,
                     product_id: item.product_id,
                     quantity: item.returnQty,
-                    refund_amount: item.returnQty * item.unit_price,
+                    refund_amount: refundOf(item),
                     condition: item.condition
                 }))
             };
 
-            await window.electronAPI.returns.create(returnData);
+            // A cashier may need a manager's PIN (checked by the main process)
+            const saved = await withManagerApproval((approval) => window.electronAPI.returns.create({ ...returnData, approval }));
             toast.success(t('return.done'));
+            // Kridi sale: the pieces lowered what the customer owes first
+            if (saved?.credit_reduced > 0) toast.success(t('return.debtLowered', { amount: formatMoney(saved.credit_reduced), back: formatMoney(saved.hand_back || 0) }));
             if (onReturnSuccess) onReturnSuccess();
-            onClose();
+            // An avoir: its code is shown (and can be saved as PDF) before closing
+            if (saved?.store_credit) setCredit(saved.store_credit);
+            else onClose();
         } catch (error) {
             console.error('Return failed:', error);
             // The reason (e.g. more pieces than can still be returned)
@@ -128,7 +145,7 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
                                             {item.quantity}
                                             {item.returned_quantity > 0 && <div className="text-xs text-amber-400">{t('return.alreadyReturned', { n: item.returned_quantity })}</div>}
                                         </td>
-                                        <td className="p-3 text-zinc-300">{formatCurrency(item.unit_price)}</td>
+                                        <td className="p-3 text-zinc-300">{formatCurrency(refundOf(item, 1))}</td>
                                         <td className="p-3">
                                             <input
                                                 type="number"
@@ -154,7 +171,7 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
                                             )}
                                         </td>
                                         <td className="p-3 text-end font-medium text-accent-primary">
-                                            {item.returnQty > 0 ? formatCurrency(item.returnQty * item.unit_price) : '-'}
+                                            {item.returnQty > 0 ? formatCurrency(refundOf(item)) : '-'}
                                         </td>
                                     </tr>
                                 ))}
@@ -176,6 +193,22 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
                             <p className="text-2xl font-bold text-accent-primary">{formatCurrency(calculateTotalRefund())}</p>
                         </div>
                     </div>
+                    {/* Kridi ticket: the main process lowers the debt first, then gives back the rest */}
+                    {fullSale?.payments?.some(p => String(p.method).toLowerCase() === 'credit') && (
+                        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200" data-testid="return-kridi-note">{t('return.kridiNote')}</p>
+                    )}
+                    {giftCardsOn && (
+                        <div role="radiogroup" aria-label={t('avoir.refundAs')} className="grid grid-cols-2 gap-2">
+                            {['cash', 'store_credit'].map(method => (
+                                <button key={method} type="button" role="radio" aria-checked={refundMethod === method} onClick={() => setRefundMethod(method)}
+                                    data-testid={`refund-${method}`}
+                                    className={`rounded-lg border-2 px-3 py-2 text-start text-sm ${refundMethod === method ? 'border-accent-primary bg-accent-primary/10' : 'border-dark-border hover:border-zinc-600'}`}>
+                                    <span className="block font-semibold">{t(`avoir.${method}`)}</span>
+                                    <span className="block text-xs text-zinc-500">{t(`avoir.${method}Hint`)}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </ModalBody>
             <ModalFooter>
@@ -184,6 +217,22 @@ export default function ReturnModal({ isOpen, onClose, sale, onReturnSuccess }) 
                     {t('return.confirm')}
                 </Button>
             </ModalFooter>
+            {credit && (
+                <Modal isOpen onClose={() => { setCredit(null); onClose(); }} title={t('avoir.title')} size="sm">
+                    <ModalBody className="space-y-3 text-center">
+                        <span data-testid="avoir-issued" className="sr-only">{credit.code}</span>
+                        <p className="text-sm text-zinc-400">{t('avoir.issuedText')}</p>
+                        <p className="text-2xl font-bold tabular ltr select-all" dir="ltr">{credit.code}</p>
+                        <p className="text-lg font-semibold text-accent-primary">{formatCurrency(credit.amount)}</p>
+                    </ModalBody>
+                    <ModalFooter>
+                        <Button variant="secondary" onClick={() => window.electronAPI.giftCards.savePdf({ code: credit.code, initial_balance: credit.amount, current_balance: credit.amount }).catch(e => toast.error(translateError(e)))}>
+                            {t('common.savePdf')}
+                        </Button>
+                        <Button onClick={() => { setCredit(null); onClose(); }}>{t('common.close')}</Button>
+                    </ModalFooter>
+                </Modal>
+            )}
         </Modal>
     );
 }

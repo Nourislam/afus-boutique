@@ -10,6 +10,49 @@ contextBridge.exposeInMainWorld('electronAPI', {
     maximize: () => ipcRenderer.invoke('window:maximize'),
     close: () => ipcRenderer.invoke('window:close'),
 
+    // Logged-in session kept by the main process; approval of a manager by PIN
+    auth: {
+        logout: () => ipcRenderer.invoke('auth:logout'),
+        approve: (data) => ipcRenderer.invoke('auth:approve', data),
+        rules: () => ipcRenderer.invoke('security:getRules'),
+    },
+
+    // Training mode: a copy of the shop's data in memory, thrown away at the end
+    training: {
+        status: () => ipcRenderer.invoke('training:status'),
+        start: (data) => ipcRenderer.invoke('training:start', data),
+        stop: () => ipcRenderer.invoke('training:stop'),
+        progress: () => ipcRenderer.invoke('training:progress'),
+    },
+    // Support, licence, updates (Settings › About)
+    support: {
+        bundle: () => ipcRenderer.invoke('support:bundle'),
+        openLogs: () => ipcRenderer.invoke('support:openLogs'),
+        log: (level, message) => ipcRenderer.invoke('log:write', { level, message }),
+        about: () => ipcRenderer.invoke('about:info'),
+        setLicense: (key) => ipcRenderer.invoke('license:set', key),
+        checkUpdate: () => ipcRenderer.invoke('update:check'),
+        openUpdate: (url) => ipcRenderer.invoke('update:open', url),
+    },
+    // Reservations with a deposit
+    reservations: {
+        list: (params) => ipcRenderer.invoke('reservations:list', params),
+        create: (data) => ipcRenderer.invoke('reservations:create', data),
+        cancel: (data) => ipcRenderer.invoke('reservations:cancel', data),
+    },
+    // Training (7 days) and demo shop (3 months) from the install date
+    trial: {
+        status: () => ipcRenderer.invoke('trial:status'),
+    },
+    demo: {
+        status: () => ipcRenderer.invoke('demo:status'),
+        data: () => ipcRenderer.invoke('demo:data'),
+        discard: () => ipcRenderer.invoke('demo:discard'),
+        enter: (data) => ipcRenderer.invoke('demo:enter', data),
+        reset: (data) => ipcRenderer.invoke('demo:reset', data),
+        exit: () => ipcRenderer.invoke('demo:exit'),
+    },
+
     // Shifts
     shifts: {
         start: (data) => ipcRenderer.invoke('db:shifts:start', data),
@@ -20,6 +63,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         getOpen: () => ipcRenderer.invoke('db:shifts:getOpen'),
         getLastClosed: () => ipcRenderer.invoke('db:shifts:getLastClosed'),
         getActivity: (range) => ipcRenderer.invoke('db:shifts:getActivity', range),
+        addExpense: (data) => ipcRenderer.invoke('db:shifts:addExpense', data),
+        getExpenses: (shiftId) => ipcRenderer.invoke('db:shifts:getExpenses', shiftId),
+        // Closing report (Z), printed on the ticket printer
+        printZ: (shiftId) => ipcRenderer.invoke('shifts:printZ', shiftId),
+        zReportHtml: (shiftId) => ipcRenderer.invoke('shifts:zReportHtml', shiftId),
     },
 
 
@@ -43,10 +91,104 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Home screen (read-only)
     dashboard: {
         home: (args) => ipcRenderer.invoke('dashboard:home', args),
+        firstSteps: () => ipcRenderer.invoke('dashboard:firstSteps'),
         selling: (args) => ipcRenderer.invoke('dashboard:selling', args),
         series: (args) => ipcRenderer.invoke('dashboard:series', args),
         stock: (args) => ipcRenderer.invoke('dashboard:stock', args),
         cash: (args) => ipcRenderer.invoke('dashboard:cash', args),
+    },
+    // Decision figures: run-out, sell-through, colour x size, dormant stock, stock worth
+    // Website Manager (the shop's website)
+    website: {
+        getState: () => ipcRenderer.invoke('website:getState'),
+        preview: () => ipcRenderer.invoke('website:preview'),
+        // A page of the website in a theme (HTML without script, shown in a sandboxed frame)
+        previewTheme: (args) => ipcRenderer.invoke('website:previewTheme', args),
+        create: (args) => ipcRenderer.invoke('website:create', args),
+        // Change Theme (the look only); { publish: true }: the online website made again with it
+        setTheme: (theme, options) => ipcRenderer.invoke('website:setTheme', theme, options),
+        setName: (name) => ipcRenderer.invoke('website:setName', name),
+        setDomain: (domain) => ipcRenderer.invoke('website:setDomain', domain),
+        removeDomain: () => ipcRenderer.invoke('website:removeDomain'),
+        // Own domain (optional): connect it, look again, buy one at a provider (its affiliate link)
+        domainCheck: () => ipcRenderer.invoke('website:domainCheck'),
+        domainRetry: () => ipcRenderer.invoke('website:domainRetry'),
+        domainSearch: (args) => ipcRenderer.invoke('website:domainSearch', args),
+        domainOpenBuy: (args) => ipcRenderer.invoke('website:domainOpenBuy', args),
+        // The shop's own Hostinger account: records written automatically (the key never comes back to the window)
+        domainHostingerLink: (args) => ipcRenderer.invoke('website:domainHostingerLink', args),
+        domainHostingerForget: () => ipcRenderer.invoke('website:domainHostingerForget'),
+        domainHostingerSetup: () => ipcRenderer.invoke('website:domainHostingerSetup'),
+        update: () => ipcRenderer.invoke('website:update'),
+        connect: (provider) => ipcRenderer.invoke('website:connect', provider),
+        // The shop's GitHub account (the key itself never comes to the window)
+        githubStart: () => ipcRenderer.invoke('website:githubStart'),
+        githubCancel: () => ipcRenderer.invoke('website:githubCancel'),
+        githubDisconnect: () => ipcRenderer.invoke('website:githubDisconnect'),
+        githubCheck: () => ipcRenderer.invoke('website:githubCheck'),
+        githubOpen: () => ipcRenderer.invoke('website:githubOpen'),
+        githubManage: () => ipcRenderer.invoke('website:githubManage'),
+        // Create Website / Update website (on the shop's own accounts, in the background)
+        publish: () => ipcRenderer.invoke('website:publish'),
+        // Opening hours, social pages, map link (shown on the website only)
+        setPublicInfo: (info) => ipcRenderer.invoke('website:setPublicInfo', info),
+        setFeatures: (features) => ipcRenderer.invoke('website:setFeatures', features),
+        recheck: () => ipcRenderer.invoke('website:recheck'),
+        // Changes in the shop the website does not show yet (read only)
+        changes: () => ipcRenderer.invoke('website:changes'),
+        orders: (args) => ipcRenderer.invoke('website:orders', args),
+        setSettings: (part) => ipcRenderer.invoke('website:setSettings', part),
+        blockPhone: (args) => ipcRenderer.invoke('website:blockPhone', args),
+        unblockPhone: (args) => ipcRenderer.invoke('website:unblockPhone', args),
+        blockSuggestions: () => ipcRenderer.invoke('website:blockSuggestions'),
+        confirmMessage: (args) => ipcRenderer.invoke('website:confirmMessage', args),
+        setTracking: (args) => ipcRenderer.invoke('website:setTracking', args),
+        openTracking: (url) => ipcRenderer.invoke('website:openTracking', url),
+        yalidineLink: (args) => ipcRenderer.invoke('website:yalidineLink', args),
+        yalidineForget: () => ipcRenderer.invoke('website:yalidineForget'),
+        yalidineSend: (args) => ipcRenderer.invoke('website:yalidineSend', args),
+        yalidineRefresh: (args) => ipcRenderer.invoke('website:yalidineRefresh', args),
+        stats: (args) => ipcRenderer.invoke('website:stats', args),
+        // The new-order alert was pressed: open the orders page
+        onNavigate: (callback) => {
+            const subscription = (_event, path) => { if (typeof path === 'string' && /^\/[a-z-]+$/.test(path)) callback(path); };
+            ipcRenderer.on('navigate', subscription);
+            return () => ipcRenderer.removeListener('navigate', subscription);
+        },
+        // The website's customers (by phone) and one customer's history: AFUS only
+        customers: (args) => ipcRenderer.invoke('website:customers', args),
+        // The call to the customer: what they confirmed, then Confirmed (pieces put aside)
+        confirmOrder: (args) => ipcRenderer.invoke('website:confirmOrder', args),
+        updateOrder: (args) => ipcRenderer.invoke('website:updateOrder', args),
+        orderChoices: (args) => ipcRenderer.invoke('website:orderChoices', args),
+        // The shipping label (100 x 150 mm)
+        labelHtml: (args) => ipcRenderer.invoke('website:labelHtml', args),
+        printLabel: (args) => ipcRenderer.invoke('website:printLabel', args),
+        saveLabelPdf: (args) => ipcRenderer.invoke('website:saveLabelPdf', args),
+        customerHistory: (args) => ipcRenderer.invoke('website:customerHistory', args),
+        // An order's delivery status (money received: it becomes one sale)
+        setOrderStatus: (args) => ipcRenderer.invoke('website:setOrderStatus', args),
+        // A returned parcel checked piece by piece (sellable back in stock)
+        checkReturn: (args) => ipcRenderer.invoke('website:checkReturn', args),
+        openSite: () => ipcRenderer.invoke('website:openSite'),
+        // The shop's Cloudflare account (its keys never come to the window)
+        cloudflareStart: () => ipcRenderer.invoke('website:cloudflareStart'),
+        cloudflareCancel: () => ipcRenderer.invoke('website:cloudflareCancel'),
+        cloudflareChoose: (accountId) => ipcRenderer.invoke('website:cloudflareChoose', accountId),
+        cloudflareDisconnect: () => ipcRenderer.invoke('website:cloudflareDisconnect'),
+        cloudflareCheck: () => ipcRenderer.invoke('website:cloudflareCheck'),
+        cloudflareOpen: () => ipcRenderer.invoke('website:cloudflareOpen'),
+        cloudflareManage: () => ipcRenderer.invoke('website:cloudflareManage'),
+    },
+    insights: {
+        runOut: (args) => ipcRenderer.invoke('insights:runOut', args),
+        sellThrough: (args) => ipcRenderer.invoke('insights:sellThrough', args),
+        matrix: (args) => ipcRenderer.invoke('insights:matrix', args),
+        deadStock: (args) => ipcRenderer.invoke('insights:deadStock', args),
+        stockWorth: (args) => ipcRenderer.invoke('insights:stockWorth', args),
+        season: (args) => ipcRenderer.invoke('insights:season', args),
+        markdowns: () => ipcRenderer.invoke('insights:markdowns'),
+        markdownDecide: (args) => ipcRenderer.invoke('insights:markdownDecide', args),
     },
     products: {
         getAll: () => ipcRenderer.invoke('db:products:getAll'),
@@ -72,7 +214,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.invoke('catalog:checkIdentifier', { code, excludeVariantId, excludeProductId }),
         lookupCode: (code) => ipcRenderer.invoke('catalog:lookupCode', code),
         missingCodes: () => ipcRenderer.invoke('catalog:missingCodes'),
-        searchVariants: (query, limit = 50) => ipcRenderer.invoke('catalog:searchVariants', { query, limit }),
+        searchVariants: (query, limit) => ipcRenderer.invoke('catalog:searchVariants', { query, limit }),
         regenerateQr: (variantId) => ipcRenderer.invoke('catalog:regenerateQr', variantId),
     },
 
@@ -85,7 +227,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         search: (query) => ipcRenderer.invoke('db:customers:search', query),
         create: (customer) => ipcRenderer.invoke('db:customers:create', customer),
         update: (customer) => ipcRenderer.invoke('db:customers:update', customer),
-        delete: (id) => ipcRenderer.invoke('db:customers:delete', id),
+        delete: (id, options) => ipcRenderer.invoke('db:customers:delete', id, options),
     },
 
     // Employees
@@ -102,6 +244,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sales: {
         create: (sale) => ipcRenderer.invoke('db:sales:create', sale),
         getAll: (params) => ipcRenderer.invoke('db:sales:getAll', params),
+        count: (params) => ipcRenderer.invoke('db:sales:count', params),
         getById: (id) => ipcRenderer.invoke('db:sales:getById', id),
         getToday: (params) => ipcRenderer.invoke('db:sales:getToday', params),
         getStats: (params) => ipcRenderer.invoke('db:sales:getStats', params),
@@ -121,6 +264,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
         create: (data) => ipcRenderer.invoke('db:returns:create', data),
         getAll: () => ipcRenderer.invoke('db:returns:getAll'),
         getItems: (id) => ipcRenderer.invoke('db:returns:getItems', id),
+    },
+
+    // Stock count: what is on the shelves, applied only when confirmed
+    stockCount: {
+        current: () => ipcRenderer.invoke('stockCount:current'),
+        start: (data) => ipcRenderer.invoke('stockCount:start', data),
+        scan: (data) => ipcRenderer.invoke('stockCount:scan', data),
+        setCounted: (data) => ipcRenderer.invoke('stockCount:setCounted', data),
+        removeLine: (data) => ipcRenderer.invoke('stockCount:removeLine', data),
+        summary: (countId) => ipcRenderer.invoke('stockCount:summary', countId),
+        cancel: (countId) => ipcRenderer.invoke('stockCount:cancel', countId),
+        confirm: (data) => ipcRenderer.invoke('stockCount:confirm', data),
+        list: (limit) => ipcRenderer.invoke('stockCount:list', limit),
+    },
+
+    // A4 invoice of a sale
+    invoices: {
+        print: (saleId) => ipcRenderer.invoke('invoices:print', saleId),
+        savePdf: (saleId) => ipcRenderer.invoke('invoices:savePdf', saleId),
+        html: (saleId) => ipcRenderer.invoke('invoices:html', saleId),
+    },
+
+    // Exchanges (a piece brought back for another size, colour or article)
+    exchanges: {
+        preview: (data) => ipcRenderer.invoke('db:exchanges:preview', data),
+        create: (data) => ipcRenderer.invoke('db:exchanges:create', data),
+        getBySale: (saleId) => ipcRenderer.invoke('db:exchanges:getBySale', saleId),
     },
 
     // Held Transactions
@@ -146,6 +316,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Backup
     backup: {
         list: () => ipcRenderer.invoke('backup:list'),
+        status: () => ipcRenderer.invoke('backup:status'),
         create: () => ipcRenderer.invoke('backup:create'),
         inspect: (name) => ipcRenderer.invoke('backup:inspect', name),
         restore: (name) => ipcRenderer.invoke('backup:restore', name),
@@ -154,6 +325,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         import: () => ipcRenderer.invoke('backup:import'),
         openFolder: () => ipcRenderer.invoke('backup:openFolder'),
         reset: () => ipcRenderer.invoke('backup:reset'),
+        chooseExternal: () => ipcRenderer.invoke('backup:chooseExternal'),
+        clearExternal: () => ipcRenderer.invoke('backup:clearExternal'),
     },
 
 
@@ -172,6 +345,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         salesByCategory: (params) => ipcRenderer.invoke('db:reports:salesByCategory', params),
         paymentMethods: (params) => ipcRenderer.invoke('db:reports:paymentMethods', params),
         getLowStock: () => ipcRenderer.invoke('db:reports:getLowStock'),
+        reorderSuggestions: (params) => ipcRenderer.invoke('reorder:suggestions', params),
         getSupplierStats: () => ipcRenderer.invoke('db:reports:getSupplierStats'),
     },
 
@@ -332,12 +506,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
         validateAndTransform: (rows, mappings, dataType) => ipcRenderer.invoke('excel:validateAndTransform', { rows, mappings, dataType }),
         getFieldMappings: (dataType) => ipcRenderer.invoke('excel:getFieldMappings', dataType),
         generateTemplate: (dataType) => ipcRenderer.invoke('excel:generateTemplate', dataType),
+        importProducts: (rows) => ipcRenderer.invoke('excel:importProducts', rows),
         export: (data, dataType) => ipcRenderer.invoke('excel:export', { data, dataType }),
     },
 
     // Dialog
     dialog: {
         selectImage: () => ipcRenderer.invoke('dialog:selectImage'),
+    },
+
+    // Sales journal for the accountant
+    accounting: {
+        salesJournal: (range) => ipcRenderer.invoke('reports:salesJournal', range),
+        exportSalesJournal: (data) => ipcRenderer.invoke('reports:exportSalesJournal', data),
+    },
+
+    // Loyalty points turned into an avoir card
+    loyalty: {
+        redeem: (data) => ipcRenderer.invoke('loyalty:redeem', data),
     },
 
     // Credit Sales

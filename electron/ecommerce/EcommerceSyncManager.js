@@ -6,101 +6,186 @@
  * Handles conflict resolution (newest wins by default).
  */
 
-const { ipcMain } = require('electron');
 const { v4: uuid } = require('uuid');
 
 // Adapters
 const ShopifyAdapter = require('./adapters/ShopifyAdapter');
 const WooCommerceAdapter = require('./adapters/WooCommerceAdapter');
 
+/**
+ * What went wrong with the online store, said so the shop can act on it
+ * ("CODE|{}", shown in the screen's language). The detail stays in the log.
+ */
+function friendlyError(message) {
+    const text = String(message || '');
+    if (/^[A-Z][A-Z0-9_]+\|/.test(text)) return text;
+    if (/invalid url|ERR_INVALID_URL/i.test(text)) return 'ECOM_BAD_URL|{}';
+    if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|network|socket/i.test(text)) return 'ECOM_OFFLINE|{}';
+    if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid api key|access token/i.test(text)) return 'ECOM_AUTH|{}';
+    console.error('Online store error:', text);
+    return 'ECOM_FAILED|{}';
+}
+
+const DEFAULT_ADAPTERS = { shopify: ShopifyAdapter, woocommerce: WooCommerceAdapter };
+
 class EcommerceSyncManager {
-    constructor() {
+    /**
+     * deps (all optional, for tests): store { runQuery, runInsert }, ipcMain,
+     * adapters { platform: AdapterClass }, isEnabled () => boolean.
+     */
+    constructor(deps = {}) {
+        this.deps = deps;
         this.adapters = new Map(); // connection_id -> adapter instance
         this.syncInterval = null;
         this.isSyncing = false;
-        this.db = null;
+        this.ready = false; // true once init() ran, i.e. after the database is open
+        this.ipcRegistered = false;
         this.mainWindow = null;
     }
 
-    /**
-     * Initialize the sync manager with database access
-     */
-    init(db, mainWindow) {
-        this.db = db;
-        this.mainWindow = mainWindow;
-        this.loadConnections();
-        this.registerIpcHandlers();
-        this.startWebhookListener();
-        console.log('[ECOMMERCE] Sync Manager initialized');
+    /** Database helpers (the shared local database unless a test gives its own). */
+    store() {
+        return this.deps.store || require('../database/init');
+    }
+
+    ipc() {
+        return this.deps.ipcMain || require('electron').ipcMain;
     }
 
     /**
-     * Load active connections from database and create adapters
+     * Why the online store must not be used now: training (a copy of the
+     * stock) or the demo shop (not the shop's stock). null when it may.
+     */
+    blockedReason() {
+        if (this.deps.isTraining?.()) return 'TRAINING_ACTIVE';
+        if (this.deps.isDemo?.()) return 'DEMO_ACTIVE';
+        return null;
+    }
+
+    /** Is the online store module turned on in Settings › Modules? */
+    isEnabled() {
+        return this.deps.isEnabled ? !!this.deps.isEnabled() : true;
+    }
+
+    /**
+     * Start the manager. Must be called once the database is open (it reads
+     * the saved connections). The window comes later through setWindow().
+     */
+    init({ mainWindow = null, isEnabled, isTraining, isDemo } = {}) {
+        this.mainWindow = mainWindow;
+        if (isEnabled) this.deps = { ...this.deps, isEnabled };
+        if (isTraining) this.deps = { ...this.deps, isTraining };
+        if (isDemo) this.deps = { ...this.deps, isDemo };
+        this.ready = true;
+        this.registerIpcHandlers();
+        this.startWebhookListener();
+        this.loadConnections();
+        this.refreshSchedule();
+        console.log('[ECOMMERCE] Sync Manager initialized');
+    }
+
+    /** The window that receives the sync status messages (null when it closes). */
+    setWindow(mainWindow) {
+        this.mainWindow = mainWindow;
+    }
+
+    /**
+     * Load active connections from database and create adapters. A connection
+     * that cannot be loaded is skipped: the others keep working.
+     * @returns {{ loaded: number, failed: string[] }}
      */
     loadConnections() {
-        if (!this.db) return;
+        const result = { loaded: 0, failed: [] };
+        if (!this.ready) return result;
 
+        let connections = [];
         try {
-            const { runQuery } = require('../database/init');
-            const connections = runQuery(
-                'SELECT * FROM ecommerce_connections WHERE is_active = 1'
-            );
-
-            for (const conn of connections) {
-                this.createAdapter(conn);
-            }
-
-            console.log(`[ECOMMERCE] Loaded ${connections.length} active connections`);
+            const { runQuery } = this.store();
+            connections = runQuery('SELECT * FROM ecommerce_connections WHERE is_active = 1');
         } catch (error) {
             console.error('[ECOMMERCE] Failed to load connections:', error.message);
+            return result;
         }
+
+        this.adapters.clear();
+        for (const conn of connections) {
+            try {
+                if (this.createAdapter(conn)) result.loaded++;
+                else result.failed.push(conn.id);
+            } catch (error) {
+                result.failed.push(conn.id);
+                console.error(`[ECOMMERCE] Connection ${conn.id} could not be loaded:`, error.message);
+            }
+        }
+
+        console.log(`[ECOMMERCE] Loaded ${result.loaded} active connections${result.failed.length ? `, ${result.failed.length} skipped` : ''}`);
+        return result;
     }
 
     /**
      * Create an adapter instance for a connection
      */
     createAdapter(connection) {
-        let adapter;
-        
-        switch (connection.platform) {
-            case 'shopify':
-                adapter = new ShopifyAdapter(connection);
-                break;
-            case 'woocommerce':
-                adapter = new WooCommerceAdapter(connection);
-                break;
-            default:
-                console.warn(`[ECOMMERCE] Unknown platform: ${connection.platform}`);
-                return null;
+        const Adapter = (this.deps.adapters || DEFAULT_ADAPTERS)[connection.platform];
+        if (!Adapter) {
+            console.warn(`[ECOMMERCE] Unknown platform: ${connection.platform}`);
+            return null;
         }
-
+        const adapter = new Adapter(connection);
         this.adapters.set(connection.id, adapter);
         return adapter;
+    }
+
+    /**
+     * Scheduled sync: only once the manager is ready, the module is on and at
+     * least one connection has sync turned on (shortest interval of them).
+     */
+    refreshSchedule() {
+        this.stopScheduledSync();
+        if (!this.ready || !this.isEnabled()) return false;
+        let connections = [];
+        try {
+            connections = this.getConnections().filter(c => c.is_active && c.sync_enabled && this.adapters.has(c.id));
+        } catch {
+            return false;
+        }
+        if (connections.length === 0) return false;
+        const minutes = Math.min(...connections.map(c => Number(c.sync_interval_minutes) || 15));
+        return this.startScheduledSync(Math.max(1, minutes));
     }
 
     /**
      * Register IPC handlers for renderer communication
      */
     registerIpcHandlers() {
+        if (this.ipcRegistered) return;
+        this.ipcRegistered = true;
+        const ipcMain = this.ipc();
+        // Nothing that reaches the online store or changes the link to it during training or in the demo shop
+        const guarded = (fn) => async (...args) => {
+            const reason = this.blockedReason();
+            if (reason) return { success: false, message: `${reason}|{}`, error: `${reason}|{}` };
+            return fn(...args);
+        };
         // Get all connections
         ipcMain.handle('ecommerce:getConnections', async () => {
             return this.getConnections();
         });
 
         // Add new connection
-        ipcMain.handle('ecommerce:addConnection', async (_, connection) => {
+        ipcMain.handle('ecommerce:addConnection', guarded(async (_, connection) => {
             return this.addConnection(connection);
-        });
+        }));
 
         // Test connection
-        ipcMain.handle('ecommerce:testConnection', async (_, connectionId) => {
+        ipcMain.handle('ecommerce:testConnection', guarded(async (_, connectionId) => {
             return this.testConnection(connectionId);
-        });
+        }));
 
         // Remove connection
-        ipcMain.handle('ecommerce:removeConnection', async (_, connectionId) => {
+        ipcMain.handle('ecommerce:removeConnection', guarded(async (_, connectionId) => {
             return this.removeConnection(connectionId);
-        });
+        }));
 
         // Trigger manual sync
         ipcMain.handle('ecommerce:sync', async (_, connectionId) => {
@@ -118,22 +203,22 @@ class EcommerceSyncManager {
         });
 
         // Auto-map products by SKU
-        ipcMain.handle('ecommerce:autoMapProducts', async (_, connectionId) => {
+        ipcMain.handle('ecommerce:autoMapProducts', guarded(async (_, connectionId) => {
             return this.autoMapProducts(connectionId);
-        });
+        }));
 
         // Create manual mapping
-        ipcMain.handle('ecommerce:createMapping', async (_, mapping) => {
+        ipcMain.handle('ecommerce:createMapping', guarded(async (_, mapping) => {
             return this.createMapping(mapping);
-        });
+        }));
 
         // Delete mapping
-        ipcMain.handle('ecommerce:deleteMapping', async (_, mappingId) => {
+        ipcMain.handle('ecommerce:deleteMapping', guarded(async (_, mappingId) => {
             return this.deleteMapping(mappingId);
-        });
+        }));
 
         // Get sync logs
-        ipcMain.handle('ecommerce:getSyncLogs', async (_, connectionId, limit = 50) => {
+        ipcMain.handle('ecommerce:getSyncLogs', async (_, connectionId, limit = -1) => {
             return this.getSyncLogs(connectionId, limit);
         });
 
@@ -143,17 +228,17 @@ class EcommerceSyncManager {
         });
 
         // Start OAuth flow for Etsy
-        ipcMain.handle('ecommerce:oauth:start', async (_, platform, apiKey) => {
+        ipcMain.handle('ecommerce:oauth:start', guarded(async (_, platform, apiKey) => {
             if (platform === 'etsy') {
                 return this.startEtsyOAuth(apiKey);
             }
             throw new Error('OAuth not required for this platform');
-        });
+        }));
 
         // Complete OAuth flow
-        ipcMain.handle('ecommerce:oauth:complete', async (_, code, state, codeVerifier) => {
+        ipcMain.handle('ecommerce:oauth:complete', guarded(async (_, code, state, codeVerifier) => {
             return this.completeEtsyOAuth(code, state, codeVerifier);
-        });
+        }));
 
         console.log('[ECOMMERCE] IPC handlers registered');
     }
@@ -166,7 +251,7 @@ class EcommerceSyncManager {
      * Get all connections
      */
     getConnections() {
-        const { runQuery } = require('../database/init');
+        const { runQuery } = this.store();
         return runQuery('SELECT * FROM ecommerce_connections ORDER BY created_at DESC');
     }
 
@@ -174,7 +259,7 @@ class EcommerceSyncManager {
      * Add a new connection
      */
     async addConnection(connectionData) {
-        const { runInsert, runQuery } = require('../database/init');
+        const { runInsert, runQuery } = this.store();
         
         const id = uuid();
         const connection = {
@@ -221,6 +306,7 @@ class EcommerceSyncManager {
                 [testResult.details.shopName, id]);
         }
 
+        this.refreshSchedule();
         return { success: true, connectionId: id, testResult };
     }
 
@@ -234,9 +320,10 @@ class EcommerceSyncManager {
         }
 
         try {
-            return await adapter.testConnection();
+            const result = await adapter.testConnection();
+            return result && result.success === false ? { ...result, message: friendlyError(result.message) } : result;
         } catch (error) {
-            return { success: false, message: error.message };
+            return { success: false, message: friendlyError(error.message) };
         }
     }
 
@@ -244,7 +331,7 @@ class EcommerceSyncManager {
      * Remove a connection
      */
     removeConnection(connectionId) {
-        const { runInsert } = require('../database/init');
+        const { runInsert } = this.store();
         
         // Remove mappings first
         runInsert('DELETE FROM ecommerce_product_mappings WHERE connection_id = ?', [connectionId]);
@@ -257,7 +344,8 @@ class EcommerceSyncManager {
         
         // Remove adapter
         this.adapters.delete(connectionId);
-        
+        this.refreshSchedule();
+
         return { success: true };
     }
 
@@ -269,7 +357,7 @@ class EcommerceSyncManager {
      * Get mappings for a connection
      */
     getMappings(connectionId) {
-        const { runQuery } = require('../database/init');
+        const { runQuery } = this.store();
         return runQuery(`
             SELECT m.*, p.name as product_name, p.sku as local_sku, p.stock_quantity as local_quantity
             FROM ecommerce_product_mappings m
@@ -288,7 +376,7 @@ class EcommerceSyncManager {
             return { success: false, message: 'Connection not found' };
         }
 
-        const { runQuery, runInsert } = require('../database/init');
+        const { runQuery, runInsert } = this.store();
         
         // Get all local products with SKUs
         const localProducts = runQuery('SELECT id, sku, name FROM products WHERE sku IS NOT NULL AND sku != ""');
@@ -343,7 +431,7 @@ class EcommerceSyncManager {
      * Create a manual mapping
      */
     createMapping(mapping) {
-        const { runInsert } = require('../database/init');
+        const { runInsert } = this.store();
         
         const id = uuid();
         runInsert(`
@@ -364,7 +452,7 @@ class EcommerceSyncManager {
      * Delete a mapping
      */
     deleteMapping(mappingId) {
-        const { runInsert } = require('../database/init');
+        const { runInsert } = this.store();
         runInsert('DELETE FROM ecommerce_product_mappings WHERE id = ?', [mappingId]);
         return { success: true };
     }
@@ -373,7 +461,7 @@ class EcommerceSyncManager {
      * Get products that aren't mapped yet
      */
     getUnmappedProducts(connectionId) {
-        const { runQuery } = require('../database/init');
+        const { runQuery } = this.store();
         return runQuery(`
             SELECT p.id, p.sku, p.name, p.stock_quantity
             FROM products p
@@ -393,6 +481,8 @@ class EcommerceSyncManager {
      * Sync a specific connection
      */
     async syncConnection(connectionId) {
+        // Training (a copy of the stock) and the demo shop are never sent to the online store
+        if (this.blockedReason()) return { success: false, message: `${this.blockedReason()}|{}` };
         if (this.isSyncing) {
             return { success: false, message: 'Sync already in progress' };
         }
@@ -403,7 +493,7 @@ class EcommerceSyncManager {
         }
 
         this.isSyncing = true;
-        const { runQuery, runInsert } = require('../database/init');
+        const { runQuery, runInsert } = this.store();
 
         // Log sync start
         const logId = uuid();
@@ -521,12 +611,18 @@ class EcommerceSyncManager {
      * Sync all active connections
      */
     async syncAll() {
+        if (this.blockedReason()) return { success: false, message: `${this.blockedReason()}|{}` };
         const connections = this.getConnections().filter(c => c.sync_enabled);
         const results = [];
 
         for (const conn of connections) {
-            const result = await this.syncConnection(conn.id);
-            results.push({ connectionId: conn.id, platform: conn.platform, ...result });
+            try {
+                const result = await this.syncConnection(conn.id);
+                results.push({ connectionId: conn.id, platform: conn.platform, ...result });
+            } catch (error) {
+                this.isSyncing = false;
+                results.push({ connectionId: conn.id, platform: conn.platform, success: false, message: error.message });
+            }
         }
 
         return results;
@@ -589,7 +685,7 @@ class EcommerceSyncManager {
      * Update local inventory
      */
     updateLocalInventory(productId, newQuantity) {
-        const { runQuery, runInsert } = require('../database/init');
+        const { runQuery, runInsert } = this.store();
         
         // Get current quantity
         const product = runQuery('SELECT stock_quantity, name FROM products WHERE id = ?', [productId])[0];
@@ -619,14 +715,14 @@ class EcommerceSyncManager {
     /**
      * Get sync logs for a connection
      */
-    getSyncLogs(connectionId, limit = 50) {
-        const { runQuery } = require('../database/init');
+    getSyncLogs(connectionId, limit = -1) {
+        const { runQuery } = this.store();
         return runQuery(`
             SELECT * FROM ecommerce_sync_logs 
             WHERE connection_id = ? 
             ORDER BY started_at DESC 
             LIMIT ?
-        `, [connectionId, limit]);
+        `, [connectionId, Number.isInteger(limit) && limit > 0 ? limit : -1]);
     }
 
     // ==========================================
@@ -659,16 +755,20 @@ class EcommerceSyncManager {
      * Start scheduled sync
      */
     startScheduledSync(intervalMinutes = 15) {
+        // Never before the saved connections are loaded
+        if (!this.ready) return false;
         if (this.syncInterval) {
             clearInterval(this.syncInterval);
         }
 
         this.syncInterval = setInterval(() => {
+            if (!this.isEnabled()) return;
             console.log('[ECOMMERCE] Running scheduled sync...');
-            this.syncAll();
+            this.syncAll().catch(error => console.error('[ECOMMERCE] Scheduled sync failed:', error.message));
         }, intervalMinutes * 60 * 1000);
 
         console.log(`[ECOMMERCE] Scheduled sync started (every ${intervalMinutes} minutes)`);
+        return true;
     }
 
     /**
@@ -686,7 +786,7 @@ class EcommerceSyncManager {
      * Broadcast sync status to renderer
      */
     broadcastStatus(message) {
-        if (this.mainWindow) {
+        if (this.mainWindow && !this.mainWindow.isDestroyed?.()) {
             this.mainWindow.webContents.send('ecommerce:syncStatus', message);
         }
     }
@@ -695,7 +795,7 @@ class EcommerceSyncManager {
      * Handle local stock change - trigger push to connected platforms
      */
     async onLocalStockChange(productId, newQuantity) {
-        const { runQuery } = require('../database/init');
+        const { runQuery } = this.store();
         
         // Get all mappings for this product
         const mappings = runQuery(`
@@ -728,9 +828,13 @@ class EcommerceSyncManager {
      * platforms send inventory update webhooks
      */
     startWebhookListener() {
-        // Initialized later, once the main window exists
         // The listener runs in the renderer and calls back to main via IPC
-        ipcMain.handle('ecommerce:webhookEvent', async (_, event) => {
+        if (this.webhookRegistered) return;
+        this.webhookRegistered = true;
+        this.ipc().handle('ecommerce:webhookEvent', async (_, event) => {
+            // The demo shop's stock is not the shop's: an event from the real store is not applied to it
+            const reason = this.blockedReason();
+            if (reason) return { success: false, message: `${reason}|{}` };
             return this.processWebhookEvent(event);
         });
 
@@ -741,7 +845,7 @@ class EcommerceSyncManager {
      * Process an incoming webhook event from the connected online store
      */
     async processWebhookEvent(event) {
-        const { runQuery, runInsert } = require('../database/init');
+        const { runQuery, runInsert } = this.store();
 
         console.log(`[ECOMMERCE] Processing webhook event: ${event.platform} ${event.type}`);
 
@@ -824,5 +928,7 @@ class EcommerceSyncManager {
     }
 }
 
-// Export singleton instance
+// Export singleton instance (the class too, for tests)
 module.exports = new EcommerceSyncManager();
+module.exports.EcommerceSyncManager = EcommerceSyncManager;
+module.exports.friendlyError = friendlyError;

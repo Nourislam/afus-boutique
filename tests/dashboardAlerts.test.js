@@ -58,10 +58,11 @@ describe('"what do I do now?"', () => {
         const action = (id) => alerts.find(a => a.id === id).action;
         expect(action('printer')).toMatchObject({ to: '/settings?tab=receipt' });
         expect(action('drawer')).toMatchObject({ closeShift: 'sh1' });
-        expect(action('outOfStock')).toMatchObject({ to: '/purchase-orders' });
-        expect(action('overdueCredit')).toMatchObject({ to: '/credit-sales' });
+        expect(action('outOfStock')).toMatchObject({ to: '/purchase-orders?order=soldOut' });
+        expect(action('overdueCredit')).toMatchObject({ to: '/credit-sales?status=overdue' });
         expect(action('backup')).toMatchObject({ to: '/settings?tab=backup' });
-        expect(action('missingCost')).toMatchObject({ to: '/products' });
+        expect(action('missingCost')).toMatchObject({ to: '/products?filter=noCost' });
+        expect(action('lowStock')).toMatchObject({ to: '/inventory?stock=low' });
         expect(action('offerEnding')).toMatchObject({ to: '/offers?tab=promotions' });
         expect(alerts.find(a => a.id === 'offerEnding').text[0]).toBe('dash.alert.offerEndsTomorrow');
     });
@@ -85,7 +86,7 @@ describe('"what do I do now?"', () => {
     it('hides the offer line when the offers are hidden, and orders from the inventory without purchase orders', () => {
         expect(ids(BAD_DAY, 'admin', { ...ALL_ON, promotions: false })).not.toContain('offerEnding');
         const alerts = buildAlerts(BAD_DAY, { access: accessFor('admin'), features: { ...ALL_ON, purchaseOrders: false }, now: NOW });
-        expect(alerts.find(a => a.id === 'outOfStock').action).toMatchObject({ to: '/inventory' });
+        expect(alerts.find(a => a.id === 'outOfStock').action).toMatchObject({ to: '/inventory?stock=out' });
     });
 
     it('backup: nothing when recent, a line when older than a week or never made', () => {

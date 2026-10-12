@@ -270,8 +270,8 @@ export default function BundlesPage() {
                 {filteredBundles.length === 0 ? (
                     <div className="text-center py-16 text-zinc-500">
                         <PackageOpen className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                        <p className="mb-4">{t('bundles.none')}</p>
-                        <Button onClick={handleOpenCreate}><Plus className="w-4 h-4" /> {t('bundles.create')}</Button>
+                        <p>{t('bundles.none')}</p>
+                        <p className="text-sm mt-1">{t('common.useButtonAbove', { label: t('bundles.create') })}</p>
                     </div>
                 ) : (
                     <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>

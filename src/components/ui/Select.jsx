@@ -54,7 +54,7 @@ export function Select({
                     title={selectedOption?.label}
                 >
                     {/* One line: long choices are cut with … (the full text is in the list) */}
-                    <span className={`truncate min-w-0 ${selectedOption ? 'text-white' : 'text-zinc-500'}`}>
+                    <span className={`truncate min-w-0 ${selectedOption ? 'text-white' : 'text-zinc-500'}`} title={selectedOption?.label}>
                         {selectedOption?.label || placeholder || t('common.select')}
                     </span>
                     <ChevronDown className={`w-4 h-4 flex-none text-zinc-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />

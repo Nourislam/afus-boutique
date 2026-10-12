@@ -4,9 +4,10 @@
  * `api` is the { all, get } adapter used by catalogService.
  */
 const catalog = require('./catalogService');
+const { countedSale } = require('./saleStatus');
 
 function salesFilter({ startDate, endDate, employeeId }) {
-    let where = "s.created_at BETWEEN ? AND ? AND COALESCE(s.status, 'completed') <> 'voided'";
+    let where = `s.created_at BETWEEN ? AND ? AND ${countedSale('s')}`;
     const params = [startDate, endDate];
     if (employeeId) {
         where += ' AND s.employee_id = ?';
@@ -15,15 +16,28 @@ function salesFilter({ startDate, endDate, employeeId }) {
     return { where, params };
 }
 
+// Each sale line with the pieces the customer kept: sold minus everything
+// returned against that line (several returns add up), never below 0.
+const NET_SALE_ITEMS = `(
+    SELECT sale_items.*, MAX(sale_items.quantity - COALESCE(r.returned, 0), 0) AS net_quantity
+    FROM sale_items
+    LEFT JOIN (
+        SELECT sale_item_id, SUM(quantity) AS returned
+        FROM return_items WHERE sale_item_id IS NOT NULL
+        GROUP BY sale_item_id
+    ) r ON r.sale_item_id = sale_items.id
+)`;
+
 function topSizes(api, range, limit = 8) {
     const { where, params } = salesFilter(range);
     return api.all(`
-        SELECT v.size AS size, SUM(si.quantity) AS quantity, SUM(si.total) AS revenue
-        FROM sale_items si
+        SELECT v.size AS size, SUM(si.net_quantity) AS quantity, SUM(si.total) AS revenue
+        FROM ${NET_SALE_ITEMS} si
         JOIN sales s ON s.id = si.sale_id
         JOIN product_variants v ON v.id = si.variant_id
         WHERE ${where} AND v.size IS NOT NULL AND v.size <> ''
         GROUP BY v.size
+        HAVING SUM(si.net_quantity) > 0
         ORDER BY quantity DESC
         LIMIT ?
     `, [...params, limit]);
@@ -34,12 +48,13 @@ function topColors(api, range, limit = 8) {
     return api.all(`
         SELECT COALESCE(NULLIF(v.color_code, ''), v.color) AS color_key,
                MAX(v.color) AS color, MAX(v.color_code) AS color_code,
-               SUM(si.quantity) AS quantity, SUM(si.total) AS revenue
-        FROM sale_items si
+               SUM(si.net_quantity) AS quantity, SUM(si.total) AS revenue
+        FROM ${NET_SALE_ITEMS} si
         JOIN sales s ON s.id = si.sale_id
         JOIN product_variants v ON v.id = si.variant_id
         WHERE ${where} AND v.color IS NOT NULL AND v.color <> ''
         GROUP BY color_key
+        HAVING SUM(si.net_quantity) > 0
         ORDER BY quantity DESC
         LIMIT ?
     `, [...params, limit]);
@@ -73,7 +88,7 @@ function getClothingDashboard(api, range) {
         topSizes: topSizes(api, range),
         topColors: topColors(api, range),
         stockValue: stockValue(api),
-        lowStock: catalog.getLowStock(api).slice(0, 12),
+        lowStock: catalog.getLowStock(api),
     };
 }
 
@@ -94,11 +109,12 @@ const PRODUCT_STOCK = `CASE WHEN COALESCE(p.has_variants, 0) = 1
 function bestSellers(api, range, limit = 5) {
     const { where, params } = salesFilter(range);
     const products = api.all(`
-        SELECT si.product_id, MAX(si.product_name) AS name, SUM(si.quantity) AS quantity, SUM(si.total) AS revenue,
+        SELECT si.product_id, MAX(si.product_name) AS name, SUM(si.net_quantity) AS quantity, SUM(si.total) AS revenue,
                (SELECT ${PRODUCT_STOCK} FROM products p WHERE p.id = si.product_id) AS stock
-        FROM sale_items si JOIN sales s ON s.id = si.sale_id
+        FROM ${NET_SALE_ITEMS} si JOIN sales s ON s.id = si.sale_id
         WHERE ${where} AND si.product_id IS NOT NULL
         GROUP BY si.product_id
+        HAVING SUM(si.net_quantity) > 0
         ORDER BY quantity DESC
         LIMIT ?
     `, [...params, limit]);
@@ -119,13 +135,14 @@ function bestSellers(api, range, limit = 5) {
     };
 }
 
-/** Pieces sold since a date, per variant (or per article without variants). */
+/** Pieces sold (and not returned) since a date, per variant (or per article without variants). */
 function soldSince(api, since) {
     return api.all(`
-        SELECT si.product_id, si.variant_id, SUM(si.quantity) AS sold
-        FROM sale_items si JOIN sales s ON s.id = si.sale_id
-        WHERE datetime(s.created_at) >= datetime(?) AND COALESCE(s.status, 'completed') <> 'voided'
+        SELECT si.product_id, si.variant_id, SUM(si.net_quantity) AS sold
+        FROM ${NET_SALE_ITEMS} si JOIN sales s ON s.id = si.sale_id
+        WHERE datetime(s.created_at) >= datetime(?) AND ${countedSale('s')}
         GROUP BY si.product_id, si.variant_id
+        HAVING SUM(si.net_quantity) > 0
     `, [since]);
 }
 
@@ -170,18 +187,21 @@ function missingSizes(api, since) {
     return [...byProduct.values()].filter(e => e.missing.length > 0 && e.available.length > 0);
 }
 
-/** Articles with pieces in stock and no sale since the date (new articles are left out). */
+/**
+ * Articles with pieces in stock and no sale since the date (new articles are
+ * left out). A sale fully given back does not count as a sale.
+ */
 function slowMovers(api, since, limit = 5) {
     return api.all(`
         SELECT p.id AS product_id, p.name, ${PRODUCT_STOCK} AS stock, p.created_at,
-               (SELECT MAX(s.created_at) FROM sale_items si JOIN sales s ON s.id = si.sale_id
-                WHERE si.product_id = p.id AND COALESCE(s.status, 'completed') <> 'voided') AS last_sale_at
+               (SELECT MAX(s.created_at) FROM ${NET_SALE_ITEMS} si JOIN sales s ON s.id = si.sale_id
+                WHERE si.product_id = p.id AND si.net_quantity > 0 AND ${countedSale('s')}) AS last_sale_at
         FROM products p
         WHERE p.is_active = 1 AND datetime(COALESCE(p.created_at, '2000-01-01')) <= datetime(?)
           AND ${PRODUCT_STOCK} > 0
           AND NOT EXISTS (
-            SELECT 1 FROM sale_items si JOIN sales s ON s.id = si.sale_id
-            WHERE si.product_id = p.id AND datetime(s.created_at) >= datetime(?) AND COALESCE(s.status, 'completed') <> 'voided')
+            SELECT 1 FROM ${NET_SALE_ITEMS} si JOIN sales s ON s.id = si.sale_id
+            WHERE si.product_id = p.id AND si.net_quantity > 0 AND datetime(s.created_at) >= datetime(?) AND ${countedSale('s')})
         ORDER BY stock DESC, p.name
         LIMIT ?
     `, [since, since, limit]);
@@ -200,13 +220,16 @@ function missingCost(api) {
     return { count: rows.length, names: rows.slice(0, 5).map(r => r.name) };
 }
 
-/** Articles sold in the period whose purchase price was not known: the profit of the period is only approximate. */
+/**
+ * Articles sold (and kept by the customer) in the period whose purchase price
+ * was not known: the profit of the period is only approximate.
+ */
 function soldWithoutCost(api, range) {
     const { where, params } = salesFilter(range);
     return api.get(`
         SELECT COUNT(DISTINCT COALESCE(si.product_id, si.product_name)) AS count
-        FROM sale_items si JOIN sales s ON s.id = si.sale_id
-        WHERE ${where} AND COALESCE(si.unit_cost, 0) <= 0
+        FROM ${NET_SALE_ITEMS} si JOIN sales s ON s.id = si.sale_id
+        WHERE ${where} AND COALESCE(si.unit_cost, 0) <= 0 AND si.net_quantity > 0
     `, params)?.count || 0;
 }
 
@@ -267,6 +290,7 @@ function firstSteps(api) {
 }
 
 module.exports = {
+    NET_SALE_ITEMS, PRODUCT_STOCK,
     getClothingDashboard, topSizes, topColors, stockValue,
     bestSellers, outOfStockSelling, runningLow, missingSizes, slowMovers, missingCost, soldWithoutCost,
     overdueCredit, offersEnding, creditMoves, salesSeries, firstSteps,

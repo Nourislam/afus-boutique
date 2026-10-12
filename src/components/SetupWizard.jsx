@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { translateError } from '../i18n/errors';
-import { Check, ChevronRight, ChevronLeft, Store, User, Percent, Printer, Languages, WifiOff } from 'lucide-react';
+import { Check, ChevronRight, ChevronLeft, Store, User, Percent, Printer, Languages, WifiOff, FlaskConical, ScanLine, Sparkles } from 'lucide-react';
 import { AfusLogo } from './brand/AfusLogo';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -8,9 +8,12 @@ import { Select } from './ui/Select';
 import { toast } from './ui/Toast';
 import { v4 as uuid } from 'uuid';
 import { ShopInfoForm } from './settings/ShopInfoForm';
-import { PrinterSettingsForm } from './settings/PrinterSettingsForm';
+import { PrinterSettingsForm, PrintTestPanel, Panel } from './settings/PrinterSettingsForm';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { ShopLogo } from './shop/ShopLogo';
 import { TitleBar } from './layout/TitleBar';
+import { useDemoStore } from '../stores/demoStore';
+import { useTrialStore } from '../stores/trialStore';
 import { LANGUAGES, setLanguage, useT } from '../i18n';
 import { CATEGORY_SUGGESTIONS, DEFAULT_CATEGORY_CODES, categoryName } from '../lib/clothing';
 import {
@@ -85,6 +88,21 @@ export default function SetupWizard({ onComplete }) {
         }
     };
 
+    // The demo shop: its own database, the real shop stays to be set up
+    const [openingDemo, setOpeningDemo] = useState(false);
+    const demoTrial = useTrialStore(state => state.demo);
+    const loadTrial = useTrialStore(state => state.load);
+    useEffect(() => { loadTrial(); }, [loadTrial]);
+    const tryDemo = async () => {
+        setOpeningDemo(true);
+        try {
+            await useDemoStore.getState().enter(shop.defaultLanguage);
+        } catch (error) {
+            toast.error(`${t('demo.failed')} — ${translateError(error)}`);
+            setOpeningDemo(false);
+        }
+    };
+
     const handleNext = async () => {
         if (!validateStep(currentStep)) return;
         if (currentStep === STEPS.length - 2) {
@@ -128,6 +146,8 @@ export default function SetupWizard({ onComplete }) {
                 is_active: 1,
             };
             await window.electronAPI.employees.create(adminEmployee);
+            // Opens the session in the main process for the new owner (PIN checked there)
+            await window.electronAPI.employees.verifyPin({ id: adminEmployee.id, pin: admin.pin });
 
             await saveShopConfiguration({
                 shop: { ...shop, currency: 'DZD', currencySymbol: 'DA', taxRate: parseFloat(shop.taxRate) || 0 },
@@ -175,6 +195,24 @@ export default function SetupWizard({ onComplete }) {
                                     {l.label}
                                 </button>
                             ))}
+                        </div>
+
+                        {/* Real shop or the demo shop (its own data, never mixed with the real shop) */}
+                        {demoTrial.available && <p className="form-label mt-8 mb-3">{t('demo.choiceTitle')}</p>}
+                        <div className={`grid gap-3 ${demoTrial.available ? 'sm:grid-cols-2' : 'mt-8'}`}>
+                            <button type="button" onClick={handleNext} data-testid="setup-start-real"
+                                className="rounded-xl border-2 border-indigo-500 bg-indigo-500/10 p-4 text-start hover:bg-indigo-500/20">
+                                <span className="flex items-center gap-2 font-semibold"><Store className="w-5 h-5 shrink-0" /> {t('demo.startReal')}</span>
+                                <span className="block text-sm text-zinc-400 mt-1">{t('demo.startRealHint')}</span>
+                            </button>
+                            {/* The demo shop: 3 months from the install date */}
+                            {demoTrial.available && (
+                                <button type="button" onClick={tryDemo} disabled={openingDemo} data-testid="setup-try-demo"
+                                    className="rounded-xl border-2 border-orange-500/50 p-4 text-start hover:bg-orange-500/10 disabled:opacity-60">
+                                    <span className="flex items-center gap-2 font-semibold text-orange-300"><Sparkles className="w-5 h-5 shrink-0" /> {openingDemo ? t('demo.opening') : t('demo.try')}</span>
+                                    <span className="block text-sm text-zinc-400 mt-1">{t('demo.tryHint')}</span>
+                                </button>
+                            )}
                         </div>
                         </div>
 
@@ -295,6 +333,11 @@ export default function SetupWizard({ onComplete }) {
                             onLabelsChange={setLabels}
                             compact
                         />
+                        {/* Optional checks: nothing here blocks the setup (devices can be plugged in later) */}
+                        <Panel icon={FlaskConical} title={t('setup.check.title')} hint={t('setup.check.hint')}>
+                            <PrintTestPanel printers={printers} layout={labels} shop={shop} only={['receipt']} />
+                            <ScannerCheck />
+                        </Panel>
                         <p className="text-xs text-zinc-500">{t('setup.printingHint')}</p>
                     </div>
                 );
@@ -403,6 +446,24 @@ export default function SetupWizard({ onComplete }) {
                         </div>
                     </section>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+/** Scan any code: shows it, to check the scanner is plugged in (never required). */
+function ScannerCheck() {
+    const { t } = useT();
+    const [last, setLast] = useState('');
+    useBarcodeScanner((code) => setLast(code));
+    return (
+        <div className="flex items-center gap-3 rounded-lg border border-dark-border px-3 py-2.5" data-testid="setup-scanner-check">
+            <ScanLine className="w-5 h-5 text-zinc-400 flex-none" />
+            <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">{t('setup.check.scanner')}</p>
+                <p className={`text-xs break-words ${last ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                    {last ? t('setup.check.scanned', { code: last }) : t('setup.check.scanHint')}
+                </p>
             </div>
         </div>
     );

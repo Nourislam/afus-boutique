@@ -68,4 +68,53 @@ describe('backups', () => {
         // Copies made by the shop are never pruned
         expect(prune.every(b => b.kind === 'auto')).toBe(true);
     });
+
+    it('daily copy is on by default, also for settings saved when it was off by default', () => {
+        expect(backup.resolveSettings(null).autoDaily).toBe(true);
+        expect(backup.resolveSettings({ autoDaily: false, keepAuto: 14 })).toMatchObject({ autoDaily: true, keepAuto: 14, version: 2 });
+        // Turned off by the shop since: stays off
+        expect(backup.resolveSettings({ autoDaily: false, version: 2 }).autoDaily).toBe(false);
+    });
+
+    it('keeps the pictures with the backups and puts them back after a restore', () => {
+        const images = path.join(path.dirname(dir), 'images');
+        fs.mkdirSync(images);
+        fs.writeFileSync(path.join(images, 'robe.jpg'), 'jpeg-1');
+        fs.writeFileSync(path.join(images, 'jean.jpg'), 'jpeg-22');
+        backup.createBackup(dir, dbFile);
+        expect(backup.backupImages(dir, images)).toBe(2);
+        // Nothing new: nothing copied again
+        expect(backup.backupImages(dir, images)).toBe(0);
+        // The pictures are not listed as backups
+        expect(backup.listBackups(dir)).toHaveLength(1);
+        fs.rmSync(path.join(images, 'robe.jpg'));
+        fs.writeFileSync(path.join(images, 'new.jpg'), 'x');
+        expect(backup.restoreImages(dir, images)).toBe(1);
+        expect(fs.readFileSync(path.join(images, 'robe.jpg'), 'utf8')).toBe('jpeg-1');
+        // Pictures added since are never removed
+        expect(fs.existsSync(path.join(images, 'new.jpg'))).toBe(true);
+    });
+
+    it('copies each backup and the pictures to the other folder, and says when it cannot', () => {
+        const images = path.join(path.dirname(dir), 'images');
+        fs.mkdirSync(images);
+        fs.writeFileSync(path.join(images, 'robe.jpg'), 'jpeg');
+        const usb = fs.mkdtempSync(path.join(os.tmpdir(), 'afus-usb-'));
+        for (let d = 1; d <= 3; d++) {
+            const b = backup.createBackup(dir, dbFile, { date: new Date(2026, 9, d, 8, 0, 0), kind: 'auto' });
+            backup.copyToExternal(dir, b.name, usb, images, 2);
+        }
+        const target = path.join(usb, backup.EXTERNAL_FOLDER);
+        expect(backup.listBackups(target)).toHaveLength(2);
+        expect(fs.existsSync(path.join(target, 'images', 'robe.jpg'))).toBe(true);
+        const last = backup.listBackups(dir)[0];
+        expect(() => backup.copyToExternal(dir, last.name, path.join(usb, 'unplugged'), images, 2)).toThrow();
+        // An exported copy takes its pictures; importing it brings them back
+        backup.backupImages(dir, images);
+        const exported = path.join(usb, last.name);
+        fs.copyFileSync(path.join(dir, last.name), exported);
+        backup.exportImages(dir, exported);
+        fs.rmSync(backup.imagesBackupDir(dir), { recursive: true });
+        expect(backup.importImages(exported, dir)).toBe(1);
+    });
 });

@@ -5,7 +5,7 @@ import { useState } from 'react';
  * `defaultTab`. variant: 'pills' (default) or 'underline'.
  * tabs: [{ id, label, icon?, count? }]
  */
-export function Tabs({ tabs, value, defaultTab, onChange, variant = 'pills', className = '' }) {
+export function Tabs({ tabs, value, defaultTab, onChange, variant = 'pills', className = '', testId = '' }) {
     const [internal, setInternal] = useState(defaultTab || tabs[0]?.id);
     const active = value ?? internal;
 
@@ -24,6 +24,7 @@ export function Tabs({ tabs, value, defaultTab, onChange, variant = 'pills', cla
                         role="tab"
                         aria-selected={active === tab.id}
                         onClick={() => select(tab.id)}
+                        data-testid={testId ? `${testId}-${tab.id}` : undefined}
                         className={`relative flex items-center gap-2 px-3 h-10 text-sm font-medium whitespace-nowrap transition-colors
                             ${active === tab.id ? 'text-white' : 'text-zinc-500 hover:text-zinc-200'}`}
                     >
@@ -47,6 +48,7 @@ export function Tabs({ tabs, value, defaultTab, onChange, variant = 'pills', cla
                         role="tab"
                         aria-selected={active === tab.id}
                         onClick={() => select(tab.id)}
+                        data-testid={testId ? `${testId}-${tab.id}` : undefined}
                         className={`flex items-center gap-2 ${active === tab.id ? 'active' : ''}`}
                     >
                         {tab.icon && <tab.icon className="w-4 h-4" />}

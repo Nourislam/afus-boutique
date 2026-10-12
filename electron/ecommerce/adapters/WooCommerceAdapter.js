@@ -188,7 +188,8 @@ class WooCommerceAdapter extends EcommerceAdapter {
     async fetchInventory(productIds) {
         const results = [];
         
-        for (const id of productIds.slice(0, 20)) { // Batch limit
+        // Every product asked (one request each)
+        for (const id of productIds) {
             try {
                 const [productId, variantId] = id.split(':');
                 

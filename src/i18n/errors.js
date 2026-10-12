@@ -36,3 +36,13 @@ export function translateErrorLines(error) {
 export function translateError(error) {
     return translateErrorLines(error).join('\n') || t('common.error');
 }
+
+/** The code of an error sent by the main process ("CODE|{json}"), or null. */
+export function errorCode(error) {
+    const raw = String(error?.message ?? error ?? '').replace(IPC_PREFIX, '');
+    const m = /^([A-Z][A-Z0-9_]+)\|(\{.*\})$/.exec(raw.split('\n')[0].trim());
+    if (!m) return null;
+    let params = {};
+    try { params = JSON.parse(m[2]); } catch { /* keep empty */ }
+    return { code: m[1], params };
+}

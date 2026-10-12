@@ -22,6 +22,8 @@ export default {
     'printing.footerIdeas': ["Add a ready-made line:", "Ajouter une ligne toute prête :", "أضف سطراً جاهزاً:"],
     'printing.showBrand': ["Print \"{name}\" in small at the bottom", "Imprimer « {name} » en petit en bas", "طباعة «{name}» بخط صغير في الأسفل"],
     'printing.showBrandHint': ["The program's name, under your thank-you line.", "Le nom du logiciel, sous votre ligne de remerciement.", "اسم البرنامج، تحت سطر الشكر."],
+    'printing.ticketQr': ["Print the ticket QR code", "Imprimer le QR du ticket", "طباعة رمز QR للتذكرة"],
+    'printing.ticketQrHint': ["Scanned on the sales screen or in the sales history, it opens the sale for a return or an exchange.", "Scanné à la caisse ou dans l'historique, il ouvre la vente pour un retour ou un échange.", "عند مسحه في شاشة البيع أو في سجل المبيعات يفتح البيع للإرجاع أو التبديل."],
     'printing.shopDataHint': ["Logo, name, address, phone and legal numbers come from Settings › Shop.", "Logo, nom, adresse, téléphone et numéros légaux viennent de Paramètres › Boutique.", "الشعار والاسم والعنوان والهاتف والأرقام القانونية تأتي من الإعدادات › المحل."],
     'printing.ticketPreview': ["Ticket preview", "Aperçu du ticket", "معاينة التذكرة"],
     'printing.ticketPreviewHint': ["The real ticket at the paper width, with an example sale. Changes show here before saving.", "Le vrai ticket à la largeur du papier, avec une vente d'exemple. Les changements s'affichent avant l'enregistrement.", "التذكرة الحقيقية بعرض الورق مع بيع تجريبي. تظهر التغييرات هنا قبل الحفظ."],

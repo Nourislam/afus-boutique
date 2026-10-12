@@ -3,10 +3,10 @@ import { translateError } from '../i18n/errors';
 import { useNavigate } from 'react-router-dom';
 import {
     Search, ShoppingBag, Pause, Trash2, Plus, Minus, SlidersHorizontal, Shirt, ScanLine, UserRound, X,
-    LayoutGrid, List, Tag, Percent, Banknote, ChevronDown, History, Check,
+    LayoutGrid, List, Tag, Percent, Banknote, ChevronDown, History, Check, Bookmark,
 } from 'lucide-react';
 import { useCartStore, heldLines } from '../stores/cartStore';
-import { useAuthStore, PERMISSIONS } from '../stores/authStore';
+import { useAuthStore } from '../stores/authStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { toast } from '../components/ui/Toast';
 import { Button } from '../components/ui/Button';
@@ -17,13 +17,19 @@ import PaymentModal from '../components/pos/PaymentModal';
 import { afterSaleMode } from '../components/settings/PrinterSettingsForm';
 import CustomerPickerModal from '../components/pos/CustomerPickerModal';
 import OpeningCashDialog from '../components/shifts/OpeningCashDialog';
+import CashExpenseDialog from '../components/shifts/CashExpenseDialog';
 import { VariantPickerModal } from '../components/pos/VariantPickerModal';
+import FirstSaleGuide from '../components/pos/FirstSaleGuide';
+import { ReserveDialog, ReservationsDialog } from '../components/pos/Reservations';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { colorHex, colorName, sortSizes, variantLabel } from '../lib/clothing';
 import { formatMoney } from '../i18n/format';
+import { parseTicketCode } from '../lib/ticketCode';
+import { canDiscount as canRoleDiscount } from '../lib/posControls';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { t } from '../i18n';
 import { beep } from '../lib/sound';
+import { withManagerApproval } from '../lib/approval';
 
 const VIEW_KEY = 'pos_view';
 
@@ -82,6 +88,7 @@ export default function POSPage() {
     const [unknownCode, setUnknownCode] = useState(null);
     const [editingLine, setEditingLine] = useState(null);
     const [shift, setShift] = useState(undefined); // undefined = loading, null = no open drawer
+    const [showExpense, setShowExpense] = useState(false);
     const [showOpenDrawer, setShowOpenDrawer] = useState(false);
     const [lastSale, setLastSale] = useState(null);
     const searchRef = useRef(null);
@@ -91,10 +98,16 @@ export default function POSPage() {
     const { currentEmployee, hasPermission } = useAuthStore();
     const features = useSettingsStore(state => state.settings.features);
     const money = (amount) => formatMoney(amount);
-    const canDiscount = hasPermission(PERMISSIONS.POS_APPLY_DISCOUNT);
+    // Bargaining: shown for the roles the owner chose (Settings › Sales screen);
+    // a cashier within the limit set by the owner, above it a manager types
+    // their PIN at payment (both checked again by the main process)
+    const posControls = useSettingsStore(state => state.settings.pos_controls);
+    const canDiscount = canRoleDiscount(posControls, currentEmployee?.role);
 
-    const anyModalOpen = showPaymentModal || showHeldModal || showReceiptModal || showOptionsModal || showCustomerModal
-        || !!unknownCode || !!variantProduct || showOpenDrawer;
+    const [showReserve, setShowReserve] = useState(false);
+    const [showReservations, setShowReservations] = useState(false);
+    const anyModalOpen = showReserve || showReservations || showPaymentModal || showHeldModal || showReceiptModal || showOptionsModal || showCustomerModal
+        || !!unknownCode || !!variantProduct || showOpenDrawer || showExpense;
 
     const loadShift = useCallback(async () => {
         if (!currentEmployee) return;
@@ -156,6 +169,14 @@ export default function POSPage() {
     const handleCode = async (rawCode, { fromScanner = false } = {}) => {
         const code = String(rawCode || '').trim();
         if (!code) return;
+        // A ticket QR: open that sale in the history for a return or an exchange
+        const ticket = parseTicketCode(code);
+        if (ticket) {
+            if (fromScanner) beep('ok');
+            setSearchQuery('');
+            navigate(`/transactions?ticket=${encodeURIComponent(ticket)}`);
+            return;
+        }
         try {
             const result = await window.electronAPI.catalog.lookupCode(code);
             if (!result) {
@@ -259,26 +280,19 @@ export default function POSPage() {
 
     const handlePaymentComplete = async (payments, creditCustomer = null, dueDate = null) => {
         try {
-            const sale = await cart.processPayment(payments, currentEmployee.id, currentEmployee.name);
+            // Above the cashier's discount limit the main process asks for a manager's PIN
+            // Kridi is saved with the sale (limit checked by the main process,
+            // above it a manager's PIN is asked)
+            const credit = payments.some(p => p.method === 'credit') && creditCustomer ? {
+                customer_id: creditCustomer.id,
+                due_date: dueDate ? new Date(dueDate).toISOString() : undefined,
+            } : null;
+            const sale = await withManagerApproval((approval) => cart.processPayment(payments, currentEmployee.id, currentEmployee.name, approval, credit));
 
-            if (payments[0]?.method === 'credit' && creditCustomer) {
-                try {
-                    const creditSale = await window.electronAPI.creditSales.create({
-                        sale_id: sale.id,
-                        customer_id: creditCustomer.id,
-                        amount_due: sale.total,
-                        amount_paid: 0,
-                        status: 'pending',
-                        due_date: dueDate ? new Date(dueDate).toISOString() : undefined,
-                        notes: t('pos.creditNote', { n: sale.receipt_number }),
-                    });
-                    sale.due_date = dueDate ? new Date(dueDate).toISOString() : undefined;
-                    sale.customer_name = creditCustomer.name;
-                    toast.success(t('pos.creditCreated', { n: creditSale.invoice_number }));
-                } catch (creditError) {
-                    console.error('Failed to create credit sale:', creditError);
-                    toast.error(t('pos.creditFailed'));
-                }
+            if (sale.credit_sale) {
+                sale.due_date = sale.credit_sale.due_date;
+                sale.customer_name = creditCustomer.name;
+                toast.success(t('pos.creditCreated', { n: sale.credit_sale.invoice_number }));
             } else {
                 toast.success(t('pos.saleCompleted', { n: sale.receipt_number }));
             }
@@ -323,11 +337,12 @@ export default function POSPage() {
             {/* ---------------- Articles */}
             <section className="flex-1 min-w-0 flex flex-col">
                 <div className="flex-none px-5 pt-4 pb-3 space-y-3 border-b border-dark-border">
-                    <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="relative flex-1 min-w-[220px]">
                             <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500 pointer-events-none" />
                             <input
                                 ref={searchRef}
+                                data-testid="pos-search"
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -345,12 +360,12 @@ export default function POSPage() {
                             </span>
                         </div>
                         {brands.length > 0 && (
-                            <div className="relative">
+                            <div className="relative flex-1 min-w-[150px] max-w-[13rem]">
                                 <Tag className="absolute start-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
                                 <select
                                     value={selectedBrand}
                                     onChange={(e) => setSelectedBrand(e.target.value)}
-                                    className="input h-11 w-44 ps-8 pe-7 appearance-none cursor-pointer"
+                                    className="input h-11 w-full ps-8 pe-7 appearance-none cursor-pointer truncate"
                                     aria-label={t('brands.title')}
                                 >
                                     <option value="">{t('pos.allBrands')}</option>
@@ -360,12 +375,13 @@ export default function POSPage() {
                             </div>
                         )}
                         <div className="segmented h-11">
-                            <button type="button" className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} title={t('pos.viewGrid')}><LayoutGrid className="w-4 h-4" /></button>
-                            <button type="button" className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} title={t('pos.viewList')}><List className="w-4 h-4" /></button>
+                            <button type="button" className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')} title={t('pos.viewGrid')} aria-label={t('pos.viewGrid')} aria-pressed={view === 'grid'}><LayoutGrid className="w-4 h-4" /></button>
+                            <button type="button" className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} title={t('pos.viewList')} aria-label={t('pos.viewList')} aria-pressed={view === 'list'}><List className="w-4 h-4" /></button>
                         </div>
                     </div>
 
-                    <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                    {/* Every category visible (on two lines if needed), none hidden off the edge */}
+                    <div className="flex flex-wrap gap-2 max-h-[4.5rem] overflow-y-auto thin-scroll">
                         {[{ id: 'all', name: t('pos.allProducts'), color: null }, ...categories].map(cat => {
                             const active = selectedCategory === cat.id;
                             const count = cat.id === 'all' ? products.length : (countByCategory[cat.id] || 0);
@@ -458,7 +474,7 @@ export default function POSPage() {
             </section>
 
             {/* ---------------- Ticket */}
-            <aside className="w-[380px] xl:w-[420px] flex-none flex flex-col bg-dark-secondary border-s border-dark-border min-h-0">
+            <aside className="w-[340px] xl:w-[400px] 2xl:w-[420px] flex-none flex flex-col bg-dark-secondary border-s border-dark-border min-h-0">
                 <div className="flex-none px-4 pt-4 pb-3 border-b border-dark-border space-y-3">
                     <div className="flex items-center justify-between gap-2">
                         <h2 className="font-semibold flex items-center gap-2">
@@ -466,6 +482,9 @@ export default function POSPage() {
                             {t('pos.ticket')}
                             {itemCount > 0 && <span className="badge badge-primary">{t('pos.pieces', { n: itemCount })}</span>}
                         </h2>
+                        <Button variant="secondary" size="sm" onClick={() => setShowReservations(true)} title={t('res.list')} aria-label={t('res.list')} data-testid="pos-reservations">
+                            <Bookmark className="w-4 h-4" />
+                        </Button>
                         <Button variant="secondary" size="sm" onClick={() => setShowHeldModal(true)} title="F9">
                             <History className="w-4 h-4" /> {t('pos.fittingRoom')}
                             {heldTransactions.length > 0 && <span className="badge bg-amber-500/20 text-amber-300">{heldTransactions.length}</span>}
@@ -474,12 +493,14 @@ export default function POSPage() {
                     <button
                         type="button"
                         onClick={() => setShowCustomerModal(true)}
+                        data-testid="pos-customer"
                         className="w-full h-10 px-3 rounded-lg border border-dashed border-dark-border hover:border-zinc-600 flex items-center gap-2 text-sm text-start"
                     >
                         <UserRound className="w-4 h-4 text-zinc-500" />
                         {cart.customer ? (
                             <>
                                 <span className="font-medium truncate">{cart.customer.name}</span>
+                                {!!cart.customer.is_wholesale && <span className="badge bg-sky-500/15 text-sky-300 flex-none" data-testid="pos-wholesale">{t('wholesale.badge')}</span>}
                                 {cart.customer.phone && <span className="text-zinc-500 ltr truncate">{cart.customer.phone}</span>}
                                 <span className="flex-1" />
                                 <X className="w-4 h-4 text-zinc-500 hover:text-white" onClick={(e) => { e.stopPropagation(); cart.setCustomer(null); }} />
@@ -496,6 +517,7 @@ export default function POSPage() {
                             <ScanLine className="w-12 h-12 opacity-40" />
                             <p className="font-medium text-zinc-400">{t('pos.cartEmpty')}</p>
                             <p className="text-sm">{t('pos.cartEmptyHint')}</p>
+                            {!lastSale && <FirstSaleGuide />}
                             {lastSale && (
                                 <div className="mt-4 w-full rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
                                     <p className="font-semibold flex items-center justify-center gap-1.5"><Check className="w-4 h-4" /> {t('pos.lastSale', { n: lastSale.receipt_number })}</p>
@@ -574,23 +596,35 @@ export default function POSPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2">
-                        <Button variant="secondary" onClick={() => setShowOptionsModal(true)} disabled={cart.items.length === 0 || !canDiscount} title={t('pos.options')}>
-                            <SlidersHorizontal className="w-4 h-4" /> {t('pos.discountShort')}
+                    {cart.reservation && (
+                        <p className="text-xs text-sky-300 flex items-center gap-1.5" data-testid="pos-reservation"><Bookmark className="w-3.5 h-3.5" /> {t('res.inCart', { n: cart.reservation.number, amount: money(cart.reservation.deposit) })}</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                        <Button variant="secondary" onClick={() => setShowOptionsModal(true)} disabled={cart.items.length === 0} title={t('pos.options')} data-testid="pos-options">
+                            <SlidersHorizontal className="w-4 h-4" /> {canDiscount ? t('pos.discountShort') : t('pos.options')}
                         </Button>
                         <Button variant="secondary" onClick={handleHoldTransaction} disabled={cart.items.length === 0} title="F8">
                             <Pause className="w-4 h-4" /> {t('pos.hold')}
+                        </Button>
+                        {/* Reserve the pieces with a deposit (not for a reservation already picked up) */}
+                        <Button variant="secondary" onClick={() => setShowReserve(true)} disabled={cart.items.length === 0 || !!cart.reservation} data-testid="pos-reserve">
+                            <Bookmark className="w-4 h-4" /> {t('res.reserve')}
                         </Button>
                         <Button variant="secondary" onClick={() => { if (confirm(t('pos.clearConfirm'))) cart.clearCart(); }} disabled={cart.items.length === 0} className="hover:!bg-red-500/15 hover:!text-red-300">
                             <Trash2 className="w-4 h-4" /> {t('pos.clear')}
                         </Button>
                     </div>
-                    <Button variant="success" size="lg" className="w-full h-14 text-lg" onClick={startPayment} disabled={cart.items.length === 0}>
+                    <Button variant="success" size="lg" className="w-full h-14 text-lg" onClick={startPayment} disabled={cart.items.length === 0} data-testid="pos-pay">
                         <Banknote className="w-5 h-5" />
                         {t('pos.pay', { amount: money(total) })}
                         <kbd className="ms-auto text-xs font-normal opacity-70 border border-white/30 rounded px-1.5">F4</kbd>
                     </Button>
                     <p className="text-[11px] text-zinc-600 text-center">{t('pos.shortcuts')}</p>
+                    {shift && (
+                        <button type="button" onClick={() => setShowExpense(true)} className="text-xs text-zinc-400 hover:text-zinc-200 underline-offset-2 hover:underline self-center">
+                            {t('expense.open')}
+                        </button>
+                    )}
                 </div>
             </aside>
 
@@ -662,8 +696,11 @@ export default function POSPage() {
                 onClose={() => { setShowReceiptModal(false); setReceiptData(null); searchRef.current?.focus(); }}
                 sale={receiptData}
             />
-            <CartOptionsModal isOpen={showOptionsModal} onClose={() => setShowOptionsModal(false)} />
+            <ReserveDialog isOpen={showReserve} onClose={() => setShowReserve(false)} />
+            <ReservationsDialog isOpen={showReservations} onClose={() => setShowReservations(false)} />
+            <CartOptionsModal isOpen={showOptionsModal} onClose={() => setShowOptionsModal(false)} canDiscount={canDiscount} />
 
+            <CashExpenseDialog isOpen={showExpense && !!shift} onClose={() => setShowExpense(false)} shiftId={shift?.id} />
             {showOpenDrawer && (
                 <OpeningCashDialog
                     employee={currentEmployee}

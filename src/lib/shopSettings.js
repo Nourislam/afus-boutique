@@ -28,6 +28,8 @@ export const DEFAULT_SHOP = {
     receiptFooter: '',
     // Small "Afus Boutique" line at the bottom of the ticket
     receiptShowBrand: true,
+    // QR of the ticket, scanned later for a return or an exchange
+    receiptTicketQr: true,
 };
 
 export const DEFAULT_PRINTER_SETTINGS = {

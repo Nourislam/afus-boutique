@@ -1,52 +1,80 @@
 import { t } from '../i18n';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { parseTicketCode } from '../lib/ticketCode';
 import { useAuthStore } from '../stores/authStore';
 import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import { Input } from '../components/ui/Input';
-import { Tabs } from '../components/ui/Tabs';
-import { Search, Eye } from 'lucide-react';
+import { Search, Eye, History, RefreshCw, Undo2, ArrowLeftRight } from 'lucide-react';
 import ReceiptPreviewModal from '../components/modals/ReceiptPreviewModal';
 import ReturnModal from '../components/modals/ReturnModal';
+import ExchangeModal from '../components/modals/ExchangeModal';
 import ReturnDetailsModal from '../components/modals/ReturnDetailsModal';
 import { toast } from '../components/ui/Toast';
 
+// The whole history is loaded; rows are drawn a page at a time while scrolling
+const PAGE = 200;
+const STATUS_KEYS = {
+    completed: 'status.completed', refunded: 'status.refunded', partially_refunded: 'status.partially_refunded',
+    cancelled: 'status.cancelled', voided: 'status.voided', pending: 'status.pending',
+};
+const statusLabel = (status) => (STATUS_KEYS[status] ? t(STATUS_KEYS[status]) : status);
+
 export default function TransactionsPage() {
     const { currentEmployee: user } = useAuthStore();
-    const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedSale, setSelectedSale] = useState(null);
     const [showReceiptModal, setShowReceiptModal] = useState(false);
     const [showReturnModal, setShowReturnModal] = useState(false);
     const [saleToReturn, setSaleToReturn] = useState(null);
+    const [saleToExchange, setSaleToExchange] = useState(null);
     const [showReturnDetails, setShowReturnDetails] = useState(false);
     const [selectedReturn, setSelectedReturn] = useState(null);
     const [activeTab, setActiveTab] = useState('sales');
     const [returnsList, setReturnsList] = useState([]);
+    const [shown, setShown] = useState(PAGE);
+    const moreRef = useRef(null);
+    // ?ticket=<number>: a ticket QR scanned on the sales screen
+    const [params, setParams] = useSearchParams();
+    useEffect(() => {
+        const ticket = params.get('ticket');
+        if (!ticket) return;
+        setSearchQuery(ticket);
+        setParams({}, { replace: true });
+    }, [params, setParams]);
+    // A ticket QR scanned in the search box gives its number
+    const search = (value) => setSearchQuery(parseTicketCode(value) || value);
 
-    // Pagination or filtered loading could be added here
+    // Sales come from the main process a page at a time (3 years of tickets
+    // stay fast); the search runs there on the whole history
     const [filteredTransactions, setFilteredTransactions] = useState([]);
+    const [salesTotal, setSalesTotal] = useState(0);
     const [filteredReturns, setFilteredReturns] = useState([]);
+    const loadingMore = useRef(false);
+    const searchRef = useRef('');
+
+    const loadSales = async (offset = 0) => {
+        const search = searchRef.current.trim();
+        const [rows, total] = await Promise.all([
+            window.electronAPI.sales.getAll({ search, limit: PAGE, offset }),
+            offset === 0 ? window.electronAPI.sales.count({ search }) : Promise.resolve(null),
+        ]);
+        // An answer for an older search is dropped
+        if (search !== searchRef.current.trim()) return;
+        if (total !== null) setSalesTotal(total);
+        setFilteredTransactions(prev => (offset === 0 ? rows : [...prev, ...rows]));
+    };
 
     const loadTransactions = async () => {
         setLoading(true);
         try {
-            // Sales
-            const params = {};
-            // if (user?.role !== 'admin') params.employeeId = user?.id; // Allow everyone to see all for now
-            const salesData = await window.electronAPI.sales.getAll(params);
-            setTransactions(salesData);
-            setFilteredTransactions(salesData);
-
-            // Returns
-            // const returnsData = await window.electronAPI.returns.getAll(params);
-            const returnsData = await window.electronAPI.returns.getAll(); // Show all returns
-            // Filter returns by employee if needed? Usually returns are global or filtered by permission.
+            await loadSales(0);
+            const returnsData = await window.electronAPI.returns.getAll();
             setReturnsList(returnsData);
-            setFilteredReturns(returnsData);
         } catch (error) {
             console.error('Failed to load data:', error);
             toast.error(t('tx.loadFailed'));
@@ -57,34 +85,39 @@ export default function TransactionsPage() {
 
     useEffect(() => {
         loadTransactions();
-    }, [user, activeTab]); // Reload when tab changes just in case, or just user
+    }, [user, activeTab]);
 
+    // A new search: the first page again, a moment after the last key
     useEffect(() => {
-        if (!searchQuery) {
-            setFilteredTransactions(transactions);
-            setFilteredReturns(returnsList);
-            return;
-        }
-
-        const query = searchQuery.toLowerCase();
-
-        // Filter Sales
-        const filteredSales = transactions.filter(tx =>
-            tx.receipt_number.toLowerCase().includes(query) ||
-            (tx.customer_name && tx.customer_name.toLowerCase().includes(query)) ||
-            (tx.employee_name && tx.employee_name.toLowerCase().includes(query))
-        );
-        setFilteredTransactions(filteredSales);
-
-        // Filter Returns
-        const filteredRet = returnsList.filter(r =>
+        searchRef.current = searchQuery;
+        const timer = setTimeout(() => { loadSales(0).catch(() => toast.error(t('tx.loadFailed'))); }, 250);
+        const query = searchQuery.trim().toLowerCase();
+        setFilteredReturns(!query ? returnsList : returnsList.filter(r =>
             r.return_number.toLowerCase().includes(query) ||
             r.receipt_number?.toLowerCase().includes(query) ||
             (r.employee_name && r.employee_name.toLowerCase().includes(query))
-        );
-        setFilteredReturns(filteredRet);
+        ));
+        return () => clearTimeout(timer);
+    }, [searchQuery, returnsList]);
 
-    }, [searchQuery, transactions, returnsList]);
+    // A new search or tab starts again from the top
+    useEffect(() => { setShown(PAGE); }, [searchQuery, activeTab]);
+
+    const salesMore = filteredTransactions.length < salesTotal;
+    // Next rows when the end of the table comes into view
+    useEffect(() => {
+        const node = moreRef.current;
+        if (!node) return undefined;
+        const observer = new IntersectionObserver((entries) => {
+            if (!entries.some(e => e.isIntersecting)) return;
+            if (activeTab !== 'sales') { setShown(n => n + PAGE); return; }
+            if (loadingMore.current || !salesMore) return;
+            loadingMore.current = true;
+            loadSales(filteredTransactions.length).finally(() => { loadingMore.current = false; });
+        }, { rootMargin: '400px' });
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, [filteredTransactions, filteredReturns, activeTab, shown, salesMore]);
 
     const handleViewReceipt = async (saleId) => {
         try {
@@ -106,98 +139,94 @@ export default function TransactionsPage() {
         return formatMoney(amount);
     };
 
-    const formatDate = (dateString) => {
-        return formatLocalDate(dateString, 'datetime');
+    const canReturn = (sale) => sale.status === 'completed' || sale.status === 'partially_refunded';
+    const SALE_STYLE = {
+        completed: 'bg-emerald-500/15 text-emerald-300', refunded: 'bg-red-500/15 text-red-300',
+        partially_refunded: 'bg-amber-500/15 text-amber-300',
     };
+    // Date on one line, hour under it (never cut in the middle)
+    const dateCell = (value) => (
+        <span className="whitespace-nowrap">
+            <span className="block">{formatLocalDate(value, 'date')}</span>
+            <span className="block text-xs text-zinc-500">{formatLocalDate(value, 'time')}</span>
+        </span>
+    );
 
     return (
-        <div className="h-full flex flex-col gap-6 p-6">
-            <div className="flex justify-between items-center">
-                <div>
-                    <h1 className="text-3xl font-bold text-white mb-2">{t('tx.title')}</h1>
-                    <p className="text-zinc-400">
-                        {user?.role === 'admin' ? t('tx.subtitleAll') : t('tx.subtitleMine')}
-                    </p>
-                </div>
-                <div className="flex gap-4">
-                    <Button variant="outline" onClick={loadTransactions}>
-                        {t('common.refresh')}
+        <div className="page">
+            <PageHeader
+                icon={History}
+                title={t('tx.title')}
+                subtitle={user?.role === 'admin' ? t('tx.subtitleAll') : t('tx.subtitleMine')}
+                actions={(
+                    <Button variant="secondary" onClick={loadTransactions} data-testid="tx-refresh">
+                        <RefreshCw className="w-4 h-4" /> {t('common.refresh')}
                     </Button>
-                </div>
-            </div>
-
-            {/* Tabs */}
-            <div className="w-full">
-                <Tabs
-                    tabs={[
-                        { id: 'sales', label: t('tx.sales') },
-                        { id: 'returns', label: t('tx.returns') }
-                    ]}
-                    defaultTab={activeTab}
-                    onChange={setActiveTab}
-                />
-            </div>
-
-            <Card className="flex-1 flex flex-col overflow-hidden">
-                {/* Filters */}
-                <div className="p-4 border-b border-dark-border flex gap-4">
-                    <div className="relative flex-1 max-w-md">
-                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                )}
+            >
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="segmented" role="tablist">
+                        {[['sales', t('tx.sales')], ['returns', t('tx.returns')]].map(([id, label]) => (
+                            <button key={id} type="button" role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)}>{label}</button>
+                        ))}
+                    </div>
+                    <div className="relative flex-1 min-w-[240px] max-w-md">
+                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
                         <Input
                             placeholder={activeTab === 'sales' ? t('tx.searchSales') : t('tx.searchReturns')}
                             value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onChange={(e) => search(e.target.value)}
                             className="ps-10"
                         />
                     </div>
                 </div>
+            </PageHeader>
 
-                {/* Table Content */}
-                <div className="flex-1 overflow-auto">
+            <div className="page-body">
+                <div className="table-container">
                     {activeTab === 'sales' ? (
-                        <table className="w-full text-start border-collapse">
-                            <thead className="sticky top-0 bg-dark-tertiary text-zinc-400 text-xs uppercase font-semibold">
+                        <table className="table">
+                            <thead>
                                 <tr>
-                                    <th className="p-4">{t('tx.receiptNo')}</th>
-                                    <th className="p-4">{t('tx.date')}</th>
-                                    <th className="p-4">{t('tx.customer')}</th>
-                                    <th className="p-4">{t('tx.employee')}</th>
-                                    <th className="p-4 text-end">{t('pos.total')}</th>
-                                    <th className="p-4">{t('inventory.status')}</th>
-                                    <th className="p-4 text-end">{t('inventory.actions')}</th>
+                                    <th>{t('tx.receiptNo')}</th>
+                                    <th>{t('tx.date')}</th>
+                                    <th>{t('tx.customer')}</th>
+                                    <th className="hidden xl:table-cell">{t('tx.employee')}</th>
+                                    <th className="text-end">{t('pos.total')}</th>
+                                    <th>{t('inventory.status')}</th>
+                                    <th className="text-end">{t('inventory.actions')}</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-dark-border">
+                            <tbody>
                                 {loading ? (
                                     <tr><td colSpan="7" className="p-8 text-center text-zinc-500">{t('tx.loadingSales')}</td></tr>
                                 ) : filteredTransactions.length === 0 ? (
                                     <tr><td colSpan="7" className="p-8 text-center text-zinc-500">{t('tx.noSales')}</td></tr>
                                 ) : (
                                     filteredTransactions.map((sale) => (
-                                        <tr key={sale.id} className="hover:bg-dark-tertiary/50 transition-colors">
-                                            <td className="p-4 font-mono text-accent-primary">{sale.receipt_number}</td>
-                                            <td className="p-4 text-zinc-300">{formatDate(sale.created_at)}</td>
-                                            <td className="p-4 text-white">{sale.customer_name || t('tx.walkIn')}</td>
-                                            <td className="p-4 text-zinc-300">{sale.employee_name || t('tx.unknown')}</td>
-                                            <td className="p-4 text-end font-medium text-white">{formatCurrency(sale.total)}</td>
-                                            <td className="p-4">
-                                                <span className={`px-2 py-1 rounded text-xs font-medium 
-                                                    ${sale.status === 'completed' ? 'bg-green-500/10 text-green-400' :
-                                                        sale.status === 'refunded' ? 'bg-red-500/10 text-red-400' :
-                                                            sale.status === 'partially_refunded' ? 'bg-orange-500/10 text-orange-400' :
-                                                                'bg-zinc-500/10 text-zinc-400'
-                                                    }`}>
-                                                    {sale.status.toUpperCase().replace('_', ' ')}
-                                                </span>
+                                        <tr key={sale.id}>
+                                            <td className="font-mono text-[13px] text-accent-primary whitespace-nowrap">{sale.receipt_number}</td>
+                                            <td className="text-zinc-300">{dateCell(sale.created_at)}</td>
+                                            <td>
+                                                <span dir="auto" className="block font-medium line-clamp-2 break-words">{sale.customer_name || t('tx.walkIn')}</span>
+                                                <span className="block xl:hidden text-xs text-zinc-500">{sale.employee_name || t('tx.unknown')}</span>
                                             </td>
-                                            <td className="p-4 text-end">
-                                                <div className="flex justify-end gap-2">
+                                            <td className="hidden xl:table-cell text-zinc-300">{sale.employee_name || t('tx.unknown')}</td>
+                                            <td className="text-end font-semibold whitespace-nowrap">{formatCurrency(sale.total)}</td>
+                                            <td><span className={`badge ${SALE_STYLE[sale.status] || 'bg-zinc-500/20 text-zinc-400'}`}>{statusLabel(sale.status)}</span></td>
+                                            <td className="text-end">
+                                                <div className="flex flex-wrap justify-end gap-1.5">
                                                     <Button size="sm" variant="secondary" onClick={() => handleViewReceipt(sale.id)}>
-                                                        <Eye className="w-4 h-4 me-2" /> {t('tx.view')}
+                                                        <Eye className="w-4 h-4" /> {t('tx.view')}
                                                     </Button>
-                                                    {(sale.status === 'completed' || sale.status === 'partially_refunded') && (
-                                                        <Button size="sm" variant="danger" onClick={() => { setSaleToReturn(sale); setShowReturnModal(true); }}>
-                                                            {t('po.return')}
+                                                    {canReturn(sale) && (
+                                                        <Button size="sm" variant="secondary" onClick={() => { setSaleToReturn(sale); setShowReturnModal(true); }}>
+                                                            <Undo2 className="w-4 h-4 text-red-300" /> {t('po.return')}
+                                                        </Button>
+                                                    )}
+                                                    {canReturn(sale) && (
+                                                        <Button size="sm" variant="secondary" onClick={() => setSaleToExchange(sale)} data-testid="exchange-btn">
+                                                            <ArrowLeftRight className="w-4 h-4" /> {t('exchange.action')}
                                                         </Button>
                                                     )}
                                                 </div>
@@ -208,35 +237,35 @@ export default function TransactionsPage() {
                             </tbody>
                         </table>
                     ) : (
-                        <table className="w-full text-start border-collapse">
-                            <thead className="sticky top-0 bg-dark-tertiary text-zinc-400 text-xs uppercase font-semibold">
+                        <table className="table">
+                            <thead>
                                 <tr>
-                                    <th className="p-4">{t('tx.returnNo')}</th>
-                                    <th className="p-4">{t('tx.origReceipt')}</th>
-                                    <th className="p-4">{t('tx.date')}</th>
-                                    <th className="p-4">{t('tx.employee')}</th>
-                                    <th className="p-4">{t('inventory.reason')}</th>
-                                    <th className="p-4 text-end">{t('tx.refund')}</th>
-                                    <th className="p-4 text-end">{t('inventory.actions')}</th>
+                                    <th>{t('tx.returnNo')}</th>
+                                    <th>{t('tx.origReceipt')}</th>
+                                    <th>{t('tx.date')}</th>
+                                    <th className="hidden xl:table-cell">{t('tx.employee')}</th>
+                                    <th>{t('inventory.reason')}</th>
+                                    <th className="text-end">{t('tx.refund')}</th>
+                                    <th className="text-end">{t('inventory.actions')}</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-dark-border">
+                            <tbody>
                                 {loading ? (
                                     <tr><td colSpan="7" className="p-8 text-center text-zinc-500">{t('tx.loadingReturns')}</td></tr>
                                 ) : filteredReturns.length === 0 ? (
                                     <tr><td colSpan="7" className="p-8 text-center text-zinc-500">{t('tx.noReturns')}</td></tr>
                                 ) : (
-                                    filteredReturns.map((ret) => (
-                                        <tr key={ret.id} className="hover:bg-dark-tertiary/50 transition-colors">
-                                            <td className="p-4 font-mono text-red-400">{ret.return_number}</td>
-                                            <td className="p-4 font-mono text-zinc-400">{ret.receipt_number}</td>
-                                            <td className="p-4 text-zinc-300">{formatDate(ret.created_at)}</td>
-                                            <td className="p-4 text-zinc-300">{ret.employee_name || t('tx.unknown')}</td>
-                                            <td className="p-4 text-zinc-300 italic">{ret.reason || '-'}</td>
-                                            <td className="p-4 text-end font-medium text-red-400">{formatCurrency(ret.total_refund)}</td>
-                                            <td className="p-4 text-end">
+                                    filteredReturns.slice(0, shown).map((ret) => (
+                                        <tr key={ret.id}>
+                                            <td className="font-mono text-[13px] text-red-300 whitespace-nowrap">{ret.return_number}</td>
+                                            <td className="font-mono text-[13px] text-zinc-400 whitespace-nowrap">{ret.receipt_number}</td>
+                                            <td className="text-zinc-300">{dateCell(ret.created_at)}</td>
+                                            <td className="hidden xl:table-cell text-zinc-300">{ret.employee_name || t('tx.unknown')}</td>
+                                            <td className="text-zinc-300"><span className="line-clamp-2 break-words">{ret.reason === 'exchange' ? t('exchange.reason') : (ret.reason || '—')}</span></td>
+                                            <td className="text-end font-semibold text-red-300 whitespace-nowrap">{formatCurrency(ret.total_refund)}</td>
+                                            <td className="text-end">
                                                 <Button size="sm" variant="secondary" onClick={() => { setSelectedReturn(ret); setShowReturnDetails(true); }}>
-                                                    <Eye className="w-4 h-4 me-2" /> {t('tx.details')}
+                                                    <Eye className="w-4 h-4" /> {t('tx.details')}
                                                 </Button>
                                             </td>
                                         </tr>
@@ -245,8 +274,14 @@ export default function TransactionsPage() {
                             </tbody>
                         </table>
                     )}
+                    {/* More rows load here as the list is scrolled (nothing is left out) */}
+                    {(activeTab === 'sales' ? salesMore : filteredReturns.length > shown) && (
+                        <div ref={moreRef} className="p-4 text-center text-sm text-zinc-500" data-testid="tx-more">
+                            {t('tx.showing', activeTab === 'sales' ? { n: filteredTransactions.length, total: salesTotal } : { n: shown, total: filteredReturns.length })}
+                        </div>
+                    )}
                 </div>
-            </Card>
+            </div>
 
             <ReceiptPreviewModal
                 isOpen={showReceiptModal}
@@ -255,6 +290,13 @@ export default function TransactionsPage() {
                     setSelectedSale(null);
                 }}
                 sale={selectedSale}
+            />
+
+            <ExchangeModal
+                isOpen={!!saleToExchange}
+                sale={saleToExchange}
+                onClose={() => setSaleToExchange(null)}
+                onDone={(result) => { loadTransactions(); handleViewReceipt(result.sale_id); }}
             />
 
             <ReturnModal

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-    Database, Plus, Upload, FolderOpen, RotateCcw, Trash2, Download, Clock, User, Shield, FileInput, Lock, CheckCircle, AlertTriangle,
+    Database, Plus, Upload, FolderOpen, RotateCcw, Trash2, Download, Clock, User, Shield, FileInput, Lock, CheckCircle, AlertTriangle, HardDrive,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -177,14 +177,28 @@ export function BackupSettings({ appInfo }) {
             const result = await window.electronAPI.backup.reset();
             if (!result.success) throw new Error(result.error);
             toast.success(t('settings.backup.resetDone'));
+            try { sessionStorage.removeItem('pos_auth'); } catch { /* ignore */ }
             setTimeout(() => window.location.reload(), 1500);
         } catch (error) {
             toast.error(t('settings.backup.resetFailed', { error: translateError(error) }));
         }
     };
 
+    const chooseExternal = () => run(() => window.electronAPI.backup.chooseExternal(), t('backup.externalSaved'));
+    const clearExternal = () => run(() => window.electronAPI.backup.clearExternal());
+
     const backups = data?.backups || [];
     const auto = data?.settings || {};
+    const external = data?.external;
+
+    // The demo shop never touches the shop's backups (checked again in the main process)
+    if (data?.demo) {
+        return (
+            <Card className="border-orange-500/40">
+                <p className="text-sm text-orange-200" data-testid="backup-demo-blocked">{t('demo.backupBlocked')}</p>
+            </Card>
+        );
+    }
 
     return (
         <div className="space-y-4">
@@ -231,7 +245,37 @@ export function BackupSettings({ appInfo }) {
                         })}
                     </ul>
                 )}
-                <p className="text-xs text-zinc-500">{t('backup.whereHint')}</p>
+                <p className="text-xs text-zinc-500">{t('backup.whereHint')} {t('backup.withImages')}</p>
+            </Card>
+
+            {/* Second copy in another folder */}
+            <Card className="space-y-3" data-testid="backup-external">
+                <div className="flex flex-wrap items-start gap-3">
+                    <HardDrive className="w-5 h-5 text-sky-400 mt-0.5 flex-none" />
+                    <div className="flex-1 min-w-[12rem]">
+                        <h4 className="font-semibold">{t('backup.externalTitle')}</h4>
+                        <p className="text-xs text-zinc-500">{t('backup.externalText')}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="secondary" onClick={chooseExternal}>
+                            <FolderOpen className="w-4 h-4" /> {auto.externalFolder ? t('backup.externalChange') : t('backup.externalChoose')}
+                        </Button>
+                        {auto.externalFolder && <Button size="sm" variant="ghost" onClick={clearExternal}>{t('backup.externalStop')}</Button>}
+                    </div>
+                </div>
+                {auto.externalFolder ? (
+                    <div className="space-y-1">
+                        <p className="font-mono text-xs break-all ltr rounded-lg border border-dark-border px-3 py-2" dir="ltr">{auto.externalFolder}</p>
+                        {external?.ok && <p className="flex items-center gap-2 text-xs text-emerald-400"><CheckCircle className="w-4 h-4 flex-none" /> {t('backup.externalOk', { date: formatDate(external.at, 'datetime') })}</p>}
+                        {external && !external.ok && (
+                            <p className="flex items-start gap-2 text-xs text-amber-400" data-testid="backup-external-failed">
+                                <AlertTriangle className="w-4 h-4 flex-none" /> {t('backup.externalFailed', { date: formatDate(external.at, 'datetime'), error: translateError(external.error) })}
+                            </p>
+                        )}
+                    </div>
+                ) : (
+                    <p className="text-xs text-amber-400">{t('backup.externalNone')}</p>
+                )}
             </Card>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
@@ -293,6 +337,8 @@ export function BackupSettings({ appInfo }) {
                 onRestored={() => {
                     setToRestore(null);
                     toast.success(t('settings.backup.restored'));
+                    // The employees come from the restored data: log in again
+                    try { sessionStorage.removeItem('pos_auth'); } catch { /* ignore */ }
                     setTimeout(() => window.location.reload(), 1500);
                 }}
             />

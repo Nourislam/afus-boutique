@@ -49,7 +49,8 @@ describe('thermal receipt', () => {
         expect(html).toContain('الباقي');
         expect(html).toContain('1 000 د.ج');
         expect(html).toContain('16 - Alger');
-        expect(html).toContain('س.ت: 16/00-1234567A21');
+        // Legal numbers keep their own order inside Arabic text
+        expect(html).toContain('س.ت: <bdi dir="ltr">16/00-1234567A21</bdi>');
         expect(html).toContain('نقداً');
         expect(html).toContain('شكراً على زيارتكم!');
         // No tax line when the shop sells without TVA
@@ -65,7 +66,7 @@ describe('thermal receipt', () => {
         expect(html).toContain('Monnaie rendue');
         expect(html).toContain('Remise');
         expect(html).toContain('Échange sous 7 jours');
-        expect(html).toContain('NIF: 000116123456789');
+        expect(html).toContain('NIF: <bdi dir="ltr">000116123456789</bdi>');
         expect(html).not.toMatch(/\bPOS\b/);
     });
 
@@ -159,5 +160,51 @@ describe('TVA of past sales (Settings › TVA turned off later)', () => {
         expect(receiptService.generateThermalReceiptHtml(NEW_SALE, TVA_OFF)).not.toContain('TVA');
         expect(receiptService.generateHtml(NEW_SALE, { ...TVA_OFF, type: 'invoice' })).not.toContain('<span>TVA</span>');
         expect(InvoiceService.generateInvoiceHtml({ ...NEW_SALE, items: [], amount_due: 4000, amount_paid: 0 }, { store_config: TVA_OFF })).not.toContain('<span>TVA</span>');
+    });
+});
+
+describe('closing report (Z) and ticket QR', () => {
+    const REPORT = {
+        z_number: '0012', employee_name: 'Samir', start_time: '2026-10-10 08:00:00', end_time: '2026-10-10 19:00:00',
+        total_transactions: 14, items_sold: 22, total_sales: 61500, total_discount: 1500, total_refunds: 3000,
+        total_cash_sales: 40000, total_card_sales: 12000, total_transfer_sales: 0, total_credit_sales: 9500, total_gift_card_sales: 0,
+        opening_cash: 5000, credit_collected_cash: 2000, total_cash_refunds: 3000, total_expenses: 1000,
+        expected_cash: 43000, closing_cash: 42500, cash_difference: -500,
+    };
+
+    it('lists the drawer by payment method, with the cash expected, counted and the difference', () => {
+        const html = sp(receiptService.zReportHtml(REPORT, { ...SHOP, defaultLanguage: 'fr' }));
+        expect(html).toContain('Rapport de clôture (Z)');
+        expect(html).toContain('0012');
+        expect(html).toContain('61 500 DA');
+        expect(html).toContain('Espèces attendues');
+        expect(html).toContain('43 000 DA');
+        expect(html).toContain('-500 DA');
+        // Methods with nothing are left out
+        expect(html).not.toMatch(/Virement/);
+        const ar = receiptService.zReportHtml(REPORT, { ...SHOP, defaultLanguage: 'ar' });
+        expect(ar).toContain('dir="rtl"');
+        expect(ar).toContain('تقرير غلق الصندوق');
+    });
+
+    it('prints the ticket QR (T + number) unless turned off', () => {
+        expect(receiptService.generateThermalReceiptHtml(SALE, SHOP)).toMatch(/class="ticket-qr"><svg/);
+        expect(receiptService.generateThermalReceiptHtml(SALE, { ...SHOP, receiptTicketQr: false })).not.toContain('ticket-qr"');
+    });
+});
+
+describe('sale labels', () => {
+    const promotions = require('../electron/shared/promotions.mjs');
+    const live = { is_active: 1, auto_apply: 1, type: 'percentage', value: 30, applies_to: 'category', applies_to_ids: '["robes"]' };
+
+    it('show the sale price of an article in an automatic promotion, the old price struck out', () => {
+        expect(promotions.labelSalePrice([live], { productId: 'p1', categoryId: 'robes', price: 5000 })).toBe(3500);
+        expect(promotions.labelSalePrice([live], { productId: 'p2', categoryId: 'jeans', price: 5000 })).toBeNull();
+        // A coupon or a minimum purchase is the till's business
+        expect(promotions.labelSalePrice([{ ...live, auto_apply: 0 }], { productId: 'p1', categoryId: 'robes', price: 5000 })).toBeNull();
+        expect(promotions.labelSalePrice([{ ...live, min_purchase: 10000 }], { productId: 'p1', categoryId: 'robes', price: 5000 })).toBeNull();
+        const html = sp(labelService.buildLabelsHtml([{ productName: 'Robe', sku: 'R-1', qrValue: 'R-1', price: 3500, oldPrice: 5000, quantity: 1 }],
+            { ...labelService.DEFAULT_LABEL_SETTINGS }, { lang: 'fr' }));
+        expect(html).toMatch(/<s class="old-price">5 000 DA<\/s> 3 500 DA/);
     });
 });

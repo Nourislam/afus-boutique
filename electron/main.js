@@ -1,20 +1,50 @@
 console.log('=== MAIN.JS LOADED ===');
-const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme, Menu, safeStorage, clipboard, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { BRAND, dataDirectory, databasePath } = require('./brand');
-const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener } = require('./database/init');
+const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener, startSandbox, stopSandbox, isSandbox, isDemo, getDbPath } = require('./database/init');
 const dbApi = require('./database/api');
 const catalog = require('./services/catalogService');
 const dashboard = require('./services/dashboardService');
+const salesStatsService = require('./services/salesStatsService');
+const returnService = require('./services/returnService');
+const loyaltyService = require('./services/loyaltyService');
+const accountingService = require('./services/accountingService');
+const insights = require('./services/insightsService');
+const markdowns = require('./services/markdownService');
+const { createWebsiteService } = require('./website/websiteService');
+const { createGithubClient } = require('./website/github');
+const { createSecureStore } = require('./website/secureStore');
+const { createCloudflareClient } = require('./website/cloudflare');
+const cloudflareCallbackPage = require('./website/callbackPage');
+const { nextReceiptNumber } = require('./services/receiptNumber');
+const pinService = require('./services/pinService');
+const session = require('./services/session');
+const guard = require('./services/guard');
+const ipcGuard = require('./services/ipcGuard');
+const { PERMISSIONS } = require('./shared/permissions.mjs');
+const { labelSalePrice } = require('./shared/promotions.mjs');
 const i18n = require('./i18n');
 const { v4: uuid } = require('uuid');
-const { getImagesDir } = require('./services/imageService');
 const ReceiptService = require('./services/receiptService');
 const ShiftService = require('./services/shiftService');
 const printDocument = require('./services/printDocument');
 const SyncManager = require('./sync/SyncManager');
 const EcommerceSyncManager = require('./ecommerce/EcommerceSyncManager');
+
+// Before the shop is set up nobody can log in: the setup wizard may do everything
+function isFirstSetup() {
+  try {
+    const row = getOne("SELECT value FROM settings WHERE key = 'setup_completed'");
+    if (!row) return true;
+    const value = JSON.parse(row.value);
+    return !(value === true || value === 'true');
+  } catch { return false; }
+}
+// Every data-changing channel registered from here on is checked against the
+// logged-in employee's role (services/ipcGuard.js)
+ipcGuard.install(ipcMain, { isFirstSetup });
 
 const receiptService = new ReceiptService();
 const shiftService = new ShiftService();
@@ -35,6 +65,13 @@ function getSettingValue(key) {
   const row = getOne('SELECT value FROM settings WHERE key = ?', [key]);
   if (!row) return null;
   try { return JSON.parse(row.value); } catch { return row.value; }
+}
+
+// Save one JSON-encoded value in the settings table
+function saveSettingValue(key, value) {
+  const json = JSON.stringify(value);
+  if (getOne('SELECT key FROM settings WHERE key = ?', [key])) runInsert('UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?', [json, key]);
+  else runInsert('INSERT INTO settings (key, value) VALUES (?, ?)', [key, json]);
 }
 
 // All settings with store_config merged in at top level (the shape the
@@ -73,6 +110,14 @@ function savedWindowTheme() {
   }
 }
 
+// The installed program has no default menu (View › Reload, Toggle
+// Developer Tools…). macOS keeps a minimal one so copy/paste and quit work.
+function lockMenu() {
+  if (!app.isPackaged) return;
+  if (process.platform !== 'darwin') { Menu.setApplicationMenu(null); return; }
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }]));
+}
+
 function createWindow() {
   const colors = WINDOW_THEME[savedWindowTheme()];
   mainWindow = new BrowserWindow({
@@ -90,6 +135,9 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      // The installed program has no developer tools: the shop's data is
+      // reached only through the screens (and the checks behind them)
+      devTools: !app.isPackaged,
       preload: path.join(__dirname, 'preload.js')
     },
     // public/ is copied into dist/ by Vite; only dist/ is packaged
@@ -100,6 +148,11 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // The window shows only the program: no navigation to another page
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (app.isPackaged ? !url.startsWith('file://') : !url.startsWith('http://localhost:5173')) event.preventDefault();
   });
 
   // Load the app. Only the packaged state decides: an installed copy always
@@ -114,9 +167,11 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
     SyncManager.setWindow(null);
+    EcommerceSyncManager.setWindow(null);
   });
 
   SyncManager.setWindow(mainWindow);
+  EcommerceSyncManager.setWindow(mainWindow);
 }
 
 
@@ -135,6 +190,9 @@ function configureDataDirectory() {
 }
 
 configureDataDirectory();
+// The program's own log (data folder › logs), for support
+const logService = require('./services/logService');
+logService.init(app.getPath('userData'));
 
 // Register scheme as privileged
 protocol.registerSchemesAsPrivileged([
@@ -158,6 +216,7 @@ if (!gotTheLock) {
 
   // App lifecycle
   app.whenReady().then(async () => {
+    lockMenu();
     printDocument.cleanTempFiles();
     // Initialize database. If it cannot be opened, tell the user instead of
     // hanging without a window.
@@ -173,14 +232,22 @@ if (!gotTheLock) {
       return;
     }
 
-    // Daily backup copy (only when turned on in Settings › Backup)
+    // Install date, training / demo shop windows (an expired demo is only closed, its data kept)
+    refreshTrial();
+    setInterval(refreshTrial, 60 * 60 * 1000);
+
+    // Daily backup copy (on unless turned off in Settings › Backup)
     runDailyBackup();
+    setInterval(runDailyBackup, 60 * 60 * 1000);
 
     // Initialize the (optional, currently disabled) sync boundary
     await SyncManager.init();
 
-    // Initialize E-commerce Sync Manager
-    EcommerceSyncManager.init(null, null); // Will set mainWindow after createWindow()
+    // Online store connections (optional module): started once the database is
+    // open so the saved connections are loaded; the window is given by createWindow()
+    // Never synchronised with the online store while training (the stock seen is a copy)
+    // Never with the demo shop either (its stock is not the shop's)
+    EcommerceSyncManager.init({ isEnabled: () => !isSandbox() && !isDemo() && (getSettingValue('features') || {}).ecommerce === true, isTraining: isSandbox, isDemo });
 
 
   // Register app protocol for serving images
@@ -189,10 +256,11 @@ if (!gotTheLock) {
     // Remove trailing slashes
     url = url.replace(/\/+$/, '');
     // Decode URL to handle spaces and special characters
-    const decodedUrl = decodeURI(url);
-    const imagesDir = getImagesDir();
-    const filePath = path.join(imagesDir, decodedUrl);
-    console.log('App protocol request:', request.url, '-> File:', filePath);
+    let decodedUrl = '';
+    try { decodedUrl = decodeURI(url); } catch { decodedUrl = ''; }
+    // Only a picture of the images folder (never "../" another file)
+    const filePath = require('./services/imageService').safeImagePath(decodedUrl);
+    if (!filePath) { callback({ error: -6 }); return; }
     callback({ path: filePath });
   });
 
@@ -317,6 +385,8 @@ ipcMain.handle('window:close', () => {
 
 // Shell (for opening external URLs)
 ipcMain.handle('shell:openExternal', async (_, url) => {
+  // Only web pages, e-mail and WhatsApp links (never a file or a program)
+  if (!/^(https?:|mailto:|whatsapp:)/i.test(String(url || ''))) return { success: false, error: 'Unsupported link' };
   try {
     await shell.openExternal(url);
     return { success: true };
@@ -333,9 +403,9 @@ ipcMain.handle('db:shifts:start', (_, { employeeId, openingCash, notes }) => {
   return shift;
 });
 
-ipcMain.handle('db:shifts:end', (_, { shiftId, closingCash, notes, closedBy }) => {
+ipcMain.handle('db:shifts:end', (_, { shiftId, closingCash, notes, closedBy, cashCount }) => {
   const expected = shiftService.getShiftStats(shiftId).expected_cash;
-  const shift = shiftService.endShift(shiftId, closingCash, notes);
+  const shift = shiftService.endShift(shiftId, closingCash, notes, cashCount);
   logSystemAction('shift_end', `Shift Ended`, { shiftId: shift.id, closingCash, expectedCash: expected, closedBy: closedBy || shift.employee_id }, closedBy || shift.employee_id);
   return shift;
 });
@@ -350,8 +420,35 @@ ipcMain.handle('db:shifts:getCurrent', (_, employeeId) => {
   return shiftService.getCurrentShift(employeeId);
 });
 
+// Cash taken out of the drawer (who takes it comes from the session)
+ipcMain.handle('db:shifts:addExpense', (_, { shiftId, amount, reason }) => {
+  const actor = session.getEmployee();
+  if (!actor) throw catalog.codedError('LOGIN_REQUIRED', {});
+  const expense = shiftService.addExpense(shiftId, { amount, reason }, actor);
+  logSystemAction('cash_expense', `Cash expense: ${expense.amount} (${expense.reason})`, { shiftId, expenseId: expense.id }, actor.id);
+  return expense;
+});
+ipcMain.handle('db:shifts:getExpenses', (_, shiftId) => shiftService.getExpenses(shiftId));
+
 ipcMain.handle('db:shifts:getStats', (_, shiftId) => {
   return shiftService.getShiftStats(shiftId);
+});
+
+// Closing report (Z) of a drawer: numbered in the order drawers were closed
+function zReport(shiftId) {
+  const stats = shiftService.getShiftStats(shiftId);
+  const closedBefore = getOne('SELECT COUNT(*) AS n FROM shifts WHERE end_time IS NOT NULL AND datetime(end_time) <= datetime(?)', [stats.end_time || new Date().toISOString()])?.n || 0;
+  const employee = getOne('SELECT name FROM employees WHERE id = ?', [stats.employee_id]);
+  return { ...stats, z_number: String(stats.end_time ? closedBefore : closedBefore + 1).padStart(4, '0'), employee_name: employee?.name || '' };
+}
+ipcMain.handle('shifts:zReportHtml', (_, shiftId) => receiptService.zReportHtml(zReport(shiftId), getShopSettingsForPrint()));
+ipcMain.handle('shifts:printZ', async (_, shiftId) => {
+  const printer = await resolvePrinterOptions(getPrinterSettings().receipt, 'receipt');
+  try {
+    return await receiptService.printZ(zReport(shiftId), getShopSettingsForPrint(), printer);
+  } catch (error) {
+    throw printerError(error, printer.savedName || printer.printerName);
+  }
 });
 
 ipcMain.handle('db:shifts:getHistory', (_, { startDate, endDate }) => shiftService.getShiftHistory(startDate, endDate));
@@ -376,27 +473,106 @@ async function sqlJs() {
   return sqlModule;
 }
 function getBackupSettings() {
-  return { ...backupService.DEFAULT_BACKUP_SETTINGS, ...(getSettingValue('backup_settings') || {}) };
+  return backupService.resolveSettings(getSettingValue('backup_settings'));
+}
+// The shop's own pictures (backups are never made of the demo shop)
+const shopImagesDir = () => path.join(app.getPath('userData'), 'images');
+
+// Last copy to the other folder: kept in a small file next to the backups,
+// so writing it never touches the shop's data
+const externalStatusFile = () => path.join(backupFolder(), 'external-copy.json');
+function readExternalStatus() {
+  try { return JSON.parse(fs.readFileSync(externalStatusFile(), 'utf8')); } catch { return null; }
+}
+function writeExternalStatus(status) {
+  try { fs.mkdirSync(backupFolder(), { recursive: true }); fs.writeFileSync(externalStatusFile(), JSON.stringify(status)); } catch { /* status only */ }
 }
 
+/**
+ * Made a backup: keep the pictures with it, and the second copy in the other
+ * folder when one is chosen. A missing USB key never makes the backup fail;
+ * the shop is told in Settings and on the dashboard.
+ */
+function afterBackup(backup, settings = getBackupSettings()) {
+  try { backupService.backupImages(backupFolder(), shopImagesDir()); } catch (error) { console.error('Backup of pictures failed:', error); }
+  if (!settings.externalFolder || !backup) return null;
+  try {
+    backupService.copyToExternal(backupFolder(), backup.name, settings.externalFolder, shopImagesDir(), settings.keepAuto);
+    const status = { ok: true, at: new Date().toISOString(), folder: settings.externalFolder };
+    writeExternalStatus(status);
+    return status;
+  } catch (error) {
+    console.error('External backup copy failed:', error);
+    const status = { ok: false, at: new Date().toISOString(), folder: settings.externalFolder, error: backupError(error) };
+    writeExternalStatus(status);
+    return status;
+  }
+}
+
+// The demo shop never touches the shop's backups (made, restored, deleted,
+// imported or exported): it has its own "start again" instead.
+const demoBlocked = () => (isDemo() ? { success: false, error: catalog.coded('DEMO_ACTIVE', {}) } : null);
+
 // Backups kept in the data folder, newest first
-ipcMain.handle('backup:list', () => ({
-  folder: backupFolder(),
-  backups: backupService.listBackups(backupFolder()),
-  settings: getBackupSettings(),
-}));
+ipcMain.handle('backup:list', () => (isDemo()
+  ? { folder: null, backups: [], settings: getBackupSettings(), demo: true }
+  : {
+    folder: backupFolder(),
+    backups: backupService.listBackups(backupFolder()),
+    settings: getBackupSettings(),
+    external: readExternalStatus(),
+  }));
+
+// Are the shop's data safe? (the reminder bar for the owner)
+ipcMain.handle('backup:status', () => {
+  if (isDemo() || isSandbox()) return { demo: isDemo(), training: isSandbox() };
+  const backups = backupService.listBackups(backupFolder());
+  return { lastBackupAt: backups.length ? backups[0].createdAt : null, external: readExternalStatus(), autoDaily: getBackupSettings().autoDaily };
+});
+
+// The other folder for a second copy (USB key, other disk, synced folder)
+ipcMain.handle('backup:chooseExternal', async () => {
+  if (isDemo()) return demoBlocked();
+  const { filePaths } = await dialog.showOpenDialog({ title: shopT('dialog.externalBackup'), properties: ['openDirectory', 'createDirectory'] });
+  if (!filePaths || !filePaths.length) return { success: false, canceled: true };
+  const settings = { ...getBackupSettings(), externalFolder: filePaths[0] };
+  saveSettingValue('backup_settings', settings);
+  // A first copy at once, so the shop sees it works
+  const latest = backupService.listBackups(backupFolder())[0]
+    || backupService.createBackup(backupFolder(), databasePath(app.getPath('userData')));
+  return { success: true, folder: filePaths[0], external: afterBackup(latest, settings) };
+});
+ipcMain.handle('backup:clearExternal', () => {
+  if (isDemo()) return demoBlocked();
+  saveSettingValue('backup_settings', { ...getBackupSettings(), externalFolder: '' });
+  try { fs.unlinkSync(externalStatusFile()); } catch { /* none */ }
+  return { success: true };
+});
+
+// A backup that failed: what happened and what to do, in the shop's words
+function backupError(error, action = 'BACKUP_FAILED') {
+  const code = error && error.code;
+  if (code === 'ENOSPC') return catalog.coded('BACKUP_DISK_FULL', {});
+  if (code === 'EXTERNAL_MISSING') return catalog.coded('BACKUP_EXTERNAL_MISSING', {});
+  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return catalog.coded('BACKUP_NO_ACCESS', {});
+  if (code === 'ENOENT' || /not found/i.test(String(error && error.message))) return catalog.coded('BACKUP_NOT_FOUND', {});
+  return catalog.coded(action, {});
+}
 
 ipcMain.handle('backup:create', async () => {
+  if (isDemo()) return demoBlocked();
   try {
-    return { success: true, backup: backupService.createBackup(backupFolder(), databasePath(app.getPath('userData'))) };
+    const backup = backupService.createBackup(backupFolder(), databasePath(app.getPath('userData')));
+    return { success: true, backup, external: afterBackup(backup) };
   } catch (error) {
     console.error('Backup failed:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: backupError(error) };
   }
 });
 
 // What a backup holds, next to the current data, shown before restoring it
 ipcMain.handle('backup:inspect', async (_, name) => {
+  if (isDemo()) throw catalog.codedError('DEMO_ACTIVE', {});
   const SQL = await sqlJs();
   const file = backupService.backupPath(backupFolder(), name);
   return {
@@ -406,6 +582,9 @@ ipcMain.handle('backup:inspect', async (_, name) => {
 });
 
 ipcMain.handle('backup:restore', async (_, name) => {
+  // Training works on a copy: the shop's data cannot be replaced from it
+  if (isDemo()) return demoBlocked();
+  if (isSandbox()) return { success: false, error: catalog.coded('TRAINING_ACTIVE', {}) };
   const dir = backupFolder();
   const dbPath = databasePath(app.getPath('userData'));
   try {
@@ -414,6 +593,7 @@ ipcMain.handle('backup:restore', async (_, name) => {
     if (!summary.valid) return { success: false, error: shopT('backup.invalidFile') };
     // The data of today is kept first: a restore can always be undone
     const safety = backupService.createBackup(dir, dbPath, { kind: 'before-restore' });
+    try { backupService.backupImages(dir, shopImagesDir()); } catch { /* pictures are never removed */ }
     try {
       fs.copyFileSync(file, `${dbPath}.restore.tmp`);
       fs.renameSync(`${dbPath}.restore.tmp`, dbPath);
@@ -423,17 +603,23 @@ ipcMain.handle('backup:restore', async (_, name) => {
       await initDatabase();
       throw error;
     }
+    refreshTrial();
+    // The pictures of the restored articles come back too (none removed)
+    try { backupService.restoreImages(dir, shopImagesDir()); } catch (error) { console.error('Pictures not restored:', error); }
+    // The employees may differ in the restored data: log in again
+    session.clear();
     return { success: true, safety: safety.name };
   } catch (error) {
     console.error('Restore failed:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: backupError(error, 'RESTORE_FAILED') };
   }
 });
 
-ipcMain.handle('backup:delete', (_, name) => backupService.deleteBackup(backupFolder(), name));
+ipcMain.handle('backup:delete', (_, name) => demoBlocked() || backupService.deleteBackup(backupFolder(), name));
 
 // A copy of a backup on a USB key or another disk
 ipcMain.handle('backup:export', async (_, name) => {
+  if (isDemo()) return demoBlocked();
   const file = backupService.backupPath(backupFolder(), name);
   const { filePath } = await dialog.showSaveDialog({
     title: shopT('dialog.exportBackup'),
@@ -442,11 +628,14 @@ ipcMain.handle('backup:export', async (_, name) => {
   });
   if (!filePath) return { success: false, canceled: true };
   fs.copyFileSync(file, filePath);
+  // The pictures go with it (afus-boutique-images next to the file)
+  try { backupService.backupImages(backupFolder(), shopImagesDir()); backupService.exportImages(backupFolder(), filePath); } catch (error) { console.error('Pictures not exported:', error); }
   return { success: true, path: filePath };
 });
 
 // A backup brought from elsewhere: checked, then added to the list (restored only after its preview)
 ipcMain.handle('backup:import', async () => {
+  if (isDemo()) return demoBlocked();
   const { filePaths } = await dialog.showOpenDialog({
     title: shopT('dialog.importBackup'),
     // .sqlite: backups saved by earlier versions of this application
@@ -457,27 +646,33 @@ ipcMain.handle('backup:import', async () => {
   const summary = backupService.summarizeDatabase(await sqlJs(), fs.readFileSync(filePaths[0]));
   if (!summary.valid) return { success: false, error: shopT('backup.invalidFile') };
   const backup = backupService.createBackup(backupFolder(), filePaths[0], { kind: 'imported' });
+  try { backupService.importImages(filePaths[0], backupFolder()); } catch (error) { console.error('Pictures not imported:', error); }
   return { success: true, backup };
 });
 
 ipcMain.handle('backup:openFolder', async () => {
+  if (isDemo()) return demoBlocked();
   fs.mkdirSync(backupFolder(), { recursive: true });
   const error = await shell.openPath(backupFolder());
   return { success: !error, error };
 });
 
 /**
- * Daily automatic backup, when the shop turned it on: one copy per day, made
- * when the program starts, the oldest automatic copies beyond `keepAuto` are
- * removed. Copies made by the shop are never removed.
+ * Daily automatic backup (on unless the shop turned it off): one copy per
+ * day, made when the program starts and checked again every hour for a
+ * program left open overnight; the oldest automatic copies beyond `keepAuto`
+ * are removed. Copies made by the shop are never removed.
  */
 function runDailyBackup() {
+  // The shop's settings are read from the shop's data only
+  if (isDemo() || isSandbox()) return;
   try {
     const settings = getBackupSettings();
     if (!settings.autoDaily) return;
     const dir = backupFolder();
     if (backupService.autoBackupDue(backupService.listBackups(dir))) {
-      backupService.createBackup(dir, databasePath(app.getPath('userData')), { kind: 'auto' });
+      const backup = backupService.createBackup(dir, databasePath(app.getPath('userData')), { kind: 'auto' });
+      afterBackup(backup, settings);
     }
     for (const old of backupService.autoBackupsToPrune(backupService.listBackups(dir), settings.keepAuto)) {
       backupService.deleteBackup(dir, old.name);
@@ -488,6 +683,9 @@ function runDailyBackup() {
 }
 
 ipcMain.handle('backup:reset', async () => {
+  // Training works on a copy: the shop's data cannot be replaced from it
+  if (isDemo()) return demoBlocked();
+  if (isSandbox()) return { success: false, error: catalog.coded('TRAINING_ACTIVE', {}) };
   const dbPath = databasePath(app.getPath('userData'));
   try {
     if (fs.existsSync(dbPath)) {
@@ -498,10 +696,11 @@ ipcMain.handle('backup:reset', async () => {
       fs.unlinkSync(dbPath);
     }
     await initDatabase();
+    session.clear();
     return { success: true };
   } catch (error) {
     console.error('Reset failed:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: backupError(error, 'RESET_FAILED') };
   }
 });
 
@@ -520,10 +719,93 @@ ipcMain.handle('app:setTheme', (_, { theme, preference } = {}) => {
   return true;
 });
 
+// Errors seen in the window go into the same log
+ipcMain.handle('log:write', (_, { level = 'error', message = '' } = {}) => {
+  logService.write(['error', 'warn', 'info'].includes(level) ? level : 'error', '[window]', String(message).slice(0, 4000));
+  return true;
+});
+
+// Support file: versions, system, the size of the data and the recent log
+// (no customer data, no passwords), saved where the shop chooses
+ipcMain.handle('support:bundle', async () => {
+  const count = (table) => { try { return getOne(`SELECT COUNT(*) AS n FROM ${table}`)?.n ?? 0; } catch { return 'n/a'; } };
+  const settings = {};
+  try {
+    for (const row of runQuery('SELECT key, value FROM settings')) {
+      try { settings[row.key] = JSON.parse(row.value); } catch { settings[row.key] = row.value; }
+    }
+  } catch { /* no settings */ }
+  // The shop's identity stays out except its name; logos and signatures are images
+  for (const key of ['store_config']) {
+    if (settings[key] && typeof settings[key] === 'object') {
+      const { shopLogo: _l, poSignatureImage: _s, ...rest } = settings[key];
+      settings[key] = rest;
+    }
+  }
+  const text = logService.supportBundle({
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    dataPath: app.getPath('userData'),
+    counts: {
+      demo: isDemo(), training: isSandbox(),
+      products: count('products'), variants: count('product_variants'), sales: count('sales'), customers: count('customers'),
+      employees: count('employees'), backups: backupService.listBackups(backupFolder()).length,
+      databaseBytes: (() => { try { return fs.statSync(getDbPath()).size; } catch { return 'n/a'; } })(),
+    },
+    migrations: (() => { try { return runQuery('SELECT version, applied_at FROM schema_migrations ORDER BY applied_at'); } catch { return []; } })(),
+    settings,
+  });
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: shopT('dialog.supportFile'),
+    defaultPath: `${BRAND.fileSlug}-support-${new Date().toISOString().slice(0, 10)}.txt`,
+    filters: [{ name: 'Text', extensions: ['txt'] }],
+  });
+  if (canceled || !filePath) return { success: false, canceled: true };
+  fs.writeFileSync(filePath, text, 'utf8');
+  return { success: true, path: filePath };
+});
+// Installer profile of the reseller (scripts/use-profile.mjs), licence, updates
+const PROFILE = (() => { try { return require('./shared/profile.json'); } catch { return {}; } })();
+const licenseService = require('./services/licenseService');
+const updateService = require('./services/updateService');
+function licenseStatus() {
+  return licenseService.check((getSettingValue('license') || {}).key, PROFILE.licensePublicKey);
+}
+ipcMain.handle('about:info', () => ({
+  version: app.getVersion(),
+  reseller: PROFILE.reseller || '',
+  supportPhone: PROFILE.supportPhone || '',
+  supportEmail: PROFILE.supportEmail || '',
+  supportWebsite: /^https?:\/\//i.test(PROFILE.supportWebsite || '') ? PROFILE.supportWebsite : '',
+  updatesConfigured: !!PROFILE.updateUrl,
+  license: licenseStatus(),
+}));
+// The licence never blocks anything: it is only checked and shown
+ipcMain.handle('license:set', (_, key) => {
+  const result = licenseService.check(key, PROFILE.licensePublicKey);
+  if (result.status !== 'valid') return result;
+  saveSettingValue('license', { key: String(key).trim() });
+  return result;
+});
+ipcMain.handle('update:check', () => updateService.checkForUpdate(PROFILE.updateUrl, app.getVersion()));
+ipcMain.handle('update:open', async (_, url) => {
+  if (!/^https?:\/\//i.test(String(url || ''))) return { success: false };
+  await shell.openExternal(url);
+  return { success: true };
+});
+
+ipcMain.handle('support:openLogs', async () => {
+  const folder = path.join(app.getPath('userData'), 'logs');
+  fs.mkdirSync(folder, { recursive: true });
+  const error = await shell.openPath(folder);
+  return { success: !error, error };
+});
+
 ipcMain.handle('app:getInfo', () => ({
   version: app.getVersion(),
   dataPath: app.getPath('userData'),
-  databasePath: databasePath(app.getPath('userData')),
+  databasePath: getDbPath(),
+  demo: isDemo(),
   platform: process.platform,
   electron: process.versions.electron,
 }));
@@ -662,7 +944,7 @@ ipcMain.handle('catalog:generateFreeCodes', (_, { type = 'ean13', count = 1, res
 
 // Which of these codes are already used by an article, a variant or a gift card
 ipcMain.handle('catalog:findUsedCodes', (_, codes = []) => {
-  return (codes || []).slice(0, 1000).filter(code => code && catalog.isCodeUsed(dbApi, code));
+  return (codes || []).filter(code => code && catalog.isCodeUsed(dbApi, code));
 });
 
 ipcMain.handle('catalog:checkIdentifier', (_, { code, excludeVariantId, excludeProductId }) => {
@@ -790,10 +1072,23 @@ ipcMain.handle('db:customers:search', (_, query) => {
     [searchTerm, searchTerm, searchTerm]);
 });
 
+// Kridi (allowed or not, and the limit) is set only by a role with the
+// customers.credit permission; for the others it stays as it was
+function creditFields(customer, existing = null) {
+  if (ipcGuard.allows(PERMISSIONS.CUSTOMERS_CREDIT, session.getEmployee()) || isFirstSetup()) {
+    return [customer.credit_enabled ? 1 : 0, customer.credit_limit || 0, customer.is_wholesale ? 1 : 0];
+  }
+  return [existing?.credit_enabled ? 1 : 0, existing?.credit_limit || 0, existing?.is_wholesale ? 1 : 0];
+}
+
+const receiptLanguage = (customer) => (['ar', 'fr', 'en'].includes(customer.receipt_language) ? customer.receipt_language : null);
+
 ipcMain.handle('db:customers:create', (_, customer) => {
+  // Wholesale customer (pays the wholesale prices): same rule as kridi
+  const [creditEnabled, creditLimit, wholesale] = creditFields(customer);
   runInsert(`
-    INSERT INTO customers (id, name, email, phone, address, loyalty_points, notes, credit_enabled, credit_limit, is_synced)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    INSERT INTO customers (id, name, email, phone, address, loyalty_points, notes, credit_enabled, credit_limit, is_wholesale, receipt_language, is_synced)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
   `, [
     customer.id,
     customer.name,
@@ -802,26 +1097,32 @@ ipcMain.handle('db:customers:create', (_, customer) => {
     customer.address,
     customer.loyalty_points || 0,
     customer.notes,
-    customer.credit_enabled ? 1 : 0,
-    customer.credit_limit || 0
+    creditEnabled,
+    creditLimit,
+    wholesale,
+    receiptLanguage(customer)
   ]);
   SyncManager.triggerSync();
   return customer;
 });
 
 ipcMain.handle('db:customers:update', (_, customer) => {
+  const [creditEnabled, creditLimit, wholesale] = creditFields(customer, getOne('SELECT credit_enabled, credit_limit, is_wholesale FROM customers WHERE id = ?', [customer.id]));
   runInsert(`
-    UPDATE customers SET name = ?, email = ?, phone = ?, address = ?, loyalty_points = ?, notes = ?, credit_enabled = ?, credit_limit = ?, updated_at = CURRENT_TIMESTAMP, is_synced = 0
+    UPDATE customers SET name = ?, email = ?, phone = ?, address = ?, notes = ?, credit_enabled = ?, credit_limit = ?, is_wholesale = ?, receipt_language = ?, updated_at = CURRENT_TIMESTAMP, is_synced = 0
     WHERE id = ?
   `, [
+    // The loyalty points are not taken from the form: only sales, returns
+    // and their conversion change them (a form opened earlier cannot undo them)
     customer.name,
     customer.email,
     customer.phone,
     customer.address,
-    customer.loyalty_points,
     customer.notes,
-    customer.credit_enabled ? 1 : 0,
-    customer.credit_limit || 0,
+    creditEnabled,
+    creditLimit,
+    wholesale,
+    receiptLanguage(customer),
     customer.id
   ]);
   logSystemAction('update', `Updated Customer: ${customer.name}`, { id: customer.id });
@@ -829,7 +1130,11 @@ ipcMain.handle('db:customers:update', (_, customer) => {
   return customer;
 });
 
-ipcMain.handle('db:customers:delete', (_, id) => {
+ipcMain.handle('db:customers:delete', (_, id, { confirmOwed = false } = {}) => {
+  // A customer who still owes money is put aside only once the shop has seen it
+  const owed = getOne(`SELECT COALESCE(SUM(MAX(amount_due - COALESCE(amount_paid, 0), 0)), 0) AS owed
+    FROM credit_sales WHERE customer_id = ?`, [id])?.owed || 0;
+  if (owed > 0.004 && !confirmOwed) throw catalog.codedError('CUSTOMER_OWES', { amount: Math.round(owed * 100) / 100 });
   runInsert('UPDATE customers SET is_active = 0, is_synced = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [id]);
   SyncManager.triggerSync();
   return true;
@@ -845,13 +1150,122 @@ ipcMain.handle('db:employees:getById', (_, id) => {
 });
 
 ipcMain.handle('db:employees:verifyPin', (_, { id, pin }) => {
-  const employee = getOne('SELECT * FROM employees WHERE id = ? AND pin = ? AND is_active = 1', [id, pin]);
+  // PINs are hashed (services/pinService.js); a right PIN opens the session
+  const employee = pinService.checkEmployeePin(dbApi, id, pin);
   if (employee) {
+    session.setEmployee(employee);
     logSystemAction('login', `Employee Login: ${employee.name}`, null, employee.id);
-    return { id: employee.id, name: employee.name, role: employee.role };
+    return employee;
   }
   return null;
 });
+
+ipcMain.handle('auth:logout', () => { session.clear(); return true; });
+// A manager types their PIN to agree (discount above the limit, return...).
+// Only checks the PIN: the logged-in employee does not change.
+ipcMain.handle('auth:approve', (_, { employeeId, pin }) => {
+  const manager = guard.approver(dbApi, { employeeId, pin });
+  return manager ? { ok: true, id: manager.id, name: manager.name } : { ok: false };
+});
+ipcMain.handle('security:getRules', () => guard.readRules(dbApi));
+
+// Training mode (services/trainingService.js): a manager or the owner starts it,
+// or a cashier with a manager's PIN. Everything happens in a copy in memory.
+const trainingService = require('./services/trainingService');
+ipcMain.handle('training:status', () => ({ active: isSandbox() }));
+
+// ------------------------------------------------------------------
+// Demo shop (services/demoService.js): its own folder and database file.
+// Entering, starting again and leaving end the session (log in again) and a
+// training copy; the online store only ever sees the shop's own data.
+// ------------------------------------------------------------------
+const demoService = require('./services/demoService');
+const { demoStaff } = require('./services/demoData');
+// How long training (7 days) and the demo shop (3 months) are offered,
+// from the install date (services/trialService.js). Worked out from the
+// shop's own data only: never while the demo shop or a training copy is open.
+const trialService = require('./services/trialService');
+let trialClock = null;
+function refreshTrial() {
+  if (isDemo() || isSandbox()) return;
+  try { trialClock = trialService.refresh(app.getPath('userData'), dbApi); } catch (error) { console.error('Trial dates:', error); }
+}
+function trialStatus() {
+  const clock = trialClock || { installedAt: Date.now(), now: Date.now() };
+  return trialService.status({ installedAt: clock.installedAt, now: Math.max(Date.now(), clock.now) });
+}
+// The demo shop's data stays on disk after its 3 months (only opening it is
+// refused); the owner removes it when they choose, from Settings › About
+function demoDataSize() {
+  const folder = demoService.demoFolder();
+  if (!fs.existsSync(folder)) return 0;
+  let total = 0;
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full); else { try { total += fs.statSync(full).size; } catch { /* gone */ } }
+    }
+  };
+  try { walk(folder); } catch { /* unreadable */ }
+  return total;
+}
+ipcMain.handle('demo:data', () => ({ exists: fs.existsSync(demoService.demoFolder()), bytes: demoDataSize() }));
+// Explicit: the owner asked to delete the demo shop's data (never the shop's own)
+ipcMain.handle('demo:discard', async () => {
+  if (isDemo()) throw catalog.codedError('DEMO_ACTIVE', {});
+  await demoService.discard();
+  logSystemAction('demo_discarded', 'Demo shop data deleted by the owner', null, session.getEmployee()?.id || null);
+  return { success: true };
+});
+ipcMain.handle('trial:status', () => trialStatus());
+
+function afterShopSwitch() {
+  session.clear();
+  refreshTrial();
+  EcommerceSyncManager.loadConnections();
+  EcommerceSyncManager.refreshSchedule();
+}
+ipcMain.handle('demo:status', () => {
+  const lang = (getSettingValue('store_config') || {}).defaultLanguage || 'ar';
+  return { active: isDemo(), training: isSandbox(), staff: isDemo() ? demoStaff(lang) : [] };
+});
+ipcMain.handle('demo:enter', async (_, { lang } = {}) => {
+  if (!trialStatus().demo.available) throw catalog.codedError('TRIAL_DEMO_ENDED', {});
+  const result = await demoService.enter({ lang: ['ar', 'fr', 'en'].includes(lang) ? lang : 'ar' });
+  afterShopSwitch();
+  return { success: true, created: result.created };
+});
+ipcMain.handle('demo:reset', async (_, { lang } = {}) => {
+  if (!isDemo()) throw catalog.codedError('DEMO_NOT_ACTIVE', {});
+  const current = (getSettingValue('store_config') || {}).defaultLanguage;
+  await demoService.reset({ lang: ['ar', 'fr', 'en'].includes(lang) ? lang : current || 'ar' });
+  afterShopSwitch();
+  return { success: true };
+});
+ipcMain.handle('demo:exit', async () => {
+  const result = await demoService.exit();
+  afterShopSwitch();
+  return { success: true, exited: result.exited };
+});
+ipcMain.handle('training:start', (_, { approval } = {}) => {
+  const actor = session.getEmployee();
+  if (!actor) throw catalog.codedError('LOGIN_REQUIRED', {});
+  if (!isSandbox() && !trialStatus().training.available) throw catalog.codedError('TRIAL_TRAINING_ENDED', {});
+  if (!session.isManager(actor) && !guard.approver(dbApi, approval)) throw catalog.codedError('TRAINING_NEEDS_MANAGER', {});
+  if (isSandbox()) return { active: true };
+  // Written in the shop's log before the copy is made
+  logSystemAction('training_start', `Training mode started by ${actor.name}`, null, actor.id);
+  startSandbox();
+  trainingService.seed(dbApi, { productName: shopT('training.product'), customerName: shopT('training.customer') });
+  EcommerceSyncManager.refreshSchedule();
+  return { active: true };
+});
+ipcMain.handle('training:stop', () => {
+  stopSandbox();
+  EcommerceSyncManager.refreshSchedule();
+  return { active: false };
+});
+ipcMain.handle('training:progress', () => trainingService.progress(dbApi));
 
 ipcMain.handle('db:employees:create', (_, employee) => {
   runInsert(`
@@ -861,7 +1275,7 @@ ipcMain.handle('db:employees:create', (_, employee) => {
     employee.id,
     employee.name,
     employee.email || null,
-    employee.pin,
+    pinService.hashPin(employee.pin),
     employee.role,
     employee.is_active ? 1 : 0,
     employee.avatar_path || null
@@ -878,7 +1292,7 @@ ipcMain.handle('db:employees:update', (_, employee) => {
     `, [
       employee.name,
       employee.email || null,
-      employee.pin,
+      pinService.hashPin(employee.pin),
       employee.role,
       employee.is_active ? 1 : 0,
       employee.avatar_path || null,
@@ -909,17 +1323,33 @@ ipcMain.handle('db:employees:delete', (_, id) => {
 
 // Sales
 ipcMain.handle('db:sales:create', (_, sale) => {
+  // Discount limit and totals checked here, with the logged-in employee
+  // (services/guard.js): a cashier above the limit needs a manager's PIN
+  const check = guard.checkSale(dbApi, session.getEmployee(), sale, sale.approval);
+  if (check.approvedBy) {
+    logSystemAction('discount_approved', `Discount ${check.discount.percent}% approved by ${check.approvedBy.name}`, { saleId: sale.id, amount: check.discount.amount, approvedBy: check.approvedBy.id }, session.getEmployee()?.id || null);
+  }
+  // Kridi: allowed for this customer and under their limit (or a manager agreed)
+  const credit = guard.checkCredit(dbApi, session.getEmployee(), sale, sale.approval);
+  if (credit?.approvedBy) {
+    logSystemAction('credit_limit_approved', `Credit above the limit for ${credit.customer.name} approved by ${credit.approvedBy.name}`, { saleId: sale.id, owed: credit.owedAfter, limit: credit.customer.credit_limit, approvedBy: credit.approvedBy.id }, session.getEmployee()?.id || null);
+  }
+  let creditSale = null;
   // The whole sale (header, lines, stock movements, payments, gift card
   // redemptions) is written in one transaction: if anything fails - e.g. a
   // gift card without enough balance or a variant that no longer exists -
   // nothing is saved and stock is left untouched.
+  // A "deposit" payment only comes from a reservation picked up
+  if (!sale.reservation_id && (sale.payments || []).some(p => p.method === 'deposit')) throw catalog.codedError('RESERVATION_NOT_FOUND', {});
   runTransaction(() => {
     runInsert(`
-      INSERT INTO sales (id, receipt_number, employee_id, customer_id, subtotal, tax_amount, discount_amount, total, status, notes, service_charge, tax_exempt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sales (id, receipt_number, employee_id, customer_id, subtotal, tax_amount, discount_amount, total, status, notes, service_charge, tax_exempt, reservation_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [sale.id, sale.receipt_number, sale.employee_id ?? null, sale.customer_id ?? null,
     sale.subtotal ?? 0, sale.tax_amount ?? 0, sale.discount_amount ?? 0, sale.total ?? 0, sale.status || 'completed', sale.notes ?? null,
-    sale.service_charge || 0, sale.tax_exempt ? 1 : 0]);
+    sale.service_charge || 0, sale.tax_exempt ? 1 : 0, sale.reservation_id || null]);
+    // Reservation picked up: its pieces come back first, the lines take them out
+    if (sale.reservation_id) reservations.completeForSale(dbApi, sale);
 
     for (const item of sale.items) {
       const product = getOne('SELECT id, name, cost, has_variants, stock_quantity FROM products WHERE id = ?', [item.product_id]);
@@ -991,6 +1421,8 @@ ipcMain.handle('db:sales:create', (_, sale) => {
       }
     }
 
+    // Paid with loyalty points turned into a card: earns no new points
+    let paidWithPoints = 0;
     for (const payment of sale.payments || []) {
       runInsert(`
         INSERT INTO payments (id, sale_id, method, amount, reference)
@@ -1008,6 +1440,7 @@ ipcMain.handle('db:sales:create', (_, sale) => {
         if (newBalance < 0) throw catalog.codedError('GIFT_CARD_BALANCE', { code });
 
         runInsert('UPDATE gift_cards SET current_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newBalance, card.id]);
+        if (card.kind === 'loyalty') paidWithPoints += Number(amount) || 0;
 
         // Update payment reference with balance info for receipt
         const refData = JSON.stringify({ code: code, remaining: newBalance });
@@ -1024,17 +1457,32 @@ ipcMain.handle('db:sales:create', (_, sale) => {
 
     // Loyalty: 1 point per 100 DA, and the customer's total spent. Done here,
     // in the same transaction, so the customer record is never overwritten.
+    // What earned points is kept on the sale, so a return takes back exactly those.
     if (sale.customer_id) {
+      const base = Math.max(0, (Number(sale.total) || 0) - paidWithPoints);
+      runInsert('UPDATE sales SET loyalty_base = ? WHERE id = ?', [base, sale.id]);
       runInsert(`
         UPDATE customers SET loyalty_points = COALESCE(loyalty_points, 0) + ?, total_spent = COALESCE(total_spent, 0) + ?,
           updated_at = CURRENT_TIMESTAMP, is_synced = 0
         WHERE id = ?
-      `, [Math.floor((Number(sale.total) || 0) / 100), Number(sale.total) || 0, sale.customer_id]);
+      `, [loyaltyService.pointsOf(base), Number(sale.total) || 0, sale.customer_id]);
     }
 
     // Promotion used by this sale
     if (sale.promotion_id) {
       runInsert('UPDATE promotions SET current_uses = COALESCE(current_uses, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [sale.promotion_id]);
+    }
+
+    // The kridi of this sale, in the same transaction: a sale on kridi is
+    // never saved without the customer's debt
+    if (credit) {
+      creditSale = createCreditSale({
+        sale_id: sale.id,
+        customer_id: credit.customer.id,
+        amount_due: credit.amount,
+        due_date: sale.credit?.due_date,
+        notes: sale.credit?.notes || null,
+      });
     }
   });
 
@@ -1043,12 +1491,34 @@ ipcMain.handle('db:sales:create', (_, sale) => {
 
   // Return the sale with the variant snapshots the receipt needs
   const items = runQuery('SELECT * FROM sale_items WHERE sale_id = ?', [sale.id]);
-  return { ...sale, items: sale.items.map(i => ({ ...i, ...(items.find(r => r.id === i.id) || {}) })) };
+  const { approval: _approval, ...saved } = sale;
+  return { ...saved, credit_sale: creditSale, items: sale.items.map(i => ({ ...i, ...(items.find(r => r.id === i.id) || {}) })) };
+});
+
+// Ticket number, customer (name or phone, digits only also) or seller, in all the history
+function salesSearch(params, add) {
+  const text = String(params?.search || '').trim();
+  if (!text) return;
+  const term = `%${text}%`;
+  const digits = text.replace(/\D/g, '');
+  if (digits.length >= 3) {
+    add(" AND (s.receipt_number LIKE ? OR c.name LIKE ? OR REPLACE(REPLACE(c.phone, ' ', ''), '-', '') LIKE ? OR e.name LIKE ?)", [term, term, `%${digits}%`, term]);
+  } else {
+    add(' AND (s.receipt_number LIKE ? OR c.name LIKE ? OR e.name LIKE ?)', [term, term, term]);
+  }
+}
+
+// How many tickets match (the sales history loads them a page at a time)
+ipcMain.handle('db:sales:count', (_, params = {}) => {
+  let query = 'SELECT COUNT(*) AS n FROM sales s LEFT JOIN employees e ON s.employee_id = e.id LEFT JOIN customers c ON s.customer_id = c.id WHERE 1=1';
+  const values = [];
+  salesSearch(params, (sql, v) => { query += sql; values.push(...v); });
+  return getOne(query, values)?.n || 0;
 });
 
 ipcMain.handle('db:sales:getAll', (_, params = {}) => {
   let query = `
-    SELECT s.*, e.name as employee_name, c.name as customer_name
+    SELECT s.*, e.name as employee_name, c.name as customer_name, c.phone as customer_phone
     FROM sales s
     LEFT JOIN employees e ON s.employee_id = e.id
     LEFT JOIN customers c ON s.customer_id = c.id
@@ -1066,11 +1536,14 @@ ipcMain.handle('db:sales:getAll', (_, params = {}) => {
     queryParams.push(params.employeeId);
   }
 
+  salesSearch(params, (sql, values) => { query += sql; queryParams.push(...values); });
+
   query += ' ORDER BY s.created_at DESC';
 
-  // Limit if no date range to avoid fetching everything
-  if (!params?.startDate) {
-    query += ' LIMIT 100';
+  // The whole history: no cap (a page size only when the caller asks for one)
+  if (Number.isInteger(params?.limit) && params.limit > 0) {
+    query += ' LIMIT ? OFFSET ?';
+    queryParams.push(params.limit, Number.isInteger(params.offset) ? params.offset : 0);
   }
 
   return runQuery(query, queryParams);
@@ -1116,64 +1589,8 @@ ipcMain.handle('db:sales:getToday', (_, params = {}) => {
   return runQuery(query, queryParams);
 });
 
-ipcMain.handle('db:sales:getStats', (_, { startDate, endDate, employeeId }) => {
-  // Profit = what the customer paid (after every discount, without TVA) minus
-  // the purchase cost of the pieces; returns are taken off both.
-  const emp = employeeId ? ' AND s.employee_id = ?' : '';
-  const params = employeeId ? [startDate, endDate, employeeId] : [startDate, endDate];
-  const sales = getOne(`
-    SELECT
-      COUNT(s.id) AS total_transactions,
-      COALESCE(SUM(s.total), 0) AS total_revenue,
-      COALESCE(AVG(s.total), 0) AS average_sale,
-      COALESCE(SUM(s.tax_amount), 0) AS total_tax,
-      COALESCE(SUM(s.discount_amount), 0) AS total_discount,
-      COALESCE(SUM(c.cost), 0) AS total_cost,
-      COALESCE(SUM(c.pieces), 0) AS items_sold
-    FROM sales s
-    LEFT JOIN (
-      SELECT sale_id, SUM(COALESCE(unit_cost, 0) * quantity) AS cost, SUM(quantity) AS pieces
-      FROM sale_items GROUP BY sale_id
-    ) c ON c.sale_id = s.id
-    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)${emp}
-  `, params) || {};
-  const returns = getOne(`
-    SELECT
-      COUNT(DISTINCT r.id) AS count,
-      COALESCE(SUM(r.total_refund), 0) AS refunds
-    FROM returns r
-    LEFT JOIN sales s ON s.id = r.sale_id
-    WHERE datetime(r.created_at) BETWEEN datetime(?) AND datetime(?)${employeeId ? ' AND r.employee_id = ?' : ''}
-  `, params) || {};
-  const returnedCost = getOne(`
-    SELECT COALESCE(SUM(ri.quantity * COALESCE(si.unit_cost, 0)), 0) AS cost
-    FROM return_items ri
-    JOIN returns r ON r.id = ri.return_id
-    LEFT JOIN sale_items si ON si.id = ri.sale_item_id
-    WHERE datetime(r.created_at) BETWEEN datetime(?) AND datetime(?)${employeeId ? ' AND r.employee_id = ?' : ''}
-  `, params) || {};
-
-  const revenue = sales.total_revenue || 0;
-  const refunds = returns.refunds || 0;
-  const netRevenue = revenue - refunds;
-  const cost = (sales.total_cost || 0) - (returnedCost.cost || 0);
-  const profit = (revenue - (sales.total_tax || 0)) - refunds - cost;
-  const r2 = (n) => Math.round(n * 100) / 100;
-  return {
-    total_transactions: sales.total_transactions || 0,
-    total_revenue: r2(revenue),
-    average_sale: r2(sales.average_sale || 0),
-    total_tax: r2(sales.total_tax || 0),
-    total_discount: r2(sales.total_discount || 0),
-    items_sold: sales.items_sold || 0,
-    total_refunds: r2(refunds),
-    refunds_count: returns.count || 0,
-    net_revenue: r2(netRevenue),
-    total_cost: r2(cost),
-    total_profit: r2(profit),
-    margin_percent: netRevenue > 0 ? r2((profit / netRevenue) * 100) : 0,
-  };
-});
+// Totals of a period: only the sales that count (electron/services/saleStatus.js)
+ipcMain.handle('db:sales:getStats', (_, range) => salesStatsService.salesStats(dbApi, range || {}));
 
 // Held Transactions
 ipcMain.handle('db:held:getAll', () => {
@@ -1212,7 +1629,15 @@ ipcMain.handle('db:settings:get', (_, key) => {
   return row ? JSON.parse(row.value) : null;
 });
 
+// The cashiers' rights (discount limit, returns) are changed by the owner only
+const ADMIN_ONLY_SETTINGS = new Set(['security', 'pos_controls']);
+function checkSettingWrite(key) {
+  const actor = session.getEmployee();
+  if (ADMIN_ONLY_SETTINGS.has(key) && actor?.role !== 'admin') throw catalog.codedError('ADMIN_REQUIRED', {});
+}
+
 ipcMain.handle('db:settings:set', (_, { key, value }) => {
+  checkSettingWrite(key);
   const jsonValue = JSON.stringify(value);
   const existing = getOne('SELECT key FROM settings WHERE key = ?', [key]);
   if (existing) {
@@ -1220,10 +1645,13 @@ ipcMain.handle('db:settings:set', (_, { key, value }) => {
   } else {
     runInsert('INSERT INTO settings (key, value) VALUES (?, ?)', [key, jsonValue]);
   }
+  // The online store module turned on or off: start or stop its scheduled sync
+  if (key === 'features') EcommerceSyncManager.refreshSchedule();
   return true;
 });
 
 ipcMain.handle('db:settings:delete', (_, key) => {
+  checkSettingWrite(key);
   runInsert('DELETE FROM settings WHERE key = ?', [key]);
   return true;
 });
@@ -1250,7 +1678,7 @@ ipcMain.handle('db:inventory:getLogs', (_, productId) => {
   if (productId) {
     return runQuery(`${select} WHERE il.product_id = ? ORDER BY il.created_at DESC`, [productId]);
   }
-  return runQuery(`${select} ORDER BY il.created_at DESC LIMIT 100`);
+  return runQuery(`${select} ORDER BY il.created_at DESC`);
 });
 
 // Low stock at the most specific level: one row per variant for clothing
@@ -1260,7 +1688,7 @@ ipcMain.handle('db:inventory:getLowStock', () => {
 });
 
 // System Logs
-ipcMain.handle('db:logs:getAll', (_, { startDate, endDate, type, limit = 100 } = {}) => {
+ipcMain.handle('db:logs:getAll', (_, { startDate, endDate, type, limit = -1 } = {}) => {
   let query = `
     SELECT l.*, e.name as employee_name 
     FROM system_logs l
@@ -1282,8 +1710,9 @@ ipcMain.handle('db:logs:getAll', (_, { startDate, endDate, type, limit = 100 } =
     params.push(type);
   }
 
+  // -1: every entry
   query += ' ORDER BY l.created_at DESC LIMIT ?';
-  params.push(limit);
+  params.push(Number.isInteger(limit) && limit > 0 ? limit : -1);
 
   return runQuery(query, params);
 });
@@ -1350,9 +1779,306 @@ ipcMain.handle('dashboard:home', async (_, { today, tomorrow, since30, todayRang
     offersEnding: dashboard.offersEnding(dbApi, today, tomorrow),
     openShifts: shiftService.getOpenShifts(),
     lastBackupAt: backups.length ? backups[0].createdAt : null,
+    externalBackup: isDemo() ? null : readExternalStatus(),
     printers: await printerStatus(),
     firstSteps: dashboard.firstSteps(dbApi),
+    // Colours / sizes that will be sold out within a week at the pace of the last 14 days
+    runOut: (() => { const rows = insights.runOutSoon(dbApi); return { count: rows.length, items: rows.slice(0, 3) }; })(),
   };
+});
+ipcMain.handle('dashboard:firstSteps', () => dashboard.firstSteps(dbApi));
+
+// Decision figures (services/insightsService.js), read-only
+ipcMain.handle('insights:runOut', (_, args = {}) => insights.runOutSoon(dbApi, args));
+ipcMain.handle('insights:sellThrough', (_, args = {}) => insights.sellThrough(dbApi, args));
+ipcMain.handle('insights:matrix', (_, { productId, since = null } = {}) => insights.productMatrix(dbApi, productId, { since }));
+ipcMain.handle('insights:deadStock', (_, args = {}) => insights.deadStock(dbApi, args));
+ipcMain.handle('insights:stockWorth', (_, args = {}) => insights.stockWorth(dbApi, args));
+ipcMain.handle('insights:season', (_, args = {}) => insights.seasonReport(dbApi, args));
+// Markdown manager: suggestions and results are read-only; a decision is the owner's
+ipcMain.handle('insights:markdowns', () => ({ suggestions: markdowns.suggestions(dbApi), results: markdowns.results(dbApi), steps: markdowns.STEPS }));
+ipcMain.handle('insights:markdownDecide', (_, args = {}) => {
+  const actor = session.getEmployee();
+  const row = runTransaction(() => markdowns.decide(dbApi, { ...args, employeeId: actor?.id || null }));
+  logSystemAction(row.status === 'approved' ? 'markdown_approved' : 'markdown_refused',
+    `${row.percent}% on ${row.product_id}`, null, actor?.id || null);
+  return row;
+});
+
+// Website Manager (electron/website/): the shop's website, kept in the
+// settings table (key "website"); the catalogue is only read. Changes: the
+// owner only (services/ipcGuard.js).
+//
+// GitHub is linked with the shop's own account: the installer profile only
+// holds the public id of the AFUS GitHub app (no secret); the key GitHub
+// gives stays in this process, encrypted by the system (<userData>/secure).
+// In development only, a local test server may stand in for GitHub.
+const githubTestBase = () => {
+  const base = process.env.AFUS_GITHUB_TEST_BASE || '';
+  return !app.isPackaged && /^http:\/\/127\.0\.0\.1:\d+$/.test(base) ? base : null;
+};
+let githubClient = null;
+// Cloudflare: the same, with the public id of the AFUS OAuth client and the
+// local ports registered with it (http://127.0.0.1:<port>/oauth/callback)
+const cloudflareTestBase = () => {
+  const base = process.env.AFUS_CLOUDFLARE_TEST_BASE || '';
+  return !app.isPackaged && /^http:\/\/127\.0\.0\.1:\d+$/.test(base) ? base : null;
+};
+const CLOUDFLARE_PORTS = (Array.isArray(PROFILE.cloudflareRedirectPorts) ? PROFILE.cloudflareRedirectPorts : [47651, 47652, 47653])
+  .map(Number).filter(p => Number.isInteger(p) && p >= 1024 && p <= 65535).slice(0, 5);
+let cloudflareClient = null;
+const websiteSecureStore = createSecureStore({
+  dir: path.join(app.getPath('userData'), 'secure'),
+  safeStorage,
+  // Development tests on a Linux without a secret service only
+  allowWeak: !app.isPackaged && process.env.AFUS_TEST_WEAK_STORAGE === '1',
+});
+const bringBack = () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+};
+const website = createWebsiteService({
+  api: dbApi, getSetting: getSettingValue, saveSetting: saveSettingValue, codedError: catalog.codedError,
+  blockedMode: () => (isDemo() ? 'demo' : isSandbox() ? 'training' : null),
+  currentEmployee: () => session.getEmployee(),
+  github: {
+    get client() {
+      if (!githubClient) {
+        const testBase = githubTestBase();
+        githubClient = createGithubClient({
+          clientId: PROFILE.githubClientId || (!app.isPackaged ? process.env.AFUS_GITHUB_CLIENT_ID : '') || '',
+          ...(testBase ? { webBase: testBase, apiBase: `${testBase}/api` } : {}),
+        });
+      }
+      return githubClient;
+    },
+    store: websiteSecureStore,
+    // GitHub's page in the browser, the short code ready to paste
+    openPage: async (url, userCode) => {
+      if (!String(url).startsWith(`${githubClient.webBase}/`)) return;
+      if (userCode) clipboard.writeText(userCode);
+      await shell.openExternal(url);
+    },
+    // Back to the program once the shop agreed on GitHub
+    onConnected: bringBack,
+  },
+  cloudflare: {
+    get client() {
+      if (!cloudflareClient) {
+        const testBase = cloudflareTestBase();
+        cloudflareClient = createCloudflareClient({
+          clientId: PROFILE.cloudflareClientId || (!app.isPackaged ? process.env.AFUS_CLOUDFLARE_CLIENT_ID : '') || '',
+          scopes: Array.isArray(PROFILE.cloudflareScopes) && PROFILE.cloudflareScopes.length ? PROFILE.cloudflareScopes : undefined,
+          ...(testBase ? { dashBase: testBase, apiBase: `${testBase}/client/v4`, workerUrl: (name) => `${testBase}/w/${name}` } : {}),
+        });
+      }
+      return cloudflareClient;
+    },
+    store: websiteSecureStore,
+    ports: CLOUDFLARE_PORTS,
+    // Cloudflare's page in the browser (only Cloudflare's own address)
+    openPage: async (url) => {
+      if (!String(url).startsWith(`${cloudflareClient.dashBase}/oauth2/auth?`)) return;
+      await shell.openExternal(url);
+    },
+    onConnected: bringBack,
+    // The page the browser shows once it came back, in the shop's language
+    callbackPage: (kind) => cloudflareCallbackPage(kind, (getSettingValue('store_config') || {}).defaultLanguage),
+  },
+  // Own domain (optional): the providers Afus has affiliate links with (profile.json ›
+  // domainProviders); the shop buys its domain there, for itself
+  domain: {
+    providers: Array.isArray(PROFILE.domainProviders) && PROFILE.domainProviders.length ? PROFILE.domainProviders
+      : (!app.isPackaged && process.env.AFUS_DOMAIN_PROVIDERS_TEST ? (() => { try { return JSON.parse(process.env.AFUS_DOMAIN_PROVIDERS_TEST); } catch { return []; } })() : []),
+    // The provider's page in the shop's browser (the link was checked: https, the provider's own address)
+    openExternal: (url) => shell.openExternal(url),
+  },
+  // Create Website: the shop's pictures (images folder only), the log of each step (no key)
+  publish: {
+    readImage: (name) => {
+      const file = require('./services/imageService').safeImagePath(name);
+      return file && fs.existsSync(file) ? fs.readFileSync(file) : null;
+    },
+    log: (entry) => logService.write('info', `website ${JSON.stringify(entry)}`),
+    // The shop's API is https only; plain http only for the local test server (development)
+    allowHttp: !!cloudflareTestBase(),
+  },
+});
+// The website's orders come into SQLite by themselves while the program is open
+// (first a little after it starts, then when the last sync says it is time)
+function websiteOrdersTick() {
+  website.syncIfDue()
+    .then((r) => {
+      if (r?.reason && !['idle', 'later'].includes(r.reason)) logService.write('warn', `website orders sync: ${r.reason}`);
+      // New orders from the website: said at once (the owner can turn it off, Website › Settings › Messages)
+      if (r?.received > 0) notifyNewOrders(r.received);
+    })
+    .catch(() => logService.write('warn', 'website orders sync failed'))
+    .finally(() => {
+      // The own domain, when it is time to look again (its records, GitHub's certificate)
+      website.domainCheckIfDue().catch(() => logService.write('warn', 'website domain check failed'));
+      setTimeout(websiteOrdersTick, 60 * 1000).unref?.();
+    });
+}
+setTimeout(websiteOrdersTick, 20 * 1000).unref?.();
+function notifyNewOrders(n) {
+  try {
+    if (!website.view().tools?.notify || !Notification.isSupported()) return;
+    const lang = getShopSettingsForPrint().defaultLanguage;
+    const title = lang === 'fr' ? 'Nouvelle commande du site' : lang === 'en' ? 'New website order' : 'طلب جديد من الموقع';
+    const body = lang === 'fr' ? `${n} commande(s) à appeler pour confirmer.` : lang === 'en' ? `${n} order(s) to call and confirm.` : `${n} طلب جديد للاتصال والتأكيد.`;
+    const note = new Notification({ title, body, silent: false });
+    note.on('click', () => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) { win.show(); win.focus(); win.webContents.send('navigate', '/website-orders'); }
+    });
+    note.show();
+  } catch (e) {
+    logService.write('warn', `website notification: ${e?.message || e}`);
+  }
+}
+// What a WhatsApp message or a courier's tracking page opens (https and the known addresses only)
+const openOutside = (url, hosts) => {
+  let u;
+  try { u = new URL(String(url)); } catch { return false; }
+  if (u.protocol !== 'https:' || (hosts && !hosts.includes(u.hostname))) return false;
+  shell.openExternal(u.toString());
+  return true;
+};
+ipcMain.handle('website:getState', () => website.view());
+ipcMain.handle('website:preview', () => website.preview());
+ipcMain.handle('website:previewTheme', (_, args = {}) => website.previewTheme(args));
+ipcMain.handle('website:create', (_, args = {}) => website.create(args));
+ipcMain.handle('website:setTheme', (_, theme, options = {}) => website.setTheme(theme, { publish: !!options?.publish }));
+ipcMain.handle('website:setName', (_, name) => website.setName(name));
+ipcMain.handle('website:setDomain', (_, domain) => website.setDomain(domain));
+ipcMain.handle('website:removeDomain', () => website.removeDomain());
+ipcMain.handle('website:domainCheck', () => website.domainCheck());
+ipcMain.handle('website:domainRetry', () => website.domainRetry());
+ipcMain.handle('website:domainSearch', (_, args = {}) => website.domainSearch(args || {}));
+ipcMain.handle('website:domainOpenBuy', (_, args = {}) => website.domainOpenBuy(args || {}));
+// The shop's own Hostinger account: its key goes from the window to the main process once, then stays encrypted here
+ipcMain.handle('website:domainHostingerLink', (_, args = {}) => website.domainHostingerLink({ token: typeof args?.token === 'string' ? args.token : '' }));
+ipcMain.handle('website:domainHostingerForget', () => website.domainHostingerForget());
+ipcMain.handle('website:domainHostingerSetup', () => website.domainHostingerSetup());
+ipcMain.handle('website:update', () => website.update());
+ipcMain.handle('website:connect', (_, provider) => website.connect(provider));
+ipcMain.handle('website:githubStart', () => website.githubStart());
+ipcMain.handle('website:githubCancel', () => website.githubCancel());
+ipcMain.handle('website:githubDisconnect', () => website.githubDisconnect());
+ipcMain.handle('website:githubCheck', () => website.githubCheck());
+ipcMain.handle('website:githubOpen', async () => {
+  const url = website.githubFlowPage();
+  if (url && url.startsWith(`${website.githubClientBase()}/`)) await shell.openExternal(url);
+  return { opened: !!url };
+});
+// GitHub's own page where the shop sees (and can withdraw) the access given
+ipcMain.handle('website:githubManage', async () => {
+  await shell.openExternal(website.githubManageUrl());
+  return { opened: true };
+});
+ipcMain.handle('website:publish', () => website.publishSite());
+ipcMain.handle('website:setPublicInfo', (_, info = {}) => website.setPublicInfo(info));
+ipcMain.handle('website:setFeatures', (_, features = {}) => website.setFeatures(features));
+ipcMain.handle('website:recheck', () => website.recheckSite());
+ipcMain.handle('website:changes', () => website.changes());
+ipcMain.handle('website:orders', (_, args = {}) => website.orders(args || {}));
+ipcMain.handle('website:setSettings', (_, part = {}) => website.setSettings(part || {}));
+ipcMain.handle('website:blockPhone', (_, args = {}) => website.blockPhone(args || {}));
+ipcMain.handle('website:unblockPhone', (_, args = {}) => website.unblockPhone(args || {}));
+ipcMain.handle('website:blockSuggestions', () => website.blockSuggestions());
+ipcMain.handle('website:confirmMessage', (_, args = {}) => {
+  const m = website.confirmMessage(args || {});
+  return { ...m, opened: args?.open ? openOutside(m.url, ['wa.me']) : false };
+});
+ipcMain.handle('website:setTracking', (_, args = {}) => website.setTracking({ id: args?.id, number: args?.number }));
+ipcMain.handle('website:openTracking', (_, url) => openOutside(url));
+ipcMain.handle('website:yalidineLink', (_, args = {}) => website.yalidineLink(args || {}));
+ipcMain.handle('website:yalidineForget', () => website.yalidineForget());
+ipcMain.handle('website:yalidineSend', (_, args = {}) => website.yalidineSend(args || {}));
+ipcMain.handle('website:yalidineRefresh', (_, args = {}) => website.yalidineRefresh(args || {}));
+ipcMain.handle('website:stats', (_, args = {}) => website.stats(args || {}));
+ipcMain.handle('website:customers', (_, args = {}) => website.customers(args || {}));
+ipcMain.handle('website:confirmOrder', (_, args = {}) => website.confirmOrder(args || {}));
+ipcMain.handle('website:updateOrder', (_, args = {}) => website.updateOrder(args || {}));
+ipcMain.handle('website:orderChoices', (_, args = {}) => website.orderChoices(args || {}));
+// The shipping label of a website order (100 x 150 mm): HTML for the preview,
+// the system print dialog (any printer), or a PDF
+function websiteLabelHtml(id) {
+  const { labelHtml } = require('./website/orders/shippingLabel');
+  const order = website.labelData({ id });
+  const shop = getShopSettingsForPrint();
+  return labelHtml({
+    order,
+    lang: ['ar', 'fr', 'en'].includes(shop.defaultLanguage) ? shop.defaultLanguage : 'ar',
+    shop: { name: shop.businessName || '', phone: shop.businessPhone || '', logo: shop.shopLogoDataUri || '', currency: shop.currency || 'DZD' },
+    codes: { barcode: (t) => labelService.codeSvg('code128', t, { includeText: false, height: 14 }), qr: (t) => labelService.qrSvg(t) },
+  });
+}
+ipcMain.handle('website:labelHtml', (_, args = {}) => websiteLabelHtml(args?.id));
+ipcMain.handle('website:printLabel', async (_, args = {}) => {
+  const html = websiteLabelHtml(args?.id);
+  const win = printDocument.hiddenWindow(BrowserWindow, { javascript: false });
+  try {
+    await printDocument.loadHtml(win, html);
+    // The dialog: the shop chooses the printer (label printer 100 x 150 mm, or an office printer)
+    const result = await printDocument.printContents(win.webContents, {
+      silent: false, printBackground: true, margins: { marginType: 'none' }, pageSize: { width: 100000, height: 150000 },
+    });
+    if (result.success) website.labelPrinted({ id: args.id });
+    return result.success;
+  } catch (error) {
+    throw printerError(error, '');
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+});
+ipcMain.handle('website:saveLabelPdf', async (_, args = {}) => {
+  const html = websiteLabelHtml(args?.id);
+  const order = website.labelData({ id: args?.id });
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: shopT('dialog.saveLabels'), defaultPath: `${order.number || 'order'}.pdf`,
+    filters: [{ name: shopT('dialog.pdfFiles'), extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) return null;
+  const win = printDocument.hiddenWindow(BrowserWindow, { javascript: false });
+  try {
+    await printDocument.loadHtml(win, html);
+    const pdf = await win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, pageSize: { width: 100 / 25.4, height: 150 / 25.4 }, margins: { top: 0, bottom: 0, left: 0, right: 0 } });
+    await fs.promises.writeFile(filePath, pdf);
+    website.labelPrinted({ id: args.id });
+    return filePath;
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+});
+ipcMain.handle('website:customerHistory', (_, args = {}) => website.customerHistory(args || {}));
+ipcMain.handle('website:setOrderStatus', (_, args = {}) => website.setOrderStatus(args));
+ipcMain.handle('website:checkReturn', (_, args = {}) => website.checkReturn(args || {}));
+// The shop's own published website, in the browser (its address comes from GitHub Pages)
+ipcMain.handle('website:openSite', async () => {
+  const url = website.view().site.url;
+  // Always https (GitHub Pages); the local test server of development tests only
+  const testBase = githubTestBase();
+  const allowed = url && (/^https:\/\//.test(url) || (testBase && url.startsWith(`${testBase}/`)));
+  if (allowed) await shell.openExternal(url);
+  return { opened: !!allowed };
+});
+ipcMain.handle('website:cloudflareStart', () => website.cloudflareStart());
+ipcMain.handle('website:cloudflareCancel', () => website.cloudflareCancel());
+ipcMain.handle('website:cloudflareChoose', (_, accountId) => website.cloudflareChoose(accountId));
+ipcMain.handle('website:cloudflareDisconnect', () => website.cloudflareDisconnect());
+ipcMain.handle('website:cloudflareCheck', () => website.cloudflareCheck());
+ipcMain.handle('website:cloudflareOpen', async () => {
+  const url = website.cloudflareFlowPage();
+  if (url && url.startsWith(`${website.cloudflareDashBase()}/oauth2/auth?`)) await shell.openExternal(url);
+  return { opened: !!url };
+});
+ipcMain.handle('website:cloudflareManage', async () => {
+  await shell.openExternal(website.cloudflareManageUrl());
+  return { opened: true };
 });
 ipcMain.handle('dashboard:selling', (_, { range, since30 }) => ({
   best: dashboard.bestSellers(dbApi, range),
@@ -1360,10 +2086,11 @@ ipcMain.handle('dashboard:selling', (_, { range, since30 }) => ({
 }));
 ipcMain.handle('dashboard:series', (_, { range, bucket, offsetMinutes }) => dashboard.salesSeries(dbApi, range, bucket, offsetMinutes));
 ipcMain.handle('dashboard:stock', (_, { since30 }) => ({
-  outOfStock: dashboard.outOfStockSelling(dbApi, since30).slice(0, 10),
-  low: dashboard.runningLow(dbApi).slice(0, 10),
-  missingSizes: dashboard.missingSizes(dbApi, since30).slice(0, 10),
-  slow: dashboard.slowMovers(dbApi, since30, 10),
+  // Complete lists: everything to reorder or to put on sale
+  outOfStock: dashboard.outOfStockSelling(dbApi, since30),
+  low: dashboard.runningLow(dbApi),
+  missingSizes: dashboard.missingSizes(dbApi, since30),
+  slow: dashboard.slowMovers(dbApi, since30, -1),
   value: dashboard.stockValue(dbApi),
 }));
 ipcMain.handle('dashboard:cash', (_, { range, closuresSince }) => {
@@ -1384,7 +2111,7 @@ ipcMain.handle('dashboard:cash', (_, { range, closuresSince }) => {
   };
 });
 
-ipcMain.handle('db:reports:topProducts', (_, { startDate, endDate, limit = 10, employeeId }) => {
+ipcMain.handle('db:reports:topProducts', (_, { startDate, endDate, limit = -1, employeeId }) => {
   let query = `
     SELECT 
       si.product_id,
@@ -1407,7 +2134,8 @@ ipcMain.handle('db:reports:topProducts', (_, { startDate, endDate, limit = 10, e
     ORDER BY total_quantity DESC
     LIMIT ?
   `;
-  queryParams.push(limit);
+  // -1: every article sold in the period
+  queryParams.push(Number.isInteger(limit) && limit > 0 ? limit : -1);
 
   return runQuery(query, queryParams);
 });
@@ -1440,45 +2168,29 @@ ipcMain.handle('db:reports:salesByCategory', (_, { startDate, endDate, employeeI
   return runQuery(query, queryParams);
 });
 
-ipcMain.handle('db:reports:paymentMethods', (_, { startDate, endDate, employeeId }) => {
-  let query = `
-    SELECT 
-      p.method,
-      COUNT(*) as count,
-      SUM(p.amount) as total
-    FROM payments p
-    JOIN sales s ON p.sale_id = s.id
-    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
-  `;
-  const queryParams = [startDate, endDate];
+ipcMain.handle('db:reports:paymentMethods', (_, range) => salesStatsService.paymentMethods(dbApi, range || {}));
 
-  if (employeeId) {
-    query += ' AND s.employee_id = ?';
-    queryParams.push(employeeId);
-  }
-
-  query += ' GROUP BY p.method';
-
-  return runQuery(query, queryParams);
+// Sales journal for the accountant (services/accountingService.js): read, or saved as Excel.
+// columns: [{ key, label }] in the window's language.
+ipcMain.handle('reports:salesJournal', (_, range) => accountingService.salesJournal(dbApi, range || {}));
+ipcMain.handle('reports:exportSalesJournal', async (_, { range, columns, labels = {}, fileName } = {}) => {
+  const journal = accountingService.salesJournal(dbApi, range || {});
+  const cols = Array.isArray(columns) && columns.length ? columns : Object.keys(journal.rows[0] || { date: 1 }).map(key => ({ key, label: key }));
+  const rows = journal.rows.map(row => cols.map(c => (c.key === 'type' ? (labels[row.type] || row.type) : row[c.key] ?? '')));
+  rows.push(cols.map((c, i) => (i === 0 ? (labels.total || 'Total') : (journal.totals[c.key] ?? ''))));
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: shopT('dialog.saveJournal'),
+    defaultPath: fileName || 'sales-journal.xlsx',
+    filters: [{ name: shopT('dialog.excelFiles'), extensions: ['xlsx'] }],
+  });
+  if (canceled || !filePath) return null;
+  fs.writeFileSync(filePath, excelService.exportRows(cols.map(c => c.label), rows, labels.sheet || 'Journal'));
+  logSystemAction('export', 'Sales journal exported', { rows: journal.rows.length, range }, session.getEmployee()?.id || null);
+  return { filePath, rows: journal.rows.length, totals: journal.totals };
 });
 
 // Generate receipt number
-ipcMain.handle('db:generateReceiptNumber', () => {
-  const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-  const results = runQuery(`
-    SELECT receipt_number FROM sales 
-    WHERE receipt_number LIKE ?
-    ORDER BY receipt_number DESC LIMIT 1
-  `, [`${today}%`]);
-
-  let sequence = 1;
-  if (results.length > 0) {
-    const lastSequence = parseInt(results[0].receipt_number.slice(-4));
-    sequence = lastSequence + 1;
-  }
-
-  return `${today}${sequence.toString().padStart(4, '0')}`;
-});
+ipcMain.handle('db:generateReceiptNumber', () => nextReceiptNumber(dbApi));
 
 // ==========================================
 // RETURNS
@@ -1519,69 +2231,68 @@ ipcMain.handle('db:returns:getItems', (_, returnId) => {
 
 ipcMain.handle('db:returns:create', (_, returnData) => runTransaction(() => {
   // One transaction: the return, its lines, the stock and the sale status are
-  // saved together, or not at all
-  runInsert(`
-    INSERT INTO returns (id, sale_id, return_number, total_refund, reason, employee_id)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `, [returnData.id, returnData.sale_id, returnData.return_number, returnData.total_refund, returnData.reason, returnData.employee_id]);
-
-  // Insert return items and restock the exact variant that was sold
-  {
-    for (const item of returnData.items) {
-      const saleItem = item.sale_item_id
-        ? getOne('SELECT product_id, variant_id, product_name, variant_label, quantity FROM sale_items WHERE id = ?', [item.sale_item_id])
-        : null;
-      // Never more pieces back than were sold on the line (earlier returns included)
-      if (saleItem) {
-        const already = getOne('SELECT IFNULL(SUM(quantity), 0) AS n FROM return_items WHERE sale_item_id = ?', [item.sale_item_id]).n;
-        const left = (Number(saleItem.quantity) || 0) - already;
-        if (Number(item.quantity) > left) {
-          throw catalog.codedError('RETURN_TOO_MANY', {
-            product: saleItem.variant_label ? `${saleItem.product_name} (${saleItem.variant_label})` : saleItem.product_name,
-            left: Math.max(0, left),
-          });
-        }
-      }
-      const variantId = item.variant_id || (saleItem && saleItem.variant_id) || null;
-      const productId = item.product_id || (saleItem && saleItem.product_id);
-
-      runInsert(`
-        INSERT INTO return_items (id, return_id, sale_item_id, product_id, variant_id, quantity, refund_amount, condition)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [uuid(), returnData.id, item.sale_item_id, productId, variantId, item.quantity, item.refund_amount, item.condition]);
-
-      // Restock if sellable
-      if (item.condition === 'sellable' && productId && getOne('SELECT id FROM products WHERE id = ?', [productId])) {
-        catalog.adjustStock(dbApi, {
-          productId,
-          variantId,
-          delta: item.quantity,
-          type: 'return',
-          reason: `Return: ${returnData.return_number}`,
-          employeeId: returnData.employee_id || null,
-        });
-      }
-    }
-  }
-
-  // Check if sale is fully or partially refunded
-  const sale = getOne('SELECT total FROM sales WHERE id = ?', [returnData.sale_id]);
-  const allReturns = runQuery('SELECT SUM(total_refund) as total_returned FROM returns WHERE sale_id = ?', [returnData.sale_id]);
-  const totalReturned = allReturns[0]?.total_returned || 0;
-
-  // Get original sale items total (before any discounts)
-  const saleItems = runQuery('SELECT SUM(quantity * unit_price) as items_total FROM sale_items WHERE sale_id = ?', [returnData.sale_id]);
-  const itemsTotal = saleItems[0]?.items_total || sale.total;
-
-  // Determine status: fully refunded if total returned >= items total
-  const newStatus = totalReturned >= itemsTotal ? 'refunded' : 'partially_refunded';
-
-  runInsert('UPDATE sales SET status = ? WHERE id = ?', [newStatus, returnData.sale_id]);
-
-  logSystemAction('return_processed', `Processed Return: ${returnData.return_number}`, { returnId: returnData.id, saleId: returnData.sale_id, amount: returnData.total_refund }, returnData.employee_id);
-
-  return returnData;
+  // saved together, or not at all (rules in services/returnService.js)
+  const approvedBy = guard.checkReturn(dbApi, session.getEmployee(), returnData.approval);
+  const saved = returnService.createReturn(dbApi, { ...returnData, employee_id: returnData.employee_id || session.getEmployee().id });
+  if (approvedBy) logSystemAction('return_approved', `Return ${returnData.return_number} approved by ${approvedBy.name}`, { returnId: returnData.id, approvedBy: approvedBy.id }, session.getEmployee().id);
+  logSystemAction('return_processed', `Processed Return: ${returnData.return_number}`, { returnId: returnData.id, saleId: returnData.sale_id, amount: saved.total_refund, debtLowered: saved.credit_reduced || 0, refund: saved.store_credit ? 'store_credit' : 'cash' }, returnData.employee_id);
+  const { approval: _approval, ...result } = saved;
+  return result;
 }));
+
+// Loyalty points turned into an avoir card (services/loyaltyService.js)
+ipcMain.handle('loyalty:redeem', (_, data = {}) => runTransaction(() => {
+  const employee = session.getEmployee();
+  const card = loyaltyService.redeem(dbApi, { customerId: data.customer_id, points: data.points, employeeId: employee?.id || null }, returnService.createStoreCredit);
+  logSystemAction('loyalty_redeemed', `Loyalty: ${card.points} points -> ${card.amount}`, { customerId: data.customer_id, points: card.points, amount: card.amount, cardId: card.id }, employee?.id || null);
+  return card;
+}));
+
+// Exchanges (built on the returns, see services/exchangeService.js)
+const exchangeService = require('./services/exchangeService');
+function shopTax() {
+  const settings = getStoreSettings();
+  const rate = parseFloat(settings.taxRate) || 0;
+  const enabled = typeof settings.taxEnabled === 'boolean' ? settings.taxEnabled : rate > 0;
+  return { enabled, rate, inclusive: settings.taxType !== 'exclusive' };
+}
+const exchangeSummary = (p) => ({
+  quantity: p.quantity, credit: p.credit, new_unit_price: p.newUnitPrice, new_total: p.newTotal,
+  new_tax: p.newTax, difference: p.difference, new_label: p.newLabel,
+});
+ipcMain.handle('db:exchanges:preview', (_, input) => exchangeSummary(exchangeService.previewExchange(dbApi, input, shopTax())));
+ipcMain.handle('db:exchanges:create', (_, input) => {
+  const approvedBy = guard.checkReturn(dbApi, session.getEmployee(), input.approval);
+  const result = runTransaction(() => exchangeService.createExchange(dbApi, { ...input, employee_id: input.employee_id || session.getEmployee().id }, shopTax()));
+  if (approvedBy) logSystemAction('exchange_approved', `Exchange ${result.receipt_number} approved by ${approvedBy.name}`, { exchangeId: result.id, approvedBy: approvedBy.id }, session.getEmployee().id);
+  logSystemAction('exchange_processed', `Exchange ${result.original_receipt} -> ${result.receipt_number}`, result, input.employee_id || null);
+  SyncManager.triggerSync();
+  return result;
+});
+ipcMain.handle('db:exchanges:getBySale', (_, saleId) => exchangeService.exchangesOfSale(dbApi, saleId));
+
+// Stock count (services/stockCountService.js): the stock changes only on confirm
+const stockCounts = require('./services/stockCountService');
+ipcMain.handle('stockCount:current', () => {
+  const count = stockCounts.currentCount(dbApi);
+  return count ? stockCounts.summary(dbApi, count.id) : null;
+});
+ipcMain.handle('stockCount:start', (_, { categoryId = null, employeeId = null } = {}) => runTransaction(() => {
+  const count = stockCounts.startCount(dbApi, { categoryId, employeeId });
+  return stockCounts.summary(dbApi, count.id);
+}));
+ipcMain.handle('stockCount:scan', (_, { countId, code, quantity = 1 }) => runTransaction(() => stockCounts.scan(dbApi, countId, code, quantity)));
+ipcMain.handle('stockCount:setCounted', (_, { countId, lineId, counted }) => runTransaction(() => stockCounts.setCounted(dbApi, countId, lineId, counted)));
+ipcMain.handle('stockCount:removeLine', (_, { countId, lineId }) => runTransaction(() => stockCounts.removeLine(dbApi, countId, lineId)));
+ipcMain.handle('stockCount:summary', (_, countId) => stockCounts.summary(dbApi, countId));
+ipcMain.handle('stockCount:cancel', (_, countId) => runTransaction(() => stockCounts.cancelCount(dbApi, countId)));
+ipcMain.handle('stockCount:confirm', (_, { countId, reason, employeeId = null }) => {
+  const report = runTransaction(() => stockCounts.confirmCount(dbApi, countId, { reason, employeeId }));
+  logSystemAction('stock_count_confirmed', `Stock count confirmed: ${reason}`, { countId, shortage: report.shortage_pieces, surplus: report.surplus_pieces }, employeeId);
+  SyncManager.triggerSync();
+  return report;
+});
+ipcMain.handle('stockCount:list', (_, limit) => stockCounts.listCounts(dbApi, limit));
 
 // ================================================
 // PHASE 2: ADVANCED FEATURES
@@ -1869,6 +2580,9 @@ function getShopSettingsForPrint() {
   const { getImageBase64: imageAsBase64 } = require('./services/imageService');
   settings.shopLogoDataUri = settings.shopLogo ? imageAsBase64(settings.shopLogo) : null;
   settings.receiptPaperWidthMm = getPrinterSettings().receipt.paperWidthMm;
+  // Tickets and invoices printed in training say so in large letters
+  settings.training = isSandbox();
+  settings.demo = isDemo();
   return settings;
 }
 
@@ -1888,7 +2602,11 @@ function enrichSaleForPrint(sale) {
 function printerError(error, printerName) {
   const message = String(error && error.message || error);
   if (/deviceName|printer.*not found|no printer/i.test(message)) return catalog.codedError('PRINTER_NOT_FOUND', { name: printerName || '' });
-  return error;
+  // Already explained (e.g. no code on a label): keep it
+  if (/^[A-Z][A-Z0-9_]+\|/.test(message.replace(/^Error: /, ''))) return error;
+  // Anything else from the printer driver: say what to do, keep the detail in the log
+  console.error('Printing failed:', message);
+  return catalog.codedError('PRINT_FAILED', { name: printerName || '' });
 }
 
 /**
@@ -1919,7 +2637,7 @@ async function resolvePrinterOptions(options, kind) {
 const RECEIPT_PREVIEW_KEYS = [
   'businessName', 'businessAddress', 'businessCity', 'businessWilaya', 'businessPhone',
   'businessRc', 'businessTaxId', 'businessNis', 'businessAi', 'receiptHeader', 'receiptFooter',
-  'receiptShowBrand', 'receiptPaperWidthMm', 'taxName', 'taxType', 'taxEnabled', 'taxRate',
+  'receiptShowBrand', 'receiptTicketQr', 'receiptPaperWidthMm', 'taxName', 'taxType', 'taxEnabled', 'taxRate',
 ];
 function shopSettingsWith(overrides) {
   const settings = getShopSettingsForPrint();
@@ -1928,19 +2646,27 @@ function shopSettingsWith(overrides) {
   return settings;
 }
 
+// A customer's tickets in their own language (Customers › ticket language)
+function forCustomer(settings, sale) {
+  if (!sale || !sale.customer_id) return settings;
+  let lang = null;
+  try { lang = getOne('SELECT receipt_language FROM customers WHERE id = ?', [sale.customer_id])?.receipt_language; } catch { lang = null; }
+  return ['ar', 'fr', 'en'].includes(lang) ? { ...settings, defaultLanguage: lang } : settings;
+}
+
 ipcMain.handle('receipts:print', async (_, sale, overrides = {}) => {
   // overrides: printer settings being edited, and { shop } for the ticket text
   const { shop: shopOverrides, ...printerOverrides } = overrides || {};
   const printer = await resolvePrinterOptions({ ...getPrinterSettings().receipt, ...printerOverrides }, 'receipt');
   try {
-    return await receiptService.print(enrichSaleForPrint(sale), shopSettingsWith(shopOverrides), printer);
+    return await receiptService.print(enrichSaleForPrint(sale), forCustomer(shopSettingsWith(shopOverrides), sale), printer);
   } catch (error) {
     throw printerError(error, printer.savedName || printer.printerName);
   }
 });
 
 ipcMain.handle('receipts:getHtml', async (_, sale, overrides) => {
-  return receiptService.getHtml(enrichSaleForPrint(sale), shopSettingsWith(overrides));
+  return receiptService.getHtml(enrichSaleForPrint(sale), forCustomer(shopSettingsWith(overrides), sale));
 });
 
 ipcMain.handle('receipts:savePdf', async (_, sale) => {
@@ -1953,11 +2679,53 @@ ipcMain.handle('receipts:savePdf', async (_, sale) => {
     });
 
     if (dialogResult.canceled) return null;
-    return await receiptService.generatePdf(enrichSaleForPrint(sale), settings, dialogResult.filePath);
+    return await receiptService.generatePdf(enrichSaleForPrint(sale), forCustomer(settings, sale), dialogResult.filePath);
   } catch (error) {
     console.error('savePdf error:', error);
     throw error;
   }
+});
+
+// A4 invoice of a sale: data read again from the database (customer, lines,
+// payments, the TVA saved with the sale) and the shop's own legal numbers
+function saleForInvoice(saleId) {
+  const sale = getOne(`
+    SELECT s.*, c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email, c.address AS customer_address
+    FROM sales s LEFT JOIN customers c ON c.id = s.customer_id WHERE s.id = ?
+  `, [saleId]);
+  if (!sale) throw catalog.codedError('SALE_NOT_FOUND', {});
+  sale.items = runQuery('SELECT * FROM sale_items WHERE sale_id = ?', [saleId]);
+  sale.payments = runQuery('SELECT * FROM payments WHERE sale_id = ?', [saleId]);
+  return enrichSaleForPrint(sale);
+}
+ipcMain.handle('invoices:print', async (_, saleId) => {
+  const sale = saleForInvoice(saleId);
+  const html = receiptService.generateHtml(sale, { ...forCustomer(getShopSettingsForPrint(), sale), type: 'invoice' });
+  const win = printDocument.hiddenWindow(BrowserWindow, { javascript: false });
+  try {
+    await printDocument.loadHtml(win, html);
+    // The system dialog: an A4 invoice usually goes to an office printer, not the ticket printer
+    const result = await printDocument.printContents(win.webContents, { silent: false, printBackground: true, pageSize: 'A4' });
+    return result.success;
+  } catch (error) {
+    throw printerError(error, '');
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+});
+ipcMain.handle('invoices:savePdf', async (_, saleId) => {
+  const sale = saleForInvoice(saleId);
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: shopT('dialog.saveReceipt'),
+    defaultPath: `Facture_${sale.receipt_number}.pdf`,
+    filters: [{ name: shopT('dialog.pdfFiles'), extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) return null;
+  return receiptService.generatePdf(sale, { ...forCustomer(getShopSettingsForPrint(), sale), type: 'invoice' }, filePath);
+});
+ipcMain.handle('invoices:html', (_, saleId) => {
+  const sale = saleForInvoice(saleId);
+  return receiptService.generateHtml(sale, { ...forCustomer(getShopSettingsForPrint(), sale), type: 'invoice' });
 });
 
 // ==========================================
@@ -2007,6 +2775,13 @@ function articleCode(layout, { qrValue, barcode, sku }) {
 // free labels [{ code, symbology, title?, price?, quantity }] or { sample: true }
 function buildLabelData(items, layout = {}) {
   const settings = getStoreSettings();
+  // Articles on sale: the label shows the old price struck out and the new one
+  const promotions = layout.showSalePrice === false ? [] : runQuery('SELECT * FROM promotions WHERE is_active = 1');
+  const withSale = (label, product) => {
+    if (!product || !promotions.length) return label;
+    const sale = labelSalePrice(promotions, { productId: product.id, categoryId: product.category_id, price: label.price });
+    return sale === null ? label : { ...label, oldPrice: label.price, price: sale };
+  };
   const articleScope = layout.codeScope === 'article';
   const money = { currency: settings.currency, currencySymbol: settings.currencySymbol };
   const labels = [];
@@ -2043,7 +2818,7 @@ function buildLabelData(items, layout = {}) {
       if (!variant) throw catalog.codedError('VARIANT_GONE', { product: '' });
       const product = getOne('SELECT * FROM products WHERE id = ?', [variant.product_id]);
       const barcode = item.previewBarcode || variant.barcode;
-      labels.push({
+      labels.push(withSale({
         productName: product ? product.name : '',
         // Colour in the shop's language, like the ticket ("Noir" / "أسود")
         variantLabel: i18n.variantLabel(variant, i18n.normalizeLanguage(settings.defaultLanguage)),
@@ -2052,7 +2827,7 @@ function buildLabelData(items, layout = {}) {
         price: catalog.effectivePrice(product || {}, variant),
         ...money,
         quantity,
-      });
+      }, product));
     } else if (item.productId || item.variantId) {
       let productId = item.productId;
       if (!productId) productId = (getOne('SELECT product_id FROM product_variants WHERE id = ?', [item.variantId]) || {}).product_id;
@@ -2068,7 +2843,7 @@ function buildLabelData(items, layout = {}) {
         const min = getOne('SELECT MIN(price) AS p FROM product_variants WHERE product_id = ? AND is_active = 1 AND price IS NOT NULL', [product.id]);
         if (min && min.p !== null) price = min.p;
       }
-      labels.push({
+      labels.push(withSale({
         productName: product.name,
         variantLabel: '',
         sku: product.sku || barcode,
@@ -2076,7 +2851,7 @@ function buildLabelData(items, layout = {}) {
         price,
         ...money,
         quantity,
-      });
+      }, product));
     }
   }
   return labels;
@@ -2474,7 +3249,7 @@ ipcMain.handle('db:purchaseReturns:create', (_, data) => {
       runInsert(`
         INSERT INTO purchase_returns (id, return_number, purchase_order_id, supplier_id, total_amount, notes, status)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [id, returnNumber, purchase_order_id, supplier_id, totalAmount, notes, 'complated']);
+      `, [id, returnNumber, purchase_order_id, supplier_id, totalAmount, notes, 'completed']);
 
       // 2. Insert Items & Update Stock (returning to the supplier removes stock)
       items.forEach(item => {
@@ -2730,6 +3505,29 @@ ipcMain.handle('db:supplierInvoices:getByPoId', (_, poId) => {
 });
 
 // INTELLIGENCE & REPORTS (Phase 4)
+// Reservations with a deposit (services/reservationService.js)
+const reservations = require('./services/reservationService');
+ipcMain.handle('reservations:list', (_, params = {}) => reservations.listReservations(dbApi, params));
+ipcMain.handle('reservations:create', (_, data) => {
+  const actor = session.getEmployee();
+  const shift = shiftService.getCurrentShift(actor.id);
+  // The deposit goes into a drawer: one must be open
+  if (Number(data.deposit) > 0 && (data.deposit_method || 'cash') === 'cash' && !shift) throw catalog.codedError('SHIFT_REQUIRED', {});
+  const saved = runTransaction(() => reservations.createReservation(dbApi, { ...data, employee_id: actor.id, shift_id: shift?.id || null }));
+  logSystemAction('reservation_created', `Reservation ${saved.number}`, { id: saved.id, deposit: saved.deposit }, actor.id);
+  return saved;
+});
+ipcMain.handle('reservations:cancel', (_, { id, refund = 0 } = {}) => {
+  const actor = session.getEmployee();
+  if (Number(refund) > 0 && !shiftService.getCurrentShift(actor.id)) throw catalog.codedError('SHIFT_REQUIRED', {});
+  const saved = runTransaction(() => reservations.cancelReservation(dbApi, id, { refund, employeeId: actor.id }));
+  logSystemAction('reservation_cancelled', `Reservation ${saved.number} cancelled`, { id, refund }, actor.id);
+  return saved;
+});
+
+// What to order again, per colour / size (services/reorderService.js)
+ipcMain.handle('reorder:suggestions', (_, params = {}) => require('./services/reorderService').reorderSuggestions(dbApi, params));
+
 ipcMain.handle('db:reports:getLowStock', () => {
   return runQuery(`
     SELECT p.*, s.id as supplier_id, s.name as supplier_name 
@@ -3338,6 +4136,17 @@ async function getSettings() {
   return getStoreSettings();
 }
 
+// Quick start: articles with their sizes/colours from a sheet (services/productImportService.js)
+const productImport = require('./services/productImportService');
+ipcMain.handle('excel:importProducts', (_, rows) => {
+  const report = runTransaction(() => productImport.importProducts(dbApi, rows || [], {
+    skuSettings: getSettingValue('sku_settings') || {}, employeeId: session.getEmployee()?.id || null,
+  }));
+  logSystemAction('products_imported', `Imported ${report.imported.length} articles, ${report.rejected.length} rejected`, null, session.getEmployee()?.id || null);
+  SyncManager.triggerSync();
+  return report;
+});
+
 ipcMain.handle('excel:export', (_, { data, dataType }) => {
   const buffer = excelService.exportData(data, dataType);
   return Array.from(buffer);
@@ -3547,7 +4356,10 @@ ipcMain.handle('db:creditSales:getByCustomer', (_, customerId) => {
   `, [customerId]);
 });
 
-ipcMain.handle('db:creditSales:create', (_, creditSale) => runTransaction(() => {
+ipcMain.handle('db:creditSales:create', (_, creditSale) => runTransaction(() => createCreditSale(creditSale)));
+
+/** A customer's debt for one sale (inside the caller's transaction). */
+function createCreditSale(creditSale) {
   const invoiceNumber = creditSale.invoice_number || generateInvoiceNumber();
   const id = creditSale.id || uuid();
 
@@ -3577,7 +4389,7 @@ ipcMain.handle('db:creditSales:create', (_, creditSale) => runTransaction(() => 
   `, [creditSale.amount_due, creditSale.customer_id]);
 
   return { ...creditSale, id, invoice_number: invoiceNumber, due_date: dueDate };
-}));
+}
 
 ipcMain.handle('db:creditSales:update', (_, creditSale) => {
   runInsert(`

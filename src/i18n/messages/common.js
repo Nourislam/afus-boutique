@@ -26,6 +26,7 @@ export default {
     'nav.employees': ['Employees', 'Employés', 'العمال'],
     'nav.reports': ['Reports', 'Rapports', 'التقارير'],
     'nav.settings': ['Settings', 'Paramètres', 'الإعدادات'],
+    'nav.website': ['My website', 'Mon site web', 'موقعي على الإنترنت'],
     'nav.closeShift': ['Close shift', 'Clôturer la caisse', 'غلق الصندوق'],
     'nav.logout': ['Log out', 'Déconnexion', 'خروج'],
 
@@ -39,6 +40,7 @@ export default {
     'common.save': ['Save', 'Enregistrer', 'حفظ'],
     'common.saveChanges': ['Save changes', 'Enregistrer', 'حفظ التغييرات'],
     'common.cancel': ['Cancel', 'Annuler', 'إلغاء'],
+    'common.useButtonAbove': ['Use the "{label}" button at the top.', 'Utilisez le bouton « {label} » en haut.', 'استعمل زر «{label}» في الأعلى.'],
     'common.close': ['Close', 'Fermer', 'إغلاق'],
     'common.confirm': ['Confirm', 'Confirmer', 'تأكيد'],
     'common.delete': ['Delete', 'Supprimer', 'حذف'],
@@ -49,6 +51,8 @@ export default {
     'common.search': ['Search…', 'Rechercher…', 'بحث…'],
     'common.select': ['Select…', 'Choisir…', 'اختر…'],
     'common.selectDate': ['Select date', 'Choisir une date', 'اختر التاريخ'],
+    'common.previous': ['Previous', 'Précédent', 'السابق'],
+    'common.erase': ['Erase', 'Effacer', 'مسح آخر رقم'],
     'common.next': ['Next', 'Suivant', 'التالي'],
     'common.back': ['Back', 'Retour', 'رجوع'],
     'common.yes': ['Yes', 'Oui', 'نعم'],
@@ -115,6 +119,7 @@ export default {
     'status.completed': ['Completed', 'Terminée', 'مكتملة'],
     'status.pending': ['Pending', 'En attente', 'معلّقة'],
     'status.cancelled': ['Cancelled', 'Annulée', 'ملغاة'],
+    'status.voided': ['Voided', 'Annulée', 'ملغاة'],
     'status.refunded': ['Refunded', 'Remboursée', 'مسترجعة'],
     'status.partially_refunded': ['Partly refunded', 'Remboursée en partie', 'مسترجعة جزئياً'],
     'status.paid': ['Paid', 'Payée', 'مدفوعة'],
@@ -140,4 +145,5 @@ export default {
     'titlebar.synced': ['Synced', 'Synchronisé', 'متزامن'],
     'titlebar.offline': ['Offline', 'Hors ligne', 'بدون اتصال'],
     'titlebar.syncError': ['Sync error', 'Erreur de synchro', 'خطأ في المزامنة'],
+    'nav.websiteOrders': ["Website orders", "Commandes du site", "طلبات الموقع"],
 };

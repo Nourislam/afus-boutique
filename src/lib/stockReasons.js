@@ -18,6 +18,8 @@ const PATTERNS = [
     [/^Sale #(.+)$/, 'stock.reason.sale'],
     [/^Bundle Sale: (.+) \(Sale #(.+)\)$/, 'stock.reason.bundleSale'],
     [/^Return: (.+)$/, 'stock.reason.customerReturn'],
+    [/^Exchange #(\S+) \((.+)\)$/, 'stock.reason.exchange'],
+    [/^Stock count: (.+)$/, 'stock.reason.stockCount'],
     [/^Return #(.+)$/, 'stock.reason.supplierReturn'],
     [/^GRN: (.+)$/, 'stock.reason.receiving'],
     [/^Received PO #(.+)$/, 'stock.reason.purchaseOrder'],

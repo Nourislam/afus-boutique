@@ -6,7 +6,8 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { toast } from '../ui/Toast';
-import { AlertTriangle, PackagePlus } from 'lucide-react';
+import { AlertTriangle, PackagePlus, CheckCircle } from 'lucide-react';
+import { variantLabel } from '../../lib/clothing';
 
 export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
     const [lowStockItems, setLowStockItems] = useState([]);
@@ -25,26 +26,25 @@ export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
     const loadLowStock = async () => {
         setLoading(true);
         try {
-            const [lowStockData, suppliersData] = await Promise.all([
-                window.electronAPI.reports.getLowStock(),
+            const [suggestions, suppliersData] = await Promise.all([
+                window.electronAPI.reports.reorderSuggestions(),
                 window.electronAPI.suppliers.getAll()
             ]);
-
-            console.log('DEBUG SmartReorder: Loaded suppliers:', suppliersData);
-
-            // Add recommended reorder quantity (up to max_stock or +10 if not set)
-            const processed = lowStockData.map(item => ({
+            // One row per colour / size (or simple article), with the quantity
+            // covering the next 30 days of sales
+            const processed = suggestions.map(item => ({
                 ...item,
-                reorder_qty: item.max_stock_level ? (item.max_stock_level - item.stock_quantity) : 10,
-                // If supplier is missing, keep it null for user selection
+                id: item.variant_id || item.product_id,
+                name: item.product_name,
+                label: variantLabel({ color: item.color, color_code: item.color_code, size: item.size }),
+                reorder_qty: item.quantity,
                 supplier_id: item.supplier_id || '',
                 supplier_name: item.supplier_name || ''
             }));
-
             setLowStockItems(processed);
             setSuppliers(suppliersData);
-            // Select all by default
-            setSelectedItems(new Set(processed.map(i => i.id)));
+            // Rows with a supplier are selected; the others need one first
+            setSelectedItems(new Set(processed.filter(i => i.supplier_id).map(i => i.id)));
         } catch (error) {
             console.error('Failed to load data:', error);
             toast.error(t('reorder.loadFailed'));
@@ -80,6 +80,8 @@ export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
     const handleGenerate = async () => {
         const itemsToOrder = lowStockItems.filter(i => selectedItems.has(i.id));
         if (itemsToOrder.length === 0) return toast.error(t('reorder.noneSelected'));
+        // Each order goes to one supplier: rows without one cannot be ordered
+        if (itemsToOrder.some(i => !i.supplier_id)) return toast.error(t('reorder.needSupplier'));
 
         setGenerating(true);
         try {
@@ -95,7 +97,9 @@ export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
                     };
                 }
                 suppliers[supplierId].items.push({
-                    product_id: item.id,
+                    product_id: item.product_id,
+                    variant_id: item.variant_id || null,
+                    variant_label: item.label || null,
                     product_name: item.name,
                     quantity: item.reorder_qty,
                     unit_cost: item.cost || 0,
@@ -126,7 +130,7 @@ export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
                 count++;
             }
 
-            toast.success(`${count} Purchase Orders Generated`);
+            toast.success(t('reorder.created', { n: count }));
             onComplete();
             onClose();
         } catch (error) {
@@ -190,7 +194,10 @@ export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
                                                     className="rounded border-zinc-600 bg-zinc-700"
                                                 />
                                             </td>
-                                            <td className="p-3 font-medium text-white">{item.name}</td>
+                                            <td className="p-3">
+                                                <span className="block font-medium text-white">{item.name}</span>
+                                                {item.label && <span className="block text-xs text-zinc-400">{item.label}</span>}
+                                            </td>
                                             <td className="p-3 text-zinc-400 text-xs">
                                                 {item.supplier_name ? (
                                                     // If already has supplier, just show text (simplify)
@@ -207,8 +214,8 @@ export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
                                                 )}
                                             </td>
                                             <td className="p-3 text-center font-mono text-xs">
-                                                <span className="text-red-400 font-bold">{item.stock_quantity}</span>
-                                                <span className="text-zinc-500"> / {item.min_stock_level} / {item.max_stock_level || '-'}</span>
+                                                <span className="text-red-400 font-bold">{item.stock}</span>
+                                                <span className="text-zinc-500"> / {item.min_stock || 0} · {t('reorder.sold30', { n: item.sold30 })}</span>
                                             </td>
                                             <td className="p-3">
                                                 <Input
@@ -243,5 +250,3 @@ export default function SmartReorderModal({ isOpen, onClose, onComplete }) {
         </Modal>
     );
 }
-
-import { CheckCircle } from 'lucide-react';

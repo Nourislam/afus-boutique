@@ -1,8 +1,10 @@
 import { t } from '../i18n';
 import { formatDate as formatLocalDate } from '../i18n/format';
 import { formatMoney } from '../i18n/format';
-import { useState, useEffect } from 'react';
-import { BarChart3, TrendingUp, Banknote, ShoppingCart, Shirt, RotateCcw, Percent } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { BarChart3, TrendingUp, Banknote, ShoppingCart, Shirt, RotateCcw, Percent, FileSpreadsheet } from 'lucide-react';
+import { Button } from '../components/ui/Button';
+import { translateError } from '../i18n/errors';
 import { Select } from '../components/ui/Select';
 import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -10,6 +12,13 @@ import { toast } from '../components/ui/Toast';
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, subMonths } from 'date-fns';
 import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { paymentLabel } from '../lib/payments';
+import { useVizColors, methodColor } from '../lib/vizColors';
+import { useAuthStore } from '../stores/authStore';
+import { useSettingsStore } from '../stores/settingsStore';
+import { effectiveFeatures } from '../lib/features';
+import { PERMISSIONS } from '../lib/permissions';
+import SeasonReport from '../components/reports/SeasonReport';
+import MarkdownManager from '../components/reports/MarkdownManager';
 
 // Built on each render so the labels follow the interface language
 const dateRanges = () => [
@@ -37,11 +46,42 @@ export default function ReportsPage() {
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('overview');
+    const viz = useVizColors();
+    // Purchase prices are the owner's; discounts need the promotions right (and module)
+    const role = useAuthStore(state => state.currentEmployee?.role);
+    const hasPermission = useAuthStore(state => state.hasPermission);
+    const savedFeatures = useSettingsStore(state => state.settings.features);
+    const features = useMemo(() => effectiveFeatures(savedFeatures), [savedFeatures]);
+    const canDiscount = !!features.promotions && hasPermission(PERMISSIONS.PROMOTIONS_MANAGE);
+    const owner = role === 'admin';
+    const tabs = [['overview', t('reports.overview')], ['articles', t('reports.articlesTab')], ['seasons', t('season.tab')],
+        ...(features.promotions ? [['markdowns', t('markdown.tab')]] : []), ['shifts', t('reports.shifts')]];
+    const byPeriod = !['seasons', 'markdowns'].includes(activeTab);
     const [shiftData, setShiftData] = useState([]);
 
     useEffect(() => {
         loadReportData();
     }, [dateRange]);
+
+    // Sales journal for the accountant (Excel): tickets and returns of the period
+    const [exporting, setExporting] = useState(false);
+    const exportJournal = async () => {
+        setExporting(true);
+        try {
+            const columns = ['date', 'type', 'number', 'customer', 'employee', 'amount_ht', 'tva', 'amount_ttc', 'cash', 'card', 'transfer', 'credit', 'gift_card', 'other']
+                .map(key => ({ key, label: t(`journal.${key}`) }));
+            const range = getDateRange();
+            const saved = await window.electronAPI.accounting.exportSalesJournal({
+                range, columns, fileName: `${t('journal.file')}-${range.startDate.slice(0, 10)}.xlsx`,
+                labels: { sale: t('journal.sale'), return: t('journal.return'), total: t('journal.total'), sheet: t('journal.file') },
+            });
+            if (saved) toast.success(t('reports.journalSaved', { n: saved.rows }));
+        } catch (error) {
+            toast.error(translateError(error));
+        } finally {
+            setExporting(false);
+        }
+    };
 
     const getDateString = (date) => {
         return date.toISOString().replace('T', ' ').slice(0, 19);
@@ -92,7 +132,7 @@ export default function ReportsPage() {
             // Top Products
             let topData = [];
             try {
-                topData = await window.electronAPI.reports.topProducts({ ...range, limit: 10 });
+                topData = await window.electronAPI.reports.topProducts({ ...range });
             } catch (e) { console.error('Error fetching topProducts:', e); }
 
             // Category Data
@@ -140,12 +180,11 @@ export default function ReportsPage() {
     const paymentsTotal = paymentMethods.reduce((sum, m) => sum + (m.total || 0), 0);
     const categoryTotal = categoryData.reduce((sum, c) => sum + (c.value || 0), 0);
     const topTotal = topProducts.reduce((sum, p) => sum + (p.total_revenue || 0), 0);
-    const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#0ea5e9', '#a855f7', '#14b8a6', '#ef4444'];
 
     const kpis = [
         { icon: Banknote, label: t('reports.revenue'), value: formatCurrency(stats.total_revenue), sub: stats.total_refunds > 0 ? t('reports.netAfterReturns', { amount: formatCurrency(stats.net_revenue) }) : null, tone: 'text-white' },
         { icon: TrendingUp, label: t('reports.profit'), value: formatCurrency(stats.total_profit), sub: t('reports.marginN', { n: stats.margin_percent || 0 }), tone: stats.total_profit >= 0 ? 'text-emerald-400' : 'text-rose-400' },
-        { icon: ShoppingCart, label: t('reports.transactions'), value: stats.total_transactions, sub: t('reports.avgTicket', { amount: formatCurrency(stats.average_sale) }) },
+        { icon: ShoppingCart, label: t('reports.transactions'), value: stats.total_transactions, sub: t('reports.avgTicket', { amount: formatCurrency(Math.round(stats.average_sale || 0)) }) },
         { icon: Shirt, label: t('shift.pieces'), value: stats.items_sold || 0, sub: stats.total_transactions ? t('reports.perTicket', { n: ((stats.items_sold || 0) / stats.total_transactions).toFixed(1) }) : null },
         { icon: RotateCcw, label: t('reports.returns'), value: formatCurrency(stats.total_refunds), sub: t('reports.returnsCount', { n: stats.refunds_count || 0 }), tone: stats.total_refunds > 0 ? 'text-amber-300' : '' },
         { icon: Percent, label: t('reports.discounts'), value: formatCurrency(stats.total_discount), sub: stats.total_tax > 0 ? t('reports.tvaCollected', { amount: formatCurrency(stats.total_tax) }) : null },
@@ -157,17 +196,28 @@ export default function ReportsPage() {
                 icon={BarChart3}
                 title={t('reports.title')}
                 subtitle={t('reports.subtitle')}
-                actions={<Select value={dateRange} onChange={setDateRange} options={dateRanges()} className="w-48" />}
+                actions={(
+                    <>
+                        <Button variant="secondary" onClick={exportJournal} loading={exporting} data-testid="reports-journal" title={t('reports.journalHint')}>
+                            <FileSpreadsheet className="w-4 h-4" /> {t('reports.journal')}
+                        </Button>
+                        {byPeriod && <Select value={dateRange} onChange={setDateRange} options={dateRanges()} className="w-48" />}
+                    </>
+                )}
             >
                 <div className="segmented">
-                    {[['overview', t('reports.overview')], ['articles', t('reports.articlesTab')], ['shifts', t('reports.shifts')]].map(([id, label]) => (
-                        <button key={id} type="button" className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)}>{label}</button>
+                    {tabs.map(([id, label]) => (
+                        <button key={id} type="button" className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)} data-testid={`reports-tab-${id}`}>{label}</button>
                     ))}
                 </div>
             </PageHeader>
 
             <div className="page-body">
-                {loading ? (
+                {activeTab === 'seasons' ? (
+                    <SeasonReport money={owner} canDiscount={canDiscount} />
+                ) : activeTab === 'markdowns' ? (
+                    <MarkdownManager money={owner} canDecide={canDiscount} />
+                ) : loading ? (
                     <div className="flex items-center justify-center h-64">
                         <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
                     </div>
@@ -192,17 +242,17 @@ export default function ReportsPage() {
                                             <AreaChart data={salesByDate} margin={{ left: 8, right: 8 }}>
                                                 <defs>
                                                     <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="0%" stopColor="#6366f1" stopOpacity={0.35} />
-                                                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+                                                        <stop offset="0%" stopColor={viz.series[0]} stopOpacity={0.18} />
+                                                        <stop offset="100%" stopColor={viz.series[0]} stopOpacity={0} />
                                                     </linearGradient>
                                                 </defs>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(113,113,122,0.25)" vertical={false} />
-                                                <XAxis dataKey="dateLabel" stroke="#52525b" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
-                                                <YAxis stroke="#52525b" tick={{ fill: '#a1a1aa', fontSize: 12 }} width={70} tickFormatter={(v) => new Intl.NumberFormat('fr-DZ', { notation: 'compact' }).format(v)} />
+                                                <CartesianGrid stroke={viz.grid} vertical={false} />
+                                                <XAxis dataKey="dateLabel" stroke={viz.axis} tick={{ fill: viz.text, fontSize: 12 }} tickLine={false} />
+                                                <YAxis stroke={viz.axis} tick={{ fill: viz.text, fontSize: 12 }} width={56} axisLine={false} tickLine={false} tickFormatter={(v) => new Intl.NumberFormat('fr-DZ', { notation: 'compact' }).format(v)} />
                                                 <Tooltip contentStyle={tooltipStyle} formatter={(value) => formatCurrency(value)} />
-                                                <Area type="monotone" dataKey="revenue" name={t('reports.revenue')} stroke="#6366f1" strokeWidth={2} fill="url(#rev)" />
-                                                <Area type="monotone" dataKey="profit" name={t('reports.profit')} stroke="#22c55e" strokeWidth={2} fill="transparent" />
-                                                <Legend />
+                                                <Area type="monotone" dataKey="revenue" name={t('reports.revenue')} stroke={viz.series[0]} strokeWidth={2} fill="url(#rev)" activeDot={{ r: 5, strokeWidth: 2 }} />
+                                                <Area type="monotone" dataKey="profit" name={t('reports.profit')} stroke={viz.series[1]} strokeWidth={2} fill="transparent" activeDot={{ r: 5, strokeWidth: 2 }} />
+                                                <Legend iconType="plainline" wrapperStyle={{ fontSize: 12, color: viz.text }} />
                                             </AreaChart>
                                         </ResponsiveContainer>
                                     </div>
@@ -215,14 +265,14 @@ export default function ReportsPage() {
                                 <h3 className="font-semibold mb-4">{t('reports.payments')}</h3>
                                 {paymentMethods.length > 0 ? (
                                     <div className="space-y-3">
-                                        {paymentMethods.map((method, index) => (
+                                        {paymentMethods.map((method) => (
                                             <div key={method.method}>
                                                 <div className="flex items-center justify-between text-sm mb-1">
                                                     <span className="font-medium">{paymentLabel(method.method)}</span>
                                                     <span className="tabular">{formatCurrency(method.total)} <span className="text-zinc-500">· {share(method.total, paymentsTotal)}%</span></span>
                                                 </div>
                                                 <div className="h-2 rounded-full bg-dark-tertiary overflow-hidden">
-                                                    <div className="h-full rounded-full" style={{ width: `${share(method.total, paymentsTotal)}%`, backgroundColor: COLORS[index % COLORS.length] }} />
+                                                    <div className="h-full rounded-full" style={{ width: `${share(method.total, paymentsTotal)}%`, backgroundColor: methodColor(viz, method.method) }} />
                                                 </div>
                                                 <p className="text-xs text-zinc-500 mt-0.5">{t('reports.saleCount', { n: method.count })}</p>
                                             </div>
@@ -239,11 +289,11 @@ export default function ReportsPage() {
                                 <h3 className="font-semibold mb-4">{t('reports.byCategory')}</h3>
                                 {categoryData.length > 0 ? (
                                     <div className="space-y-2.5">
-                                        {categoryData.map((c, index) => (
+                                        {categoryData.map((c) => (
                                             <div key={c.name} className="flex items-center gap-3 text-sm">
-                                                <span className="w-32 truncate">{c.name}</span>
+                                                <span className="w-32 truncate" title={c.name}>{c.name}</span>
                                                 <div className="flex-1 h-2.5 rounded-full bg-dark-tertiary overflow-hidden">
-                                                    <div className="h-full rounded-full" style={{ width: `${share(c.value, categoryTotal)}%`, backgroundColor: c.color && c.color !== '#6b7280' ? c.color : COLORS[index % COLORS.length] }} />
+                                                    <div className="h-full rounded-full" style={{ width: `${share(c.value, categoryTotal)}%`, backgroundColor: viz.series[0] }} />
                                                 </div>
                                                 <span className="w-32 text-end tabular">{formatCurrency(c.value)}</span>
                                                 <span className="w-10 text-end text-zinc-500 tabular">{share(c.value, categoryTotal)}%</span>
@@ -261,11 +311,11 @@ export default function ReportsPage() {
                                     <div className="h-56" dir="ltr">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <BarChart data={salesByDate}>
-                                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(113,113,122,0.25)" vertical={false} />
-                                                <XAxis dataKey="dateLabel" stroke="#52525b" tick={{ fill: '#a1a1aa', fontSize: 12 }} />
-                                                <YAxis stroke="#52525b" tick={{ fill: '#a1a1aa', fontSize: 12 }} allowDecimals={false} />
-                                                <Tooltip contentStyle={tooltipStyle} />
-                                                <Bar dataKey="transactions" name={t('reports.transactions')} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                                                <CartesianGrid stroke={viz.grid} vertical={false} />
+                                                <XAxis dataKey="dateLabel" stroke={viz.axis} tick={{ fill: viz.text, fontSize: 12 }} tickLine={false} />
+                                                <YAxis stroke={viz.axis} tick={{ fill: viz.text, fontSize: 12 }} allowDecimals={false} axisLine={false} tickLine={false} width={32} />
+                                                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(113,113,122,0.12)' }} />
+                                                <Bar dataKey="transactions" name={t('reports.transactions')} fill={viz.series[0]} radius={[4, 4, 0, 0]} maxBarSize={24} />
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>

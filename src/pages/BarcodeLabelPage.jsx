@@ -87,7 +87,7 @@ export default function BarcodeLabelPage() {
 
     return (
         <div className="h-full grid grid-cols-1 xl:grid-cols-12 content-start xl:content-stretch overflow-y-auto xl:overflow-hidden">
-            <div className="xl:col-span-7 xl:overflow-y-auto p-4 space-y-4 xl:border-e border-dark-border min-h-0">
+            <div className="xl:col-span-7 xl:overflow-y-auto p-4 space-y-4 xl:border-e border-dark-border xl:min-h-0">
                 <div className="card p-3 flex items-center gap-2 text-sm">
                     <span className="text-zinc-400">{t('labels.freeTypeFromSettings')}</span>
                     <span className="badge bg-dark-tertiary text-zinc-200 ltr">{spec.name}</span>

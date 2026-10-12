@@ -9,8 +9,10 @@ import ProductsPage from './pages/ProductsPage';
 import InventoryPage from './pages/InventoryPage';
 import EmployeesPage from './pages/EmployeesPage';
 import ReportsPage from './pages/ReportsPage';
+import WebsitePage, { WebsiteOrdersPage } from './pages/WebsitePage';
 import SettingsPage from './pages/SettingsPage';
 import DashboardPage from './pages/DashboardPage';
+import ManagerApprovalDialog from './components/auth/ManagerApprovalDialog';
 import TransactionsPage from './pages/TransactionsPage';
 
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
@@ -36,6 +38,8 @@ function App() {
     const [showSetupWizard, setShowSetupWizard] = useState(false);
     // Subscribing to the language re-renders the whole tree when it changes
     const { t } = useT();
+    // A new-order alert pressed: the website's orders page
+    useEffect(() => window.electronAPI?.website?.onNavigate?.((path) => { window.location.hash = `#${path}`; }), []);
 
     useEffect(() => {
         // Everything is local: no account, activation or internet connection
@@ -44,6 +48,15 @@ function App() {
             try {
                 await loadSettings();
                 await loadCatalogCustomization();
+                // After entering, restarting or leaving the demo shop (the screens reloaded)
+                try {
+                    const notice = sessionStorage.getItem('demo_notice');
+                    if (notice) {
+                        sessionStorage.removeItem('demo_notice');
+                        const key = { entered: 'demo.entered', reset: 'demo.resetDone', left: 'demo.left' }[notice];
+                        if (key) setTimeout(() => toast.success(translate(key)), 300);
+                    }
+                } catch { /* storage unavailable */ }
 
                 const settings = await window.electronAPI.settings.getAll();
                 // Handle both string 'true' and boolean true
@@ -150,12 +163,12 @@ function App() {
                         </ProtectedRoute>
                     } />
                     <Route path="/suppliers" element={
-                        <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
+                        <ProtectedRoute permission={PERMISSIONS.INVENTORY_ADJUST}>
                             <ModuleGate module="suppliers"><SuppliersPage /></ModuleGate>
                         </ProtectedRoute>
                     } />
                     <Route path="/purchase-orders" element={
-                        <ProtectedRoute permission={PERMISSIONS.INVENTORY_VIEW}>
+                        <ProtectedRoute permission={PERMISSIONS.INVENTORY_ADJUST}>
                             <ModuleGate module="purchaseOrders"><PurchaseOrdersPage /></ModuleGate>
                         </ProtectedRoute>
                     } />
@@ -183,6 +196,16 @@ function App() {
                             <ReportsPage />
                         </ProtectedRoute>
                     } />
+                    <Route path="/website" element={
+                        <ProtectedRoute permission={PERMISSIONS.SETTINGS_VIEW}>
+                            <ModuleGate module="website"><WebsitePage /></ModuleGate>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/website-orders" element={
+                        <ProtectedRoute permission={PERMISSIONS.SETTINGS_VIEW}>
+                            <ModuleGate module="website"><WebsiteOrdersPage /></ModuleGate>
+                        </ProtectedRoute>
+                    } />
                     <Route path="/settings" element={
                         <ProtectedRoute permission={PERMISSIONS.SETTINGS_VIEW}>
                             <SettingsPage />
@@ -205,6 +228,7 @@ function App() {
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </MainLayout>
+            <ManagerApprovalDialog />
             <Toaster />
         </HashRouter>
     );

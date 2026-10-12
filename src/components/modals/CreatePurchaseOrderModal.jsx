@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Modal, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { DatePicker } from '../ui/DatePicker';
 import { Select } from '../ui/Select';
 import { Search, Trash2 } from 'lucide-react';
 import { toast } from '../ui/Toast';
@@ -11,7 +12,7 @@ import { translateError } from '../../i18n/errors';
 import { variantLabel } from '../../lib/clothing';
 import { useTaxEnabled } from '../../lib/useTaxEnabled';
 
-export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }) {
+export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete, initialItems = null }) {
     const taxOn = useTaxEnabled();
     const [suppliers, setSuppliers] = useState([]);
     const [products, setProducts] = useState([]);
@@ -37,7 +38,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
             setVariantResults([]);
             return undefined;
         }
-        window.electronAPI.catalog.searchVariants(searchQuery, 20)
+        window.electronAPI.catalog.searchVariants(searchQuery)
             .then(rows => { if (!cancelled) setVariantResults(rows); })
             .catch(() => { if (!cancelled) setVariantResults([]); });
         return () => { cancelled = true; };
@@ -52,14 +53,15 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                 supplier_id: '',
                 expected_date: '',
                 notes: '',
-                items: [],
+                // Lines prepared by the caller (sold-out colours/sizes from the home screen), empty otherwise
+                items: initialItems ? initialItems.map(item => ({ ...item })) : [],
                 tax_rate: 0,
                 discount_type: 'fixed',
                 discount_value: 0,
                 shipping_cost: 0
             });
         }
-    }, [isOpen]);
+    }, [isOpen, initialItems]);
 
     const loadData = async () => {
         try {
@@ -187,7 +189,7 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
     const filteredProducts = products.filter(p => !(p.variant_count > 0) && (
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.sku?.toLowerCase().includes(searchQuery.toLowerCase())
-    )).slice(0, 5);
+    ));
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={t('po.newTitle')} size="xl">
@@ -205,11 +207,11 @@ export default function CreatePurchaseOrderModal({ isOpen, onClose, onComplete }
                             />
                         </div>
                         <div>
-                            <label className="block text-sm text-zinc-400 mb-1">{t('po.expected')}</label>
-                            <Input
-                                type="date"
+                            <DatePicker
+                                label={t('po.expected')}
                                 value={formData.expected_date}
-                                onChange={e => setFormData({ ...formData, expected_date: e.target.value })}
+                                onChange={(v) => setFormData({ ...formData, expected_date: v })}
+                                clearable
                             />
                         </div>
                     </div>

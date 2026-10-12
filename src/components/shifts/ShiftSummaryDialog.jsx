@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { translateError } from '../../i18n/errors';
 import { Banknote, Receipt, AlertCircle, Clock, Shirt, Calculator, LogOut, CheckCircle2 } from 'lucide-react';
 import { toast } from '../ui/Toast';
 import { Button } from '../ui/Button';
@@ -6,6 +7,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { formatMoney, formatDate, currencySymbolFor } from '../../i18n/format';
 import { t, currentLanguage } from '../../i18n';
+import { useEscape } from '../../hooks/useEscape';
 
 // Algerian notes and coins, for counting the drawer
 const DENOMINATIONS = [2000, 1000, 500, 200, 100, 50, 20, 10, 5];
@@ -32,6 +34,10 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
     const [revealed, setRevealed] = useState(false);
     const [notes, setNotes] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    // Escape = cancel (not while the drawer is being closed)
+    useEscape(() => { if (!submitting) onClose?.(); });
+    // Closing report (Z) printed on the ticket printer once the drawer is closed
+    const [printZ, setPrintZ] = useState(true);
     const currentEmployee = useAuthStore(state => state.currentEmployee);
     const settings = useSettingsStore(state => state.settings);
 
@@ -61,8 +67,13 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                 closingCash: parseFloat(closingCash),
                 notes: [notes, byOther ? t('shift.closedByNote', { name: currentEmployee.name }) : ''].filter(Boolean).join(' — '),
                 closedBy: currentEmployee?.id,
+                // The detail of the notes and coins counted, kept with the drawer
+                cashCount: showCounter ? counts : null,
             });
             toast.success(t('shift.closed'));
+            if (printZ) {
+                try { await window.electronAPI.shifts.printZ(shiftId); } catch (error) { toast.error(t('z.printFailed', { error: translateError(error) })); }
+            }
             window.dispatchEvent(new Event('pos:shift-changed'));
             onLogout();
         } catch {
@@ -136,6 +147,9 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                             {stats.total_cash_refunds > 0 && (
                                 <div className="flex justify-between"><span className="text-zinc-400">{t('shift.refunds')}</span><span className="tabular text-red-400">- {formatMoney(stats.total_cash_refunds)}</span></div>
                             )}
+                            {stats.total_expenses > 0 && (
+                                <div className="flex justify-between"><span className="text-zinc-400">{t('expense.inDrawer')}</span><span className="tabular text-red-400">- {formatMoney(stats.total_expenses)}</span></div>
+                            )}
                             <div className="h-px bg-dark-border" />
                             <div className="flex justify-between text-base font-bold">
                                 <span>{t('shift.expectedCash')}</span>
@@ -196,8 +210,13 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="input h-20 resize-none py-2" placeholder={t('shift.notesPlaceholder')} />
                         </div>
 
+                        <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer select-none">
+                            <input type="checkbox" checked={printZ} onChange={(e) => setPrintZ(e.target.checked)} className="w-4 h-4" data-testid="shift-print-z" />
+                            {t('z.printOnClose')}
+                        </label>
+
                         <div className="flex flex-col gap-2">
-                            <Button onClick={handleCloseShift} loading={submitting} disabled={closingCash === ''} className="w-full">
+                            <Button onClick={handleCloseShift} loading={submitting} disabled={closingCash === ''} className="w-full" data-testid="shift-close">
                                 {!revealed ? t('shift.checkCount') : mode === 'logout' ? t('shift.closeAndLogout') : t('shift.closeDrawer')}
                             </Button>
                             <div className="flex gap-2">

@@ -2,7 +2,7 @@ import { t } from '../i18n';
 import { translateError } from '../i18n/errors';
 import { formatDate as formatLocalDate, formatMoney } from '../i18n/format';
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, UserCog, Shield, ShieldCheck, User, Clock, Receipt, ShoppingBag, Banknote } from 'lucide-react';
+import { Plus, Edit2, Trash2, UserCog, Shield, ShieldCheck, User, Clock, Receipt, ShoppingBag, Banknote, Printer } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { formatDuration } from '../components/shifts/ShiftSummaryDialog';
 import { Button } from '../components/ui/Button';
@@ -16,6 +16,7 @@ import { useAuthStore } from '../stores/authStore';
 import { v4 as uuid } from 'uuid';
 import { ExcelImport } from '../components/ui/ExcelImport';
 import { FileSpreadsheet } from 'lucide-react';
+import CashierRights from '../components/employees/CashierRights';
 
 const roleIcons = {
     admin: ShieldCheck,
@@ -55,6 +56,14 @@ function Stat({ label, value, tone = '' }) {
 }
 
 /** Every drawer of the period: who, when, expected and counted cash. */
+const printZ = async (shiftId) => {
+    try {
+        await window.electronAPI.shifts.printZ(shiftId);
+    } catch (error) {
+        toast.error(t('z.printFailed', { error: translateError(error) }));
+    }
+};
+
 function DrawerHistory({ shifts }) {
     if (!shifts.length) return <p className="text-center text-zinc-500 py-12">{t('employees.noDrawers')}</p>;
     return (
@@ -70,6 +79,7 @@ function DrawerHistory({ shifts }) {
                         <th>{t('shift.expectedCash')}</th>
                         <th>{t('shift.closingCash')}</th>
                         <th>{t('employees.cashDiff')}</th>
+                        <th><span className="sr-only">{t('z.print')}</span></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -86,6 +96,14 @@ function DrawerHistory({ shifts }) {
                                 <td className="tabular">{formatMoney(stats.expected_cash || 0)}</td>
                                 <td className="tabular">{shift.closing_cash === null || shift.closing_cash === undefined ? '—' : formatMoney(shift.closing_cash)}</td>
                                 <td className={`tabular font-medium ${diff === null || diff === undefined ? '' : diffTone(diff)}`}>{diff === null || diff === undefined ? '—' : signedMoney(diff)}</td>
+                                <td>
+                                    {/* The closing report (Z) again */}
+                                    {shift.end_time && (
+                                        <Button size="sm" variant="ghost" onClick={() => printZ(shift.id)} title={t('z.print')} aria-label={t('z.print')} data-testid="print-z">
+                                            <Printer className="w-4 h-4" />
+                                        </Button>
+                                    )}
+                                </td>
                             </tr>
                         );
                     })}
@@ -206,7 +224,7 @@ export default function EmployeesPage() {
             >
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="segmented">
-                        {['team', 'drawers'].map(id => (
+                        {['team', 'drawers', ...(isAdmin() ? ['rights'] : [])].map(id => (
                             <button key={id} type="button" className={view === id ? 'active' : ''} onClick={() => setView(id)}>{t(`employees.view.${id}`)}</button>
                         ))}
                     </div>
@@ -243,6 +261,8 @@ export default function EmployeesPage() {
                     </div>
                 ) : view === 'drawers' ? (
                     <DrawerHistory shifts={history} />
+                ) : view === 'rights' ? (
+                    <CashierRights />
                 ) : filteredEmployees.length === 0 ? (
                     <EmptyState icon={UserCog} title={t('employees.none')} description={t('employees.addHint')} />
                 ) : (

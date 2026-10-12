@@ -52,6 +52,8 @@ export function NumPad({ value, onChange, onEnter, maxLength = 10 }) {
                 type="button"
                 onClick={handleBackspace}
                 className="numpad-btn numpad-btn-danger"
+                aria-label={t('common.erase')}
+                title={t('common.erase')}
             >
                 <Delete className="w-6 h-6" />
             </button>
@@ -66,6 +68,8 @@ export function NumPad({ value, onChange, onEnter, maxLength = 10 }) {
                 type="button"
                 onClick={onEnter}
                 className="numpad-btn numpad-btn-action"
+                aria-label={t('common.confirm')}
+                title={t('common.confirm')}
             >
                 <CornerDownLeft className="w-6 h-6" />
             </button>

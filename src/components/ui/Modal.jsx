@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
+import { t } from '../../i18n';
 
 // Dialogs open one above the other (a photo preview over the article form):
 // Escape closes only the one on top
@@ -42,6 +43,9 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', showClose
     return (
         <div
             className="modal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label={typeof title === 'string' ? title : undefined}
             onMouseDown={(e) => { downOnOverlay.current = e.target === e.currentTarget; }}
             onClick={(e) => { if (closeOnOverlay && downOnOverlay.current && e.target === e.currentTarget) onClose?.(); }}
         >
@@ -55,7 +59,8 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', showClose
                             type="button"
                             onClick={onClose}
                             className="p-2 -me-2 rounded-lg hover:bg-dark-tertiary transition-colors"
-                            aria-label="close"
+                            aria-label={t('common.close')}
+                            title={t('common.close')}
                         >
                             <X className="w-5 h-5 text-zinc-400" />
                         </button>

@@ -5,6 +5,7 @@ import { formatMoney } from '../i18n/format';
 import { useState, useEffect, useContext } from 'react';
 import { Gift, Plus, Search, CreditCard, RefreshCw, History, Trash2, Calendar, User, Banknote, Printer as PrinterIcon } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { DatePicker } from '../components/ui/DatePicker';
 import { Input } from '../components/ui/Input';
 import { Modal, ModalBody } from '../components/ui/Modal';
 import { Select } from '../components/ui/Select';
@@ -351,11 +352,11 @@ export default function GiftCardsPage() {
                                     value={formData.initial_balance}
                                     onChange={(e) => setFormData({ ...formData, initial_balance: e.target.value })}
                                 />
-                                <Input
+                                <DatePicker
                                     label={t('gift.expiry')}
-                                    type="date"
                                     value={formData.expires_at}
-                                    onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
+                                    onChange={(v) => setFormData({ ...formData, expires_at: v })}
+                                    clearable
                                 />
                                 <div className="form-group">
                                     <Select

@@ -5,6 +5,17 @@ const { BrowserWindow } = require('electron');
 const { translator, formatMoney, formatDate, variantLabel, paymentLabel } = require('../i18n');
 const { loadHtml, hiddenWindow, printContents } = require('./printDocument');
 const { BRAND } = require('../brand');
+const { ticketCode } = require('../shared/ticketCode.mjs');
+
+/** QR of the ticket (scanned later for a return or an exchange), or ''. */
+function ticketQr(receiptNumber) {
+    if (!receiptNumber) return '';
+    try {
+        return require('bwip-js').toSVG({ bcid: 'qrcode', text: ticketCode(receiptNumber), eclevel: 'M', paddingwidth: 0, paddingheight: 0 });
+    } catch {
+        return '';
+    }
+}
 
 // A sale keeps only its TVA amount (not the rate, the name or "included / added"
 // at the time), so documents name it plainly instead of using today's settings
@@ -61,7 +72,7 @@ class ReceiptService {
             const docType = settings.type || 'receipt';
             let pageConfig;
 
-            if (docType === 'purchase_order' || docType === 'quotation') {
+            if (docType === 'purchase_order' || docType === 'quotation' || docType === 'invoice') {
                 // A4 size for formal documents
                 pageConfig = {
                     pageSize: 'A4',
@@ -142,7 +153,7 @@ class ReceiptService {
             ['legal.nif', storeSettings.businessTaxId],
             ['legal.nis', storeSettings.businessNis],
             ['legal.ai', storeSettings.businessAi],
-        ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${T(k)}: ${esc(v)}`).join(' · ');
+        ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${T(k)}: <bdi dir="ltr">${esc(v)}</bdi>`).join(' · ');
 
         const dateStr = formatDate(data.created_at, T.lang, false);
 
@@ -179,7 +190,7 @@ class ReceiptService {
                         <div class="info-box-content">
                             <div class="company-name">${esc(data.supplier_name || T('doc.supplierDefault'))}</div>
                             ${data.supplier_address ? `<div class="detail">${data.supplier_address}</div>` : ''}
-                            ${data.supplier_phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> ${esc(data.supplier_phone)}</div>` : ''}
+                            ${data.supplier_phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> <bdi dir="ltr">${esc(data.supplier_phone)}</bdi></div>` : ''}
                             ${data.supplier_email ? `<div class="detail"><strong>${T('doc.email')}:</strong> ${esc(data.supplier_email)}</div>` : ''}
                             ${data.supplier_contact_person ? `<div class="detail"><strong>${T('doc.contact')}:</strong> ${esc(data.supplier_contact_person)}</div>` : ''}
                             ${data.supplier_website ? `<div class="detail"><strong>${T('doc.website')}:</strong> ${esc(data.supplier_website)}</div>` : ''}
@@ -190,8 +201,8 @@ class ReceiptService {
                         <div class="info-box-content">
                             <div class="company-name">${settings.name}</div>
                             <div class="detail">${settings.address}</div>
-                            ${settings.phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> ${esc(settings.phone)}</div>` : ''}
-                            ${settings.email ? `<div class="detail"><strong>${T('doc.email')}:</strong> ${esc(settings.email)}</div>` : ''}
+                            ${settings.phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> <bdi dir="ltr">${esc(settings.phone)}</bdi></div>` : ''}
+                            ${settings.email ? `<div class="detail"><strong>${T('doc.email')}:</strong> <bdi dir="ltr">${esc(settings.email)}</bdi></div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -242,6 +253,30 @@ class ReceiptService {
                     </div>
                 </div>
             `;
+        } else if (type === 'invoice') {
+            // A4 invoice of a sale: only the data saved with the sale and the
+            // shop's own legal numbers (nothing is made up)
+            docTitle = T('doc.invoice');
+            docNumber = data.receipt_number || data.id?.slice(0, 8);
+            supplierSection = data.customer_name ? `
+                <div class="info-grid">
+                    <div class="info-box">
+                        <div class="info-box-header">${T('doc.billTo')}</div>
+                        <div class="info-box-content">
+                            <div class="company-name">${esc(data.customer_name)}</div>
+                            ${data.customer_address ? `<div class="detail">${esc(data.customer_address)}</div>` : ''}
+                            ${data.customer_phone ? `<div class="detail"><strong>${T('doc.phone')}:</strong> <bdi dir="ltr">${esc(data.customer_phone)}</bdi></div>` : ''}
+                            ${data.customer_email ? `<div class="detail"><strong>${T('doc.email')}:</strong> <bdi dir="ltr">${esc(data.customer_email)}</bdi></div>` : ''}
+                        </div>
+                    </div>
+                </div>
+            ` : '';
+            notesSection = (data.payments || []).length ? `
+                <div class="notes-section">
+                    <div class="notes-header">${T('doc.paidWith')}</div>
+                    <div class="notes-content">${(data.payments || []).map(p => `${esc(paymentLabel(p.method, T.lang))}: ${money(p.amount)}`).join(' · ')}</div>
+                </div>
+            ` : '';
         } else if (type === 'quotation') {
             docTitle = T('doc.quotation');
             docNumber = data.quote_number || data.id?.slice(0, 8);
@@ -251,8 +286,8 @@ class ReceiptService {
                         <div class="info-box-header">${T('doc.preparedFor')}</div>
                         <div class="info-box-content">
                             <div class="company-name">${esc(data.customer_name || T('doc.customerDefault'))}</div>
-                            ${data.customer_email ? `<div class="detail">${data.customer_email}</div>` : ''}
-                            ${data.customer_phone ? `<div class="detail">${data.customer_phone}</div>` : ''}
+                            ${data.customer_email ? `<div class="detail"><bdi dir="ltr">${esc(data.customer_email)}</bdi></div>` : ''}
+                            ${data.customer_phone ? `<div class="detail"><bdi dir="ltr">${esc(data.customer_phone)}</bdi></div>` : ''}
                         </div>
                     </div>
                     <div class="info-box">
@@ -586,14 +621,16 @@ class ReceiptService {
                         <div class="company-logo">${esc(settings.name)}</div>
                         <div class="company-details">
                             ${settings.address ? `${esc(settings.address)}<br>` : ''}
-                            ${settings.phone ? `${T('doc.phone')}: ${esc(settings.phone)}<br>` : ''}
-                            ${settings.email ? `${T('doc.email')}: ${esc(settings.email)}` : ''}
+                            ${settings.phone ? `${T('doc.phone')}: <bdi dir="ltr">${esc(settings.phone)}</bdi><br>` : ''}
+                            ${settings.email ? `${T('doc.email')}: <bdi dir="ltr">${esc(settings.email)}</bdi>` : ''}
                             ${settings.website ? `<br>${T('doc.website')}: ${esc(settings.website)}` : ''}
                             ${legal ? `<br>${legal}` : ''}
                         </div>
                     </div>
                     <div class="doc-info">
                         <div class="doc-title">${docTitle}</div>
+                        ${storeSettings.training ? `<div style="margin-top:6px;padding:4px 10px;border:2px solid #dc2626;color:#dc2626;font-weight:bold;display:inline-block">${esc(T('receipt.training'))}</div>` : ''}
+                        ${storeSettings.demo && !storeSettings.training ? `<div style="margin-top:6px;padding:4px 10px;border:2px solid #ea580c;color:#ea580c;font-weight:bold;display:inline-block">${esc(T('receipt.demo'))}</div>` : ''}
                         <div class="doc-meta">
                             <div class="doc-meta-row">
                                 <span class="doc-meta-label">${T('doc.number')}:</span>
@@ -656,8 +693,13 @@ class ReceiptService {
                             <span style="color:#ef4444">-${money(data.discount_amount)}</span>
                         </div>
                         ` : ''}
+                        ${type === 'invoice' && (parseFloat(data.tax_amount) || 0) > 0 ? `
+                        <div class="summary-row">
+                            <span>${T('doc.totalHt')}</span>
+                            <span>${money((parseFloat(data.total) || 0) - (parseFloat(data.tax_amount) || 0) - (parseFloat(data.service_charge) || 0))}</span>
+                        </div>` : ''}
                         <div class="summary-row total">
-                            <span>${T('receipt.total')}</span>
+                            <span>${type === 'invoice' && (parseFloat(data.tax_amount) || 0) > 0 ? T('doc.totalTtc') : T('receipt.total')}</span>
                             <span>${money(data.total)}</span>
                         </div>
                     </div>
@@ -687,8 +729,88 @@ class ReceiptService {
      */
     async print(sale, storeSettings = {}, printer = {}) {
         const paperWidthMm = parseInt(printer.paperWidthMm || storeSettings.receiptPaperWidthMm, 10) === 58 ? 58 : 80;
-        const html = this.generateHtml(sale, { ...storeSettings, receiptPaperWidthMm: paperWidthMm });
+        return this.printRoll(this.generateHtml(sale, { ...storeSettings, receiptPaperWidthMm: paperWidthMm }), paperWidthMm, printer);
+    }
 
+    /** Closing report (Z) of a cash drawer, on the ticket printer. */
+    async printZ(report, storeSettings = {}, printer = {}) {
+        const paperWidthMm = parseInt(printer.paperWidthMm || storeSettings.receiptPaperWidthMm, 10) === 58 ? 58 : 80;
+        return this.printRoll(this.zReportHtml(report, { ...storeSettings, receiptPaperWidthMm: paperWidthMm }), paperWidthMm, printer);
+    }
+
+    /**
+     * Z report: what the drawer did from its opening to its closing, by
+     * payment method, with the cash expected, counted and the difference.
+     * report = shift stats (shiftService.getShiftStats) + { z_number, employee_name }
+     */
+    zReportHtml(report, storeSettings = {}) {
+        const esc = (v) => this.escapeHtml(v);
+        const T = translator(storeSettings.defaultLanguage);
+        const money = (v) => formatMoney(v, T.lang, storeSettings.currency);
+        const paperWidthMm = parseInt(storeSettings.receiptPaperWidthMm, 10) === 58 ? 58 : 80;
+        const contentWidthMm = paperWidthMm === 58 ? 48 : 72;
+        const row = (label, value, strong = false) => `<div class="row${strong ? ' strong' : ''}"><span>${esc(label)}</span><span class="ltr">${value}</span></div>`;
+        const methods = [
+            ['cash', report.total_cash_sales], ['card', report.total_card_sales], ['transfer', report.total_transfer_sales],
+            ['credit', report.total_credit_sales], ['gift_card', report.total_gift_card_sales],
+        ].filter(([, v]) => Number(v) > 0);
+        const diff = report.cash_difference;
+        return `<!DOCTYPE html>
+<html lang="${T.lang}" dir="${T.dir}"><head><meta charset="UTF-8">
+<style>
+    @page { margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+    body { width: ${contentWidthMm}mm; margin: 0 auto; padding: 3mm 0; font-family: ${T.lang === 'ar' ? 'Tahoma, Arial, sans-serif' : '"Courier New", monospace'}; font-size: ${paperWidthMm === 58 ? 10 : 11.5}px; }
+    .center { text-align: center; }
+    .title { font-size: 1.5em; font-weight: bold; margin: 1mm 0; }
+    .sep { border-top: 1px dashed #000; margin: 2mm 0; }
+    .row { display: flex; justify-content: space-between; gap: 2mm; }
+    .row span:last-child { white-space: nowrap; }
+    .row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+    .strong { font-weight: bold; font-size: 1.1em; }
+    .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+    .mark { margin: 2mm 0; padding: 1.5mm; border: 2px solid #000; text-align: center; font-weight: bold; }
+</style></head>
+<body>
+    <div class="center">
+        ${storeSettings.businessName ? `<div class="strong">${esc(storeSettings.businessName)}</div>` : ''}
+        <div class="title">${esc(T('z.title'))}</div>
+        ${report.z_number ? `<div>${esc(T('z.number'))} <span class="ltr">${esc(report.z_number)}</span></div>` : ''}
+        ${storeSettings.training ? `<div class="mark">${esc(T('receipt.training'))}</div>` : ''}
+        ${storeSettings.demo && !storeSettings.training ? `<div class="mark">${esc(T('receipt.demo'))}</div>` : ''}
+    </div>
+    <div class="sep"></div>
+    ${report.employee_name ? row(T('receipt.cashier'), esc(report.employee_name)) : ''}
+    ${row(T('z.opened'), esc(formatDate(report.start_time, T.lang)))}
+    ${row(T('z.closed'), esc(formatDate(report.end_time || new Date().toISOString(), T.lang)))}
+    <div class="sep"></div>
+    ${row(T('z.tickets'), esc(report.total_transactions || 0))}
+    ${row(T('z.pieces'), esc(report.items_sold || 0))}
+    ${row(T('z.sales'), money(report.total_sales), true)}
+    ${Number(report.total_discount) > 0 ? row(T('receipt.discount'), `-${money(report.total_discount)}`) : ''}
+    ${Number(report.total_refunds) > 0 ? row(T('z.refunds'), `-${money(report.total_refunds)}`) : ''}
+    <div class="sep"></div>
+    ${methods.map(([m, v]) => row(paymentLabel(m, T.lang), money(v))).join('')}
+    <div class="sep"></div>
+    ${row(T('z.openingCash'), money(report.opening_cash))}
+    ${row(T('z.cashSales'), money(report.total_cash_sales))}
+    ${Number(report.credit_collected_cash) > 0 ? row(T('z.creditCollected'), money(report.credit_collected_cash)) : ''}
+    ${Number(report.total_cash_refunds) > 0 ? row(T('z.cashRefunds'), `-${money(report.total_cash_refunds)}`) : ''}
+    ${Number(report.deposits_cash) > 0 ? row(T('z.deposits'), money(report.deposits_cash)) : ''}
+    ${Number(report.deposit_refunds) > 0 ? row(T('z.depositRefunds'), `-${money(report.deposit_refunds)}`) : ''}
+    ${Number(report.total_expenses) > 0 ? row(T('z.expenses'), `-${money(report.total_expenses)}`) : ''}
+    ${row(T('z.expected'), money(report.expected_cash), true)}
+    ${report.closing_cash !== null && report.closing_cash !== undefined ? row(T('z.counted'), money(report.closing_cash), true) : ''}
+    ${diff !== null && diff !== undefined ? row(T('z.difference'), `${diff > 0 ? '+' : ''}${money(diff)}`, true) : ''}
+    <div class="sep"></div>
+    <div class="center">${esc(T('z.signature'))}</div>
+    <div style="height:12mm"></div>
+</body></html>`;
+    }
+
+    /** Print a roll document (58 / 80 mm), page as long as the content. */
+    async printRoll(html, paperWidthMm, printer = {}) {
         const win = hiddenWindow(BrowserWindow);
         try {
             await loadHtml(win, html);
@@ -745,7 +867,7 @@ class ReceiptService {
             ['legal.nif', storeSettings.businessTaxId],
             ['legal.nis', storeSettings.businessNis],
             ['legal.ai', storeSettings.businessAi],
-        ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${T(k)}: ${esc(v)}`);
+        ].filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${T(k)}: <bdi dir="ltr">${esc(v)}</bdi>`);
 
         const shop = {
             name: storeSettings.businessName || '',
@@ -783,6 +905,10 @@ class ReceiptService {
                     if (Number.isFinite(parsed.tendered) && parsed.tendered > 0) tendered += parsed.tendered;
                 } catch { /* plain text reference */ }
             }
+            // Value of the piece brought back, with the ticket it came from
+            if (p.method === 'exchange' && p.reference) {
+                methodLabel += ` (<span class="ltr">${esc(p.reference)}</span>)`;
+            }
             if (p.method === 'gift_card' && p.reference) {
                 let code = p.reference;
                 let balance = null;
@@ -809,6 +935,8 @@ class ReceiptService {
         // The TVA of this sale as it was saved, whatever the shop's setting is
         // today: an old ticket keeps its TVA line; a sale made with TVA off has 0
         const showTax = (parseFloat(data.tax_amount) || 0) > 0;
+        // Ticket QR (Settings › tickets can turn it off)
+        const qr = storeSettings.receiptTicketQr === false ? '' : ticketQr(data.receipt_number);
 
         return `<!DOCTYPE html>
 <html lang="${T.lang}" dir="${T.dir}"><head><meta charset="UTF-8">
@@ -824,6 +952,7 @@ class ReceiptService {
     .shop-name { font-size: 1.5em; font-weight: bold; margin-bottom: 1mm; }
     .muted { color: #333; font-size: 0.9em; }
     .sep { border-top: 1px dashed #000; margin: 2mm 0; }
+    .training-mark { margin: 2mm 0; padding: 1.5mm; border: 2px solid #000; text-align: center; font-weight: bold; font-size: 1.15em; }
     .row { display: flex; justify-content: space-between; gap: 2mm; }
     .row span:last-child { text-align: end; white-space: nowrap; }
     .small { font-size: 0.92em; }
@@ -834,6 +963,8 @@ class ReceiptService {
     .grand { font-size: 1.35em; font-weight: bold; border-top: 1px solid #000; margin-top: 1mm; padding-top: 1mm; }
     .footer { text-align: center; margin-top: 2mm; white-space: pre-line; }
     .brand { text-align: center; margin-top: 2mm; font-size: 0.8em; color: #444; letter-spacing: 0.03em; }
+    .ticket-qr { text-align: center; margin-top: 2mm; }
+    .ticket-qr svg { width: 18mm; height: 18mm; display: block; margin: 0 auto 1mm; }
     /* Long names and words without spaces wrap inside the roll instead of being cut */
     .row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
     .shop-name, .item-name, .item-variant, .muted, .footer, .header { overflow-wrap: anywhere; }
@@ -846,6 +977,8 @@ class ReceiptService {
         ${shop.city ? `<div class="muted">${esc(shop.city)}</div>` : ''}
         ${shop.phone ? `<div class="muted ltr">${esc(shop.phone)}</div>` : ''}
         ${legal.length ? `<div class="muted small">${legal.join(' · ')}</div>` : ''}
+        ${storeSettings.training ? `<div class="training-mark">${esc(T('receipt.training'))}</div>` : ''}
+        ${storeSettings.demo && !storeSettings.training ? `<div class="training-mark">${esc(T('receipt.demo'))}</div>` : ''}
         ${shop.header ? `<div class="header" style="margin-top:1.5mm;white-space:pre-line">${esc(shop.header)}</div>` : ''}
     </div>
     <div class="sep"></div>
@@ -868,6 +1001,7 @@ class ReceiptService {
     ${change > 0.004 ? `<div class="row" style="font-weight:bold"><span>${T('receipt.change')}</span><span class="ltr">${money(change)}</span></div>` : ''}
     <div class="sep"></div>
     <div class="footer">${esc(shop.footer)}</div>
+    ${qr ? `<div class="ticket-qr">${qr}<div class="small">${esc(T('receipt.scanForReturn'))}</div></div>` : ''}
     ${storeSettings.receiptShowBrand !== false ? `<div class="brand">${esc(BRAND.productName)}</div>` : ''}
 </body></html>`;
     }

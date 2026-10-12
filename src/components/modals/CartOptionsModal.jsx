@@ -7,10 +7,10 @@ import { Tabs } from '../ui/Tabs';
 import { useCartStore } from '../../stores/cartStore';
 import { useTaxEnabled } from '../../lib/useTaxEnabled';
 
-export default function CartOptionsModal({ isOpen, onClose }) {
+export default function CartOptionsModal({ isOpen, onClose, canDiscount = true }) {
     const taxOn = useTaxEnabled();
     const cart = useCartStore();
-    const [activeTab, setActiveTab] = useState('discount');
+    const [activeTab, setActiveTab] = useState(canDiscount ? 'discount' : 'fees');
 
     // Local state to manage changes before applying
     const [discountValue, setDiscountValue] = useState(cart.discount);
@@ -27,11 +27,13 @@ export default function CartOptionsModal({ isOpen, onClose }) {
             setServiceCharge(cart.serviceCharge);
             setIsTaxExempt(cart.taxExempt);
             setCoupon(cart.coupon);
+            if (!canDiscount) setActiveTab('fees');
         }
-    }, [isOpen, cart]);
+    }, [isOpen, cart, canDiscount]);
 
     const handleSave = () => {
-        cart.setDiscount(parseFloat(discountValue) || 0, discountType);
+        // Discount by hand turned off for this role: none is kept
+        cart.setDiscount(canDiscount ? parseFloat(discountValue) || 0 : 0, discountType);
         cart.setServiceCharge(parseFloat(serviceCharge) || 0);
         cart.setTaxExempt(isTaxExempt);
         cart.setCoupon(coupon);
@@ -39,7 +41,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
     };
 
     const tabs = [
-        { id: 'discount', label: t('pos.discount') },
+        ...(canDiscount ? [{ id: 'discount', label: t('pos.discount') }] : []),
         { id: 'fees', label: t('cartOptions.fees') },
         // No TVA tab while TVA is turned off in Settings
         ...(taxOn ? [{ id: 'tax', label: t('pos.tax') }] : []),
@@ -62,7 +64,7 @@ export default function CartOptionsModal({ isOpen, onClose }) {
                 </div>
 
                 <div className="p-1">
-                    {activeTab === 'discount' && (
+                    {activeTab === 'discount' && canDiscount && (
                         <div className="space-y-4">
                             <div className="flex bg-dark-tertiary rounded-lg p-1">
                                 <button

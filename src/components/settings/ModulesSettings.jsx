@@ -12,12 +12,12 @@ import { MODULE_GROUPS, MODULE_REQUIRES, resolveFeatures, offersEnabled } from '
 
 const MODULE_ICONS = {
     credit: CreditCard, customers: Users, promotions: Percent, bundles: PackageOpen, giftCards: Gift,
-    suppliers: Truck, purchaseOrders: FileText, email: Mail, ecommerce: Globe,
+    suppliers: Truck, purchaseOrders: FileText, email: Mail, ecommerce: ShoppingBag, website: Globe,
 };
 const GROUP_ICONS = { sales: ShoppingBag, offers: Percent, stock: Boxes, online: Wifi };
 
 /** On / off switch with its label (a real checkbox, for the keyboard and screen readers). */
-function Switch({ checked, disabled, onChange, label }) {
+export function Switch({ checked, disabled, onChange, label }) {
     return (
         <span className="relative inline-flex flex-none">
             <input type="checkbox" className="peer sr-only" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} aria-label={label} />

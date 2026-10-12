@@ -107,7 +107,7 @@ describe('suppliers at a glance', () => {
     });
 
     it('takes the goods sent back off what is owed, never below zero', () => {
-        api.run("INSERT INTO purchase_returns (id, return_number, supplier_id, total_amount, status) VALUES ('rt1', 'RET-1', 'f1', 5000, 'complated')");
+        api.run("INSERT INTO purchase_returns (id, return_number, supplier_id, total_amount, status) VALUES ('rt1', 'RET-1', 'f1', 5000, 'completed')");
         expect(partners.suppliersOverview(api).find(r => r.id === 'f1')).toMatchObject({ owed: 35000, returned_total: 5000 });
         api.run("UPDATE purchase_returns SET total_amount = 90000 WHERE id = 'rt1'");
         expect(partners.suppliersOverview(api).find(r => r.id === 'f1').owed).toBe(0);

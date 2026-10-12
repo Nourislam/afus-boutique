@@ -1,3 +1,4 @@
+import { translateError } from '../i18n/errors';
 import { t } from '../i18n';
 import { create } from 'zustand';
 import { hasPermission as checkPermission, PERMISSIONS } from '../lib/permissions';
@@ -42,7 +43,8 @@ export const useAuthStore = create((set, get) => ({
             }
             return { success: false, error: t('login.invalidPin') };
         } catch (error) {
-            return { success: false, error: error.message };
+            // e.g. too many wrong PINs: the reason in the shop's language
+            return { success: false, error: translateError(error) };
         }
     },
 
@@ -56,6 +58,8 @@ export const useAuthStore = create((set, get) => ({
     },
 
     logout: () => {
+        // The main process forgets who was logged in (protected actions need a new PIN)
+        try { window.electronAPI?.auth?.logout?.(); } catch { /* not in the desktop app */ }
         sessionStorage.removeItem('pos_auth');
         set({ currentEmployee: null, isAuthenticated: false });
     },

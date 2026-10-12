@@ -1,5 +1,6 @@
 const { v4: uuid } = require('uuid');
 const { runInsert, getOne, runQuery } = require('../database/init');
+const { countedSale } = require('./saleStatus');
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -29,20 +30,61 @@ class ShiftService {
         return shift;
     }
 
-    endShift(shiftId, closingCash, notes = '') {
+    /**
+     * Close the drawer with the cash counted. cashCount (optional) is the
+     * detail of the count, { "2000": 3, "500": 1, ... }, kept with the drawer.
+     */
+    endShift(shiftId, closingCash, notes = '', cashCount = null) {
         const shift = this.getShiftById(shiftId);
         if (!shift) throw new Error('SHIFT_NOT_FOUND|{}');
         if (shift.end_time) throw new Error('SHIFT_ALREADY_CLOSED|{}');
 
         const endTime = new Date().toISOString();
+        const count = cashCount && typeof cashCount === 'object'
+            ? JSON.stringify(Object.fromEntries(Object.entries(cashCount).filter(([, n]) => (parseInt(n, 10) || 0) > 0).map(([d, n]) => [d, parseInt(n, 10)])))
+            : null;
 
         runInsert(`
             UPDATE shifts 
-            SET end_time = ?, closing_cash = ?, notes = COALESCE(notes, '') || ?
+            SET end_time = ?, closing_cash = ?, closing_count = ?, notes = COALESCE(notes, '') || ?
             WHERE id = ?
-        `, [endTime, closingCash, notes ? `\nClosing Note: ${notes}` : '', shiftId]);
+        `, [endTime, closingCash, count, notes ? `\nClosing Note: ${notes}` : '', shiftId]);
 
-        return { ...shift, end_time: endTime, closing_cash: closingCash };
+        return { ...shift, end_time: endTime, closing_cash: closingCash, closing_count: count };
+    }
+
+    /**
+     * Cash taken out of an open drawer (bread, cleaning, a delivery...). It
+     * lowers the cash expected in the drawer; the sales are not changed.
+     * actor: { id, role } of who takes the money: the drawer's owner, or a
+     * manager / the owner of the shop.
+     */
+    addExpense(shiftId, { amount, reason }, actor = {}) {
+        const shift = this.getShiftById(shiftId);
+        if (!shift) throw new Error('SHIFT_NOT_FOUND|{}');
+        if (shift.end_time) throw new Error('SHIFT_ALREADY_CLOSED|{}');
+        if (!actor.id || (actor.id !== shift.employee_id && !['admin', 'manager'].includes(actor.role))) {
+            throw new Error('EXPENSE_NOT_ALLOWED|{}');
+        }
+        const value = round2(amount);
+        if (!(value > 0)) throw new Error('EXPENSE_AMOUNT|{}');
+        const why = String(reason || '').trim();
+        if (!why) throw new Error('EXPENSE_REASON|{}');
+        const inDrawer = this.getShiftStats(shiftId).expected_cash;
+        if (value > inDrawer) throw new Error(`EXPENSE_MORE_THAN_DRAWER|${JSON.stringify({ available: inDrawer })}`);
+        const expense = { id: uuid(), shift_id: shiftId, employee_id: actor.id, amount: value, reason: why, created_at: new Date().toISOString() };
+        runInsert('INSERT INTO cash_expenses (id, shift_id, employee_id, amount, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [expense.id, expense.shift_id, expense.employee_id, expense.amount, expense.reason, expense.created_at]);
+        return expense;
+    }
+
+    /** Expenses of a drawer, oldest first, with who took the money. */
+    getExpenses(shiftId) {
+        return runQuery(`
+            SELECT x.*, e.name AS employee_name
+            FROM cash_expenses x LEFT JOIN employees e ON e.id = x.employee_id
+            WHERE x.shift_id = ? ORDER BY x.created_at
+        `, [shiftId]);
     }
 
     getCurrentShift(employeeId) {
@@ -71,7 +113,7 @@ class ShiftService {
                 COALESCE(SUM(tax_amount), 0) as total_tax,
                 COALESCE(SUM(discount_amount), 0) as total_discount
             FROM sales 
-            WHERE employee_id = ? AND datetime(created_at) BETWEEN datetime(?) AND datetime(?)
+            WHERE employee_id = ? AND datetime(created_at) BETWEEN datetime(?) AND datetime(?) AND ${countedSale(null)}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         // Calculate cash specifically (if you want to reconcile cash drawer)
@@ -79,7 +121,7 @@ class ShiftService {
             SELECT COALESCE(SUM(amount), 0) as total_cash
             FROM payments p
             JOIN sales s ON p.sale_id = s.id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'cash'
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'cash' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const refunds = getOne(`
@@ -93,36 +135,51 @@ class ShiftService {
             SELECT COALESCE(SUM(amount), 0) as total_card
             FROM payments p
             JOIN sales s ON p.sale_id = s.id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'card'
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'card' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const creditSales = getOne(`
             SELECT COALESCE(SUM(amount), 0) as total_credit
             FROM payments p
             JOIN sales s ON p.sale_id = s.id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'credit'
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'credit' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const transferSales = getOne(`
             SELECT COALESCE(SUM(amount), 0) as total_transfer
             FROM payments p
             JOIN sales s ON p.sale_id = s.id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'transfer'
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'transfer' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const giftCardSales = getOne(`
             SELECT COALESCE(SUM(amount), 0) as total_gift_card
             FROM payments p
             JOIN sales s ON p.sale_id = s.id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'gift_card'
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND LOWER(p.method) = 'gift_card' AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
-        // Refunds handed back in cash (a return on a kridi sale lowers the debt instead)
+        // Refunds handed back in cash: what a return on a kridi sale took off
+        // the debt is not money out (credit_reduced; older returns, saved
+        // before it existed, keep the old rule), a store credit (avoir) gives
+        // a card, not money
         const cashRefunds = getOne(`
-            SELECT COALESCE(SUM(r.total_refund), 0) AS total
+            SELECT COALESCE(SUM(CASE WHEN r.credit_reduced IS NULL THEN r.total_refund
+                                     ELSE r.total_refund - r.credit_reduced END), 0) AS total
             FROM returns r
             WHERE r.employee_id = ? AND datetime(r.created_at) BETWEEN datetime(?) AND datetime(?)
-              AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.sale_id = r.sale_id AND LOWER(p.method) = 'credit')
+              AND (r.credit_reduced IS NOT NULL
+                   OR NOT EXISTS (SELECT 1 FROM payments p WHERE p.sale_id = r.sale_id AND LOWER(p.method) = 'credit'))
+              AND NOT EXISTS (SELECT 1 FROM exchanges x WHERE x.return_id = r.id)
+              AND COALESCE(r.refund_method, '') != 'store_credit'
+        `, [shift.employee_id, shift.start_time, endTime]);
+
+        // An exchange only moves the difference: given back in cash when the new piece costs less
+        const exchangeCashBack = getOne(`
+            SELECT COALESCE(SUM(-difference), 0) AS total
+            FROM exchanges
+            WHERE employee_id = ? AND difference < 0 AND refund_method = 'cash'
+              AND datetime(created_at) BETWEEN datetime(?) AND datetime(?)
         `, [shift.employee_id, shift.start_time, endTime]);
 
         // Kridi repaid in cash to this employee goes into the same drawer
@@ -136,15 +193,28 @@ class ShiftService {
         const items = getOne(`
             SELECT COALESCE(SUM(si.quantity), 0) AS total
             FROM sale_items si JOIN sales s ON s.id = si.sale_id
-            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+            WHERE s.employee_id = ? AND datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND ${countedSale('s')}
         `, [shift.employee_id, shift.start_time, endTime]);
 
         const openingCash = Number(shift.opening_cash) || 0;
         const totalCashSales = cashSales.total_cash || 0;
         const totalRefunds = refunds.total_refunds || 0;
-        const totalCashRefunds = cashRefunds.total || 0;
+        const totalCashRefunds = round2((cashRefunds.total || 0) + (exchangeCashBack.total || 0));
         const totalCreditCollected = creditCollected.total || 0;
-        const expectedCash = round2(openingCash + totalCashSales + totalCreditCollected - totalCashRefunds);
+        // Cash taken out for expenses during this drawer
+        const totalExpenses = round2(getOne('SELECT COALESCE(SUM(amount), 0) AS total FROM cash_expenses WHERE shift_id = ?', [shift.id])?.total || 0);
+        // Reservation deposits taken in cash by this employee, and deposits given back
+        let depositsCash = 0;
+        let depositRefunds = 0;
+        try {
+            depositsCash = round2(getOne(`SELECT COALESCE(SUM(deposit), 0) AS total FROM reservations
+                WHERE employee_id = ? AND deposit_method = 'cash' AND datetime(created_at) BETWEEN datetime(?) AND datetime(?)`,
+            [shift.employee_id, shift.start_time, endTime])?.total || 0);
+            depositRefunds = round2(getOne(`SELECT COALESCE(SUM(refunded), 0) AS total FROM reservations
+                WHERE closed_by = ? AND status = 'cancelled' AND datetime(closed_at) BETWEEN datetime(?) AND datetime(?)`,
+            [shift.employee_id, shift.start_time, endTime])?.total || 0);
+        } catch { /* database before reservations */ }
+        const expectedCash = round2(openingCash + totalCashSales + totalCreditCollected + depositsCash - totalCashRefunds - totalExpenses - depositRefunds);
         const durationMinutes = Math.max(0, Math.round((new Date(endTime) - new Date(shift.start_time)) / 60000));
 
         return {
@@ -159,9 +229,13 @@ class ShiftService {
             total_refunds: totalRefunds,
             total_cash_refunds: totalCashRefunds,
             credit_collected_cash: totalCreditCollected,
+            total_expenses: totalExpenses,
+            deposits_cash: depositsCash,
+            deposit_refunds: depositRefunds,
             opening_cash: openingCash,
             expected_cash: expectedCash,
             closing_cash: shift.closing_cash,
+            closing_count: shift.closing_count ? JSON.parse(shift.closing_count) : null,
             cash_difference: shift.closing_cash === null || shift.closing_cash === undefined ? null : round2(Number(shift.closing_cash) - expectedCash),
             duration_minutes: durationMinutes,
             start_time: shift.start_time,
@@ -203,13 +277,13 @@ class ShiftService {
         const sales = runQuery(`
             SELECT employee_id, COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
             FROM sales
-            WHERE datetime(created_at) BETWEEN datetime(?) AND datetime(?)
+            WHERE datetime(created_at) BETWEEN datetime(?) AND datetime(?) AND ${countedSale(null)}
             GROUP BY employee_id
         `, [startDate, endDate]);
         const items = runQuery(`
             SELECT s.employee_id, COALESCE(SUM(si.quantity), 0) AS qty
             FROM sale_items si JOIN sales s ON s.id = si.sale_id
-            WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+            WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?) AND ${countedSale('s')}
             GROUP BY s.employee_id
         `, [startDate, endDate]);
         const refunds = runQuery(`

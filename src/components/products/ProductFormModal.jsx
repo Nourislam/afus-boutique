@@ -32,6 +32,7 @@ const EMPTY_PRODUCT = {
     collection: '',
     price: '',
     cost: '',
+    wholesale_price: '',
     stock_quantity: '0',
     min_stock_level: '5',
     tax_rate: '0',
@@ -126,6 +127,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 collection: product.collection || '',
                 price: (product.price ?? 0).toString(),
                 cost: (product.cost ?? 0).toString(),
+                wholesale_price: product.wholesale_price ? String(product.wholesale_price) : '',
                 stock_quantity: (product.stock_quantity ?? 0).toString(),
                 min_stock_level: (product.min_stock_level ?? 5).toString(),
                 tax_rate: (product.tax_rate ?? 0).toString(),
@@ -198,6 +200,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 name: formData.name.trim(),
                 price: parseFloat(formData.price),
                 cost: formData.cost ? parseFloat(formData.cost) : 0,
+                wholesale_price: parseFloat(formData.wholesale_price) > 0 ? parseFloat(formData.wholesale_price) : null,
                 stock_quantity: parseInt(formData.stock_quantity, 10) || 0,
                 min_stock_level: parseInt(formData.min_stock_level, 10) || 0,
                 tax_rate: parseFloat(formData.tax_rate) || 0,
@@ -311,10 +314,16 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                         <div className="min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                             <Input label={t('products.name')} value={formData.name} onChange={(e) => set('name', e.target.value)}
                                 placeholder={t('products.namePlaceholder')} containerClassName="sm:col-span-2" autoFocus={!product} />
-                            <Input label={t('products.sellPrice')} type="number" min="0" step="1" value={formData.price}
-                                onChange={(e) => set('price', e.target.value)} placeholder="0" className="tabular" />
-                            <Input label={t('products.costLabel')} type="number" min="0" step="1" value={formData.cost}
-                                onChange={(e) => set('cost', e.target.value)} placeholder={t('common.optional')} className="tabular" />
+                            {/* Prices: sale, cost, and the wholesale price for wholesale customers */}
+                            <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
+                                <Input label={t('products.sellPrice')} type="number" min="0" step="1" value={formData.price}
+                                    onChange={(e) => set('price', e.target.value)} placeholder="0" className="tabular" />
+                                <Input label={t('products.costLabel')} type="number" min="0" step="1" value={formData.cost}
+                                    onChange={(e) => set('cost', e.target.value)} placeholder={t('common.optional')} className="tabular" />
+                                <Input label={t('wholesale.price')} type="number" min="0" step="1" value={formData.wholesale_price}
+                                    onChange={(e) => set('wholesale_price', e.target.value)} placeholder={t('common.optional')} className="tabular"
+                                    title={t('wholesale.priceHint')} data-testid="product-wholesale" />
+                            </div>
                             <div className="form-group">
                                 <label className="form-label flex items-center justify-between">
                                     {t('products.category')}

@@ -29,7 +29,7 @@ export default function CustomerPickerModal({ isOpen, onClose, onSelect }) {
         const digits = q.replace(/\D/g, '');
         return customers.filter(c => !q
             || c.name?.toLowerCase().includes(q)
-            || (digits && String(c.phone || '').replace(/\D/g, '').includes(digits))).slice(0, 30);
+            || (digits && String(c.phone || '').replace(/\D/g, '').includes(digits)));
     }, [customers, query]);
 
     const create = async () => {

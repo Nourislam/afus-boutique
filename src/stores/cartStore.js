@@ -21,6 +21,8 @@ export function heldLines(held) {
 export const useCartStore = create((set, get) => ({
     items: [],
     customer: null,
+    // Reservation picked up at the till: { id, number, deposit }
+    reservation: null,
     discount: 0,
     discountType: 'fixed', // 'fixed' or 'percent'
     notes: '',
@@ -96,9 +98,12 @@ export const useCartStore = create((set, get) => ({
             item.product_id === product.id && (item.variant_id || null) === variantId);
         // Use product-specific tax only if explicitly set (> 0), otherwise use global rate
         const itemTaxRate = (product.tax_rate && product.tax_rate > 0) ? product.tax_rate : globalTaxRate;
-        const unitPrice = variant && variant.price !== null && variant.price !== undefined && variant.price !== ''
+        const retailPrice = variant && variant.price !== null && variant.price !== undefined && variant.price !== ''
             ? Number(variant.price)
             : Number(product.price) || 0;
+        // Wholesale customer: the article's wholesale price when it has one
+        const wholesalePrice = Number(product.wholesale_price) > 0 ? Number(product.wholesale_price) : null;
+        const unitPrice = get().customer?.is_wholesale && wholesalePrice ? wholesalePrice : retailPrice;
         const available = variant ? (variant.stock_quantity ?? 0) : product.stock_quantity;
 
         if (existingIndex >= 0) {
@@ -140,6 +145,8 @@ export const useCartStore = create((set, get) => ({
             quantity,
             unit_price: unitPrice,
             original_price: unitPrice,
+            retail_price: retailPrice,
+            wholesale_price: wholesalePrice,
             tax_rate: itemTaxRate,
             discount: 0,
             total: lineTotal(quantity, unitPrice),
@@ -202,7 +209,15 @@ export const useCartStore = create((set, get) => ({
     },
 
     setCustomer: (customer) => {
-        set({ customer });
+        // Wholesale customer chosen (or removed): lines at their list price
+        // change to the wholesale (or retail) price; prices typed by hand stay
+        const wholesale = !!customer?.is_wholesale;
+        const items = get().items.map(item => {
+            if (item.unit_price !== item.original_price || item.retail_price === undefined) return item;
+            const price = wholesale && item.wholesale_price ? item.wholesale_price : item.retail_price;
+            return { ...item, unit_price: price, original_price: price, total: lineTotal(item.quantity, price, item.discount) };
+        });
+        set({ customer, items });
     },
 
     setDiscount: (discount, discountType = 'fixed') => {
@@ -272,6 +287,7 @@ export const useCartStore = create((set, get) => ({
         set({
             items: [],
             customer: null,
+            reservation: null,
             discount: 0,
             discountType: 'fixed',
             serviceCharge: 0,
@@ -280,6 +296,30 @@ export const useCartStore = create((set, get) => ({
             coupon: '',
             lastAddedId: null,
         });
+    },
+
+    /**
+     * A reservation picked up: its pieces at the reserved price, its customer,
+     * and the deposit already paid (taken off at payment).
+     */
+    loadReservation: (reservation, customer) => {
+        get().clearCart();
+        const items = (reservation.items || []).map(line => ({
+            id: uuid(),
+            product_id: line.product_id,
+            product_name: line.product_name,
+            variant_id: line.variant_id || null,
+            variant_label: line.variant_label || null,
+            quantity: line.quantity,
+            unit_price: line.unit_price,
+            original_price: line.unit_price,
+            tax_rate: get().globalTaxRate,
+            discount: 0,
+            total: lineTotal(line.quantity, line.unit_price),
+            // The reserved pieces are this customer's: no more than reserved
+            max_stock: line.quantity,
+        }));
+        set({ items, customer: customer || null, reservation: { id: reservation.id, number: reservation.number, deposit: Number(reservation.deposit) || 0 } });
     },
 
     holdTransaction: async (employeeId) => {
@@ -331,7 +371,7 @@ export const useCartStore = create((set, get) => ({
         });
     },
 
-    processPayment: async (payments, employeeId, employeeName = null) => {
+    processPayment: async (payments, employeeId, employeeName = null, approval = null, credit = null) => {
         const { items, customer, notes, serviceCharge, taxExempt } = get();
         if (items.length === 0) throw new Error(t('cart.empty'));
 
@@ -364,6 +404,14 @@ export const useCartStore = create((set, get) => ({
             notes: promo ? [notes, promo.promotion.name].filter(Boolean).join(' · ') : notes,
             promotion_id: promo ? promo.promotion.id : null,
             promotion_name: promo ? promo.promotion.name : null,
+            // Checked again by the main process: discount typed by hand, coupon typed
+            manual_discount: get().getManualDiscount(),
+            coupon: get().coupon || null,
+            approval: approval || null,
+            // Reservation picked up (its deposit is one of the payments)
+            reservation_id: get().reservation?.id || null,
+            // Kridi: written with the sale by the main process (customer, due date)
+            credit: credit ? { ...credit, notes: credit.notes || t('pos.creditNote', { n: receiptNumber }) } : null,
             items: saleItems,
             payments: payments.map(p => ({ ...p, id: uuid() })),
         };
@@ -371,6 +419,9 @@ export const useCartStore = create((set, get) => ({
         // The saved sale comes back with the variant/SKU snapshot of each line
         const saved = await window.electronAPI.sales.create(sale);
         if (saved && saved.items) sale.items = saved.items;
+        if (saved && saved.credit_sale) sale.credit_sale = saved.credit_sale;
+        // The manager's PIN is never kept with the sale
+        delete sale.approval;
 
         // Loyalty points and total spent are updated by the main process in
         // the same transaction as the sale.

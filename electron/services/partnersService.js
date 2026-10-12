@@ -11,8 +11,8 @@
 
 const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
-// Sales that do not count as a purchase of the customer
-const NOT_A_SALE = "('cancelled', 'voided')";
+// Sales that do not count as a purchase of the customer: the shared rule
+const { countedSale } = require('./saleStatus');
 
 /** Every active customer with what he still owes and his last activity. */
 function customersOverview(api) {
@@ -28,7 +28,7 @@ function customersOverview(api) {
         FROM customers c
         LEFT JOIN (
             SELECT customer_id, COUNT(*) AS sales_count, SUM(total) AS sales_total, MAX(created_at) AS last_sale_at
-            FROM sales WHERE customer_id IS NOT NULL AND COALESCE(status, 'completed') NOT IN ${NOT_A_SALE}
+            FROM sales WHERE customer_id IS NOT NULL AND ${countedSale(null)}
             GROUP BY customer_id
         ) s ON s.customer_id = c.id
         LEFT JOIN (
@@ -49,7 +49,7 @@ function customersOverview(api) {
 }
 
 /** One customer: what is still owed per credit sale, the payments, the last purchases. */
-function customerHistory(api, customerId, { salesLimit = 20 } = {}) {
+function customerHistory(api, customerId, { salesLimit = -1 } = {}) {
     const credits = api.all(`
         SELECT cs.id, cs.invoice_number, cs.amount_due, COALESCE(cs.amount_paid, 0) AS amount_paid,
             MAX(cs.amount_due - COALESCE(cs.amount_paid, 0), 0) AS remaining,
@@ -68,7 +68,7 @@ function customerHistory(api, customerId, { salesLimit = 20 } = {}) {
     `, [customerId]);
     const sales = api.all(`
         SELECT id, receipt_number, total, created_at, status
-        FROM sales WHERE customer_id = ? AND COALESCE(status, 'completed') NOT IN ${NOT_A_SALE}
+        FROM sales WHERE customer_id = ? AND ${countedSale(null)}
         ORDER BY created_at DESC LIMIT ?
     `, [customerId, salesLimit]);
     const owed = round(credits.reduce((sum, c) => sum + c.remaining, 0));

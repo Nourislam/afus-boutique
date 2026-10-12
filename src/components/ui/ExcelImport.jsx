@@ -142,8 +142,9 @@ export function ExcelImport({
 
         setImporting(true);
         try {
-            await onImport(validationResult.valid);
-            toast.success(t('excel.imported', { n: validationResult.valid.length }));
+            // The page may report itself what was imported and what was rejected
+            const result = await onImport(validationResult.valid, validationResult);
+            if (!result?.reported) toast.success(t('excel.imported', { n: validationResult.valid.length }));
             handleClose();
         } catch (error) {
             toast.error(t('excel.importFailed', { error: translateError(error) }));
@@ -333,15 +334,12 @@ export function ExcelImport({
                         {validationResult.errors.length > 0 && (
                             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
                                 <h4 className="font-medium text-red-400 mb-2">{t('excel.errorsTitle')}</h4>
-                                <div className="max-h-32 overflow-auto text-sm space-y-1">
-                                    {validationResult.errors.slice(0, 10).map((err, i) => (
+                                <div className="max-h-48 overflow-auto text-sm space-y-1">
+                                    {validationResult.errors.map((err, i) => (
                                         <p key={i} className="text-red-300">
                                             {t('errors.row', { n: err.row })} : {err.errors.map(e => translateError(e)).join(', ')}
                                         </p>
                                     ))}
-                                    {validationResult.errors.length > 10 && (
-                                        <p className="text-red-400">{t('excel.moreErrors', { n: validationResult.errors.length - 10 })}</p>
-                                    )}
                                 </div>
                             </div>
                         )}

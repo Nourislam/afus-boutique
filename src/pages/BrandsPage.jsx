@@ -115,7 +115,7 @@ export default function BrandsPage() {
                                     </>
                                 ) : (
                                     <>
-                                        <span className="flex-1 min-w-0 font-medium truncate ltr text-start">{brand.name}</span>
+                                        <span className="flex-1 min-w-0 font-medium ltr text-start line-clamp-2 break-words leading-snug" title={brand.name}>{brand.name}</span>
                                         {brand.product_count > 0 && <span className="badge bg-dark-tertiary text-zinc-400">{brand.product_count}</span>}
                                         <PermissionGate permission={PERMISSIONS.PRODUCTS_EDIT}>
                                             <div className="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
