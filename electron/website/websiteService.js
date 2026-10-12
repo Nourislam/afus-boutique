@@ -540,6 +540,12 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         if (provider === 'cloudflare') return cf.tokenPageUrl();
         return null;
     }
+    /** The provider's own page to open a free account. */
+    function signupPage(provider) {
+        if (provider === 'github') return client.signupUrl || null;
+        if (provider === 'cloudflare') return cfClient.signupUrl || null;
+        return null;
+    }
 
     function cloudflareCancel() {
         cf.cancel();
@@ -1102,7 +1108,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
 
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
-        githubStart, githubConnectToken, cloudflareConnectToken, tokenPage, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
+        githubStart, githubConnectToken, cloudflareConnectToken, tokenPage, signupPage, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
         publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, setFeatures, setSettings, blockPhone, unblockPhone, blockSuggestions, confirmMessage, setTracking,
         yalidineLink, yalidineForget, yalidineSend, yalidineRefresh, stats, apiConfig, changes,
         domainCheck, domainRetry, domainSearch, domainOpenBuy, domainHostingerLink, domainHostingerForget, domainHostingerSetup, domainCheckIfDue: () => domains.checkIfDue(),

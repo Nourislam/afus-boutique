@@ -81,7 +81,7 @@ function reasonOf(error, provider) {
     if (r === 'private_data') return 'private_data';
     if (r === 'revoked' || r === 'not_connected') return `${provider}_revoked`;
     if (r === 'scope') return `${provider}_permission`;
-    if (r === 'email_unverified') return 'cloudflare_email';
+    if (r === 'email_unverified') return provider === 'github' ? 'github_email' : 'cloudflare_email';
     if (r) return `${provider}_failed`;
     return 'unknown';
 }

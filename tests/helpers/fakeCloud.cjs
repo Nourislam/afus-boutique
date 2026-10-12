@@ -117,6 +117,10 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
 
     async function github(req, res, url, body, send) {
         const auth = (req.headers.authorization || '').replace(/^Bearer /, '');
+        // As GitHub documents the device flow: a form with the app's client_id
+        if (url.pathname.startsWith('/login/') && req.method === 'POST' && (!String(req.headers['content-type'] || '').startsWith('application/x-www-form-urlencoded') || !new URLSearchParams(body || '').get('client_id'))) {
+            return send(400, { error: 'incorrect_client_credentials' });
+        }
         if (url.pathname === '/login/device/code') { gh.polls = 0; return send(200, { device_code: 'dev-1', user_code: 'ABCD-1234', verification_uri: `${cloud.base}/login/device`, expires_in: 900, interval: 1 }); }
         if (url.pathname === '/login/oauth/access_token') {
             if (++gh.polls < 2) return send(200, { error: 'authorization_pending' });

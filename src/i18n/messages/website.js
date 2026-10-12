@@ -97,8 +97,8 @@ export default {
     'website.account.cloudflare': ["Cloudflare", "Cloudflare", "Cloudflare"],
     'website.account.githubHint': ["Keeps the pages of your website", "Garde les pages de votre site", "يحفظ صفحات موقعك"],
     'website.account.cloudflareHint': ["Shows your website to your customers, fast", "Affiche votre site à vos clients, rapidement", "يعرض موقعك لزبائنك بسرعة"],
-    'website.account.connect.github': ["Connect GitHub", "Connecter GitHub", "ربط GitHub"],
-    'website.account.connect.cloudflare': ["Connect Cloudflare", "Connecter Cloudflare", "ربط Cloudflare"],
+    'website.account.connect.github': ["Sign in with GitHub", "Se connecter avec GitHub", "سجّل الدخول بحساب GitHub"],
+    'website.account.connect.cloudflare': ["Sign in with Cloudflare", "Se connecter avec Cloudflare", "سجّل الدخول بحساب Cloudflare"],
     'website.account.linked': ["{name} linked", "{name} lié", "تم ربط {name}"],
     'website.soon': ["Soon", "Bientôt", "قريبًا"],
 
@@ -551,4 +551,10 @@ export default {
     'website.token.error.revoked': ["The company refused this key. Make a new one.", "La société a refusé cette clé. Créez-en une nouvelle.", "رفضت الشركة هذا المفتاح. أنشئ مفتاحًا جديدًا."],
     'website.token.error.unknown': ["The company did not answer as expected. Try again in a moment.", "La société n'a pas répondu comme prévu. Réessayez dans un moment.", "لم تجب الشركة كما ينبغي. أعد المحاولة بعد قليل."],
     'website.publish.reason.cloudflare_email': ["Cloudflare asks you to confirm your account's e-mail address first: open the e-mail Cloudflare sent you, press the link, then press Try again.", "Cloudflare demande d'abord de confirmer l'adresse e-mail du compte : ouvrez l'e-mail envoyé par Cloudflare, appuyez sur le lien, puis sur Réessayer.", "يطلب Cloudflare تأكيد البريد الإلكتروني للحساب أولًا: افتح الرسالة التي أرسلها Cloudflare واضغط الرابط، ثم اضغط «أعد المحاولة»."],
+    'website.signup.github.question': ["No GitHub account?", "Pas de compte GitHub ?", "ليس لديك حساب GitHub؟"],
+    'website.signup.github.create': ["Create one for free", "Créez-en un gratuitement", "أنشئ حسابًا مجانيًا"],
+    'website.signup.cloudflare.question': ["No Cloudflare account?", "Pas de compte Cloudflare ?", "ليس لديك حساب Cloudflare؟"],
+    'website.signup.cloudflare.create': ["Create one for free", "Créez-en un gratuitement", "أنشئ حسابًا مجانيًا"],
+    'website.token.otherWay': ["Another way: link with a key", "Autre façon : lier avec une clé", "طريقة أخرى: الربط بمفتاح"],
+    'website.publish.reason.github_email': ["GitHub asks you to confirm your account's e-mail address first: open the e-mail GitHub sent you, press the link, then press Try again.", "GitHub demande d'abord de confirmer l'adresse e-mail du compte : ouvrez l'e-mail envoyé par GitHub, appuyez sur le lien, puis sur Réessayer.", "يطلب GitHub تأكيد البريد الإلكتروني للحساب أولًا: افتح الرسالة التي أرسلها GitHub واضغط الرابط، ثم اضغط «أعد المحاولة»."],
 };

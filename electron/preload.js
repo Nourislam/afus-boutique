@@ -131,6 +131,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         githubConnectToken: (token) => ipcRenderer.invoke('website:githubConnectToken', { token: String(token || '') }),
         cloudflareConnectToken: (token) => ipcRenderer.invoke('website:cloudflareConnectToken', { token: String(token || '') }),
         openTokenPage: (provider) => ipcRenderer.invoke('website:openTokenPage', { provider: String(provider || '') }),
+        openSignupPage: (provider) => ipcRenderer.invoke('website:openTokenPage', { provider: String(provider || ''), page: 'signup' }),
         // Create Website / Update website (on the shop's own accounts, in the background)
         publish: () => ipcRenderer.invoke('website:publish'),
         // Opening hours, social pages, map link (shown on the website only)

@@ -61,7 +61,7 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
     const doFetch = fetchImpl || ((url, init) => require('electron').net.fetch(url, init));
     const id = String(clientId || '').trim();
 
-    async function call(url, { method = 'GET', body, token } = {}) {
+    async function call(url, { method = 'GET', body, form, token } = {}) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         const headers = { Accept: 'application/json', 'User-Agent': 'AfusBoutique' };
@@ -70,9 +70,11 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
             headers['X-GitHub-Api-Version'] = '2022-11-28';
         }
         if (body) headers['Content-Type'] = 'application/json';
+        // The sign-in endpoints take their parameters as a form (docs.github.com, device flow)
+        if (form) headers['Content-Type'] = 'application/x-www-form-urlencoded';
         let res;
         try {
-            res = await doFetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: controller.signal, redirect: 'error' });
+            res = await doFetch(url, { method, headers, body: form ? new URLSearchParams(form).toString() : body ? JSON.stringify(body) : undefined, signal: controller.signal, redirect: 'error' });
         } catch {
             throw new GithubError('network');
         } finally {
@@ -86,7 +88,7 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
     /** Step 1: a short code for the shop to type on GitHub's page. */
     async function requestDeviceCode() {
         if (!id) throw new GithubError('not_configured');
-        const r = await call(`${webBase}/login/device/code`, { method: 'POST', body: { client_id: id, scope: SCOPES.join(' ') } });
+        const r = await call(`${webBase}/login/device/code`, { method: 'POST', form: { client_id: id, scope: SCOPES.join(' ') } });
         const d = r.data;
         if (!r.ok || !d.device_code || !d.user_code) throw new GithubError(d.error === 'device_flow_disabled' ? 'not_configured' : 'unknown', r.status);
         // Only ever GitHub's own page
@@ -107,7 +109,7 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
      */
     async function pollToken(deviceCode) {
         const r = await call(`${webBase}/login/oauth/access_token`, {
-            method: 'POST', body: { client_id: id, device_code: deviceCode, grant_type: DEVICE_GRANT },
+            method: 'POST', form: { client_id: id, device_code: deviceCode, grant_type: DEVICE_GRANT },
         });
         const d = r.data;
         if (d.access_token) return { token: String(d.access_token), scopes: parseScopes(d.scope) };
@@ -152,6 +154,7 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
         if (r.status === 201) return repoOf(r.data);
         if (r.status === 422 && JSON.stringify(r.data.errors || r.data.message || '').includes('already exists')) return { exists: true };
         if (r.status === 401) throw new GithubError('revoked', 401);
+        if (/verif(y|ied)[^.]*e-?mail|e-?mail[^.]*verif/i.test(String(r.data.message || ''))) throw new GithubError('email_unverified', r.status);
         if (r.status === 403 || r.status === 404) throw new GithubError('scope', r.status);
         throw new GithubError(r.status >= 500 ? 'network' : 'unknown', r.status);
     }
@@ -181,6 +184,8 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
     const repoPath = (owner, name) => `${apiBase}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
     const fail = (r) => {
         if (r.status === 401) throw new GithubError('revoked', 401);
+        // GitHub asks the account's e-mail address to be confirmed first
+        if (/verif(y|ied)[^.]*e-?mail|e-?mail[^.]*verif/i.test(String(r.data.message || ''))) throw new GithubError('email_unverified', r.status);
         if (r.status === 403 || r.status === 404) throw new GithubError('scope', r.status);
         throw new GithubError(r.status >= 500 ? 'network' : 'unknown', r.status);
     };
@@ -263,6 +268,8 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
         webBase,
         manageUrl: `${webBase}${MANAGE_PATH}`,
         tokenPageUrl: `${webBase}${TOKEN_PAGE_PATH}`,
+        // GitHub's own page to open a free account
+        signupUrl: `${webBase}/signup`,
         requestDeviceCode, pollToken, getUser, getRepository, createRepository,
         commitFiles, getPages, enablePages, updatePages,
     };

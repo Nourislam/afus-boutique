@@ -257,6 +257,8 @@ function createCloudflareClient({ clientId, scopes, fetch: fetchImpl, dashBase =
         scopes: wanted,
         manageUrl: `${dashBase}${MANAGE_PATH}`,
         tokenPageUrl: `${dashBase}${TOKEN_PAGE_PATH}`,
+        // Cloudflare's own page to open a free account
+        signupUrl: `${dashBase}/sign-up`,
         authorizeUrl, exchangeCode, refresh, revoke, listAccounts, checkAccess,
     };
 }

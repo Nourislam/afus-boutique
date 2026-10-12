@@ -14,7 +14,8 @@
     "electron:build": "vite build && electron-builder",
     "electron:build:win": "vite build && electron-builder --win",
     "electron:build:mac": "vite build && electron-builder --mac",
-    "electron:start": "electron ."
+    "electron:start": "electron .",
+    "check:website-apps": "node scripts/website-apps-check.mjs"
   },
   "keywords": [
     "pos",

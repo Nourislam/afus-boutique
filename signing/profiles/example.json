@@ -4,5 +4,15 @@
   "supportEmail": "support@example.dz",
   "supportWebsite": "https://example.dz",
   "updateUrl": "https://example.dz/afus-boutique/latest.json",
-  "licensePublicKey": ""
+  "licensePublicKey": "",
+  "githubClientId": "Ov23li-your-github-oauth-app-client-id",
+  "cloudflareClientId": "your-cloudflare-oauth-client-id",
+  "cloudflareScopes": [
+    "<from scripts/cloudflare-oauth-scopes.mjs>"
+  ],
+  "cloudflareRedirectPorts": [
+    47651,
+    47652,
+    47653
+  ]
 }

@@ -164,6 +164,14 @@ describe('linking with the shop\'s own keys, then the whole way to an order in A
         expect(o).toHaveLength(1);
         expect(o[0]).toMatchObject({ customerName: 'Sara Kaci', phone: '0770112233', status: 'new', items: [expect.objectContaining({ productId: 'jean', size: '40', quantity: 1 })] });
         expect(d1.exec('SELECT COUNT(*) FROM orders')[0].values[0][0]).toBe(0);
+        // The Cloudflare sign-in ends (or is removed): orders keep coming in (they use the shop's own key)
+        service.cloudflareDisconnect();
+        const again = await fetch(action, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({
+            items, first_name: 'Nadia', last_name: 'Amrani', phone: '0661 22 33 44', wilaya: '16 - Alger', commune: 'Kouba', delivery: 'home', address: 'Rue 7', website: '', order_key: 'k-token-way-000000002',
+        }).toString() });
+        expect(again.status).toBe(303);
+        expect(await service.syncOrders()).toMatchObject({ ok: true, received: 1 });
+        expect((await service.orders()).orders.map(x => x.customerName).sort()).toEqual(['Nadia Amrani', 'Sara Kaci']);
     });
 });
 
