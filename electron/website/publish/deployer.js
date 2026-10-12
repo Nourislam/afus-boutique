@@ -98,6 +98,18 @@ function createDeployer(deps) {
     }));
     const setResources = (fields) => patch(s => ({ ...s, resources: { ...s.resources, ...fields } }));
 
+    /** The shop's own domain once given to the website (connecting or further), else null. */
+    function connectedDomain() {
+        const d = read().domain;
+        return d.name && ['connecting', 'https_pending', 'active'].includes(d.status) ? d.name : null;
+    }
+    /** The website's main address: its own domain once it answers on https, else the free one. */
+    function siteAddress(free) {
+        const d = read().domain;
+        return d.name && d.status === 'active' ? `https://${d.name}/` : free;
+    }
+    const siteAddresses = (ctx) => [...new Set([ctx.siteUrl, ctx.freeUrl, connectedDomain() && `https://${connectedDomain()}/`].filter(Boolean))];
+
     /** Can a run start now? null, or the reason it cannot. */
     function blocker() {
         const s = read();
@@ -156,9 +168,12 @@ function createDeployer(deps) {
         async pages(ctx) {
             const { token } = ctx.github;
             const pages = (await github.client.getPages(token, ctx.repo.owner, ctx.repo.name)) || (await github.client.enablePages(token, ctx.repo.owner, ctx.repo.name, { branch: 'main' }));
-            ctx.siteUrl = pages?.url || pagesGuess(ctx.repo.owner, ctx.repo.name);
-            if (!ctx.siteUrl.endsWith('/')) ctx.siteUrl += '/';
-            patch(s => ({ ...s, site: { ...s.site, url: ctx.siteUrl } }));
+            // GitHub answers with the own domain once it is given one: the free address is kept apart
+            let free = (!pages?.cname && pages?.url) || read().site.freeUrl || pagesGuess(ctx.repo.owner, ctx.repo.name);
+            if (!free.endsWith('/')) free += '/';
+            ctx.freeUrl = free;
+            ctx.siteUrl = siteAddress(free);
+            patch(s => ({ ...s, site: { ...s.site, url: ctx.siteUrl, freeUrl: free } }));
         },
 
         async database(ctx) {
@@ -206,6 +221,8 @@ function createDeployer(deps) {
                 // This shop's own id: Afus sends it on every call (never another shop's Worker)
                 { type: 'plain_text', name: 'STORE_ID', text: storeId() },
                 { type: 'plain_text', name: 'SITE_URL', text: ctx.siteUrl },
+                // Every address of the website: orders are taken from each, the customer sent back to it
+                { type: 'plain_text', name: 'SITE_URLS', text: JSON.stringify(siteAddresses(ctx)) },
                 { type: 'plain_text', name: 'SHOP_NAME', text: ctx.shopName },
             ];
             // The same code and settings already running: not sent again
@@ -232,7 +249,7 @@ function createDeployer(deps) {
         async data(ctx) { ctx.snapshot = snapshot(); },
 
         async build(ctx) {
-            const make = (snap) => buildSite({ snapshot: snap, theme: theme(read().theme), orderUrl: `${ctx.apiUrl}/api/orders`, readImage });
+            const make = (snap) => buildSite({ snapshot: snap, theme: theme(read().theme), orderUrl: `${ctx.apiUrl}/api/orders`, readImage, cname: connectedDomain() });
             ctx.site = make(ctx.snapshot);
             // Nothing the customer sees changed: the very files already published (their time kept)
             const last = read().site;
@@ -267,7 +284,7 @@ function createDeployer(deps) {
             let built = false;
             do {
                 const p = await github.client.getPages(token, ctx.repo.owner, ctx.repo.name);
-                if (p?.url) ctx.siteUrl = p.url.endsWith('/') ? p.url : `${p.url}/`;
+                if (p?.url && !p.cname) ctx.siteUrl = siteAddress(p.url.endsWith('/') ? p.url : `${p.url}/`);
                 if (p?.status === 'built') { built = true; break; }
                 if (p?.status === 'errored') throw new StepError('pages_failed');
                 await sleep(waits.every);
@@ -276,7 +293,9 @@ function createDeployer(deps) {
             if (built) {
                 until = now() + waits.site;
                 do {
-                    if ((await ping(ctx.siteUrl)).ok) { answering = true; break; }
+                    // A redirect is GitHub answering too (the free address sends to the own domain)
+                    const r = await ping(ctx.siteUrl);
+                    if (r.ok || (r.status >= 300 && r.status < 400)) { answering = true; break; }
                     await sleep(waits.every);
                 } while (now() < until);
             }

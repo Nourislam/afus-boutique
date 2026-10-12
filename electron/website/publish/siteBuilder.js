@@ -62,7 +62,7 @@ function searchCatalog(snap, theme, lang, asset) {
     };
 }
 
-function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, lang }) {
+function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, lang, cname = null }) {
     // The pictures that exist and can be published; the others are left out of the pages
     const images = new Map();
     const keep = (name) => {
@@ -94,6 +94,9 @@ function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, l
     // The public catalogue: what the pages show, for other uses of the website
     files.push({ path: 'catalog.json', content: JSON.stringify({ builtAt: snap.builtAt, theme: theme.id, shop: snap.shop, categories: snap.categories, products: snap.products }, null, 1) });
     files.push({ path: '.nojekyll', content: '' });
+    // The shop's own domain, once connected (GitHub Pages reads it from this file: without it
+    // an update would take the domain off the website)
+    if (cname) files.push({ path: 'CNAME', content: String(cname) });
     files.push({ path: 'robots.txt', content: 'User-agent: *\nAllow: /\n' });
     files.push({ path: 'README.md', content: `# ${snap.shop.name || 'Website'}\n\nThis website is made and updated by Afus Boutique from the shop's own catalogue.\nPlease do not edit these files by hand: the next update replaces them.\n` });
     if (files.length > MAX_FILES) throw Object.assign(new Error('too many files'), { reason: 'too_large' });

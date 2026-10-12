@@ -42,7 +42,8 @@ const DEFAULT_STATE = Object.freeze({
     // The last Create Website / Update website run, step by step
     deploy: { status: 'idle', steps: [], startedAt: null, finishedAt: null, failedStep: null, reason: null },
     // Optional own domain: the website always works on the free address first
-    domain: { name: '', status: 'none', addedAt: null },
+    domain: { name: '', status: 'none', source: null, provider: null, reason: null, addedAt: null },
+    domainClicks: [],
     publishedAt: null,
     // Bringing the website's orders into the shop's SQLite (website/orders + websiteService.syncOrders)
     sync: { lastAt: null, lastOkAt: null, ok: null, reason: null, failures: 0, nextAt: null, received: 0, waiting: 0, legacy: false },
@@ -65,14 +66,16 @@ function normalizeState(saved) {
         createdAt: s.createdAt || null,
         accounts: { github: githubAccount(s.accounts?.github), cloudflare: cloudflareAccount(s.accounts?.cloudflare) },
         repository: repo,
-        domain: {
-            name: typeof s.domain?.name === 'string' ? s.domain.name : '',
-            status: s.domain?.name ? (s.domain.status || 'pending') : 'none',
-            addedAt: s.domain?.addedAt || null,
-        },
+        domain: domainOf(s.domain),
+        // Buy-a-domain links opened (provider and ending only, kept here): for the shop's own record
+        domainClicks: (Array.isArray(s.domainClicks) ? s.domainClicks : [])
+            .filter(c => isText(c?.provider, 32) && isText(c?.tld, 30) && isText(c?.at, 40)).slice(-50)
+            .map(c => ({ provider: c.provider, tld: c.tld, at: c.at })),
         publishedAt: s.publishedAt || null,
         lastUpdate: s.lastUpdate && typeof s.lastUpdate === 'object' ? s.lastUpdate : null,
         lastError: s.lastError || null,
+        // A random reference of this installation in affiliate links (no person, no shop data)
+        affiliateRef: typeof s.affiliateRef === 'string' && /^[a-f0-9]{12}$/.test(s.affiliateRef) ? s.affiliateRef : null,
         resources: resourcesOf(s.resources),
         publicInfo: publicInfo(s.publicInfo),
         site: siteOf(s.site),
@@ -109,11 +112,43 @@ function resourcesOf(r) {
     return out;
 }
 
+/**
+ * The shop's own domain (optional), step by step:
+ *   none          the free address only
+ *   dns_needed    saved; waiting for its records at the domain provider
+ *   dns_wrong     its records point somewhere else (shown to fix)
+ *   connecting    it points to GitHub: given to the website, GitHub prepares it
+ *   https_pending GitHub is making its certificate (https)
+ *   active        the website answers on https://<domain>/
+ *   failed        GitHub refused it (reason), free address kept
+ * source: 'own' (the shop already had it) / 'bought' (bought now, at provider).
+ */
+const DOMAIN_STATUSES = ['none', 'dns_needed', 'dns_wrong', 'connecting', 'https_pending', 'active', 'failed'];
+const DOMAIN_REASONS = ['taken', 'https_failed', 'github_failed', 'dns_lost', 'not_published', 'github_missing'];
+function domainOf(d) {
+    const name = typeof d?.name === 'string' ? cleanDomain(d.name) : '';
+    if (!name) return { name: '', status: 'none', source: null, provider: null, reason: null, addedAt: null };
+    // Saved before the steps existed ("pending"): waiting for its records
+    const status = DOMAIN_STATUSES.includes(d.status) && d.status !== 'none' ? d.status : 'dns_needed';
+    const out = {
+        name, status,
+        source: d.source === 'bought' ? 'bought' : 'own',
+        provider: isText(d.provider, 32) ? d.provider : null,
+        reason: DOMAIN_REASONS.includes(d.reason) ? d.reason : null,
+        addedAt: d.addedAt || null,
+    };
+    for (const key of ['checkedAt', 'dnsOkAt', 'connectedAt', 'activeAt']) if (isText(d[key], 40)) out[key] = d[key];
+    out.misses = Number.isInteger(d.misses) && d.misses > 0 ? Math.min(d.misses, 99) : 0;
+    return out;
+}
+
 function siteOf(x) {
     if (!x || typeof x !== 'object') return {};
     const out = {};
     if (isText(x.url, 300) && /^https?:\/\//.test(x.url)) out.url = x.url;
     for (const key of ['commit', 'hash', 'contentHash', 'dataHash', 'builtAt', 'publishedAt', 'checkedAt']) if (isText(x[key], 100)) out[key] = x[key];
+    // The free address (kept: once the own domain is connected GitHub answers with the domain)
+    if (isText(x.freeUrl, 300) && /^https?:\/\//.test(x.freeUrl)) out.freeUrl = x.freeUrl;
     if (typeof x.pending === 'boolean') out.pending = x.pending;
     // The last update found nothing new to publish (the website kept as it was)
     if (typeof x.unchanged === 'boolean') out.unchanged = x.unchanged;
@@ -250,5 +285,6 @@ function statusOf(state) {
 module.exports = {
     FREE_HOST, NAME_MIN, NAME_MAX, DEFAULT_STATE,
     GITHUB_STATUSES, GITHUB_REASONS, CLOUDFLARE_STATUSES, CLOUDFLARE_REASONS, cloudflareAccount,
+    DOMAIN_STATUSES, DOMAIN_REASONS, domainOf,
     normalizeState, githubAccount, repositoryName, slugify, suggestName, isValidName, cleanDomain, freeUrl, stepsOf, statusOf,
 };

@@ -1887,6 +1887,14 @@ const website = createWebsiteService({
     // The page the browser shows once it came back, in the shop's language
     callbackPage: (kind) => cloudflareCallbackPage(kind, (getSettingValue('store_config') || {}).defaultLanguage),
   },
+  // Own domain (optional): the providers Afus has affiliate links with (profile.json ›
+  // domainProviders); the shop buys its domain there, for itself
+  domain: {
+    providers: Array.isArray(PROFILE.domainProviders) && PROFILE.domainProviders.length ? PROFILE.domainProviders
+      : (!app.isPackaged && process.env.AFUS_DOMAIN_PROVIDERS_TEST ? (() => { try { return JSON.parse(process.env.AFUS_DOMAIN_PROVIDERS_TEST); } catch { return []; } })() : []),
+    // The provider's page in the shop's browser (the link was checked: https, the provider's own address)
+    openExternal: (url) => shell.openExternal(url),
+  },
   // Create Website: the shop's pictures (images folder only), the log of each step (no key)
   publish: {
     readImage: (name) => {
@@ -1904,7 +1912,11 @@ function websiteOrdersTick() {
   website.syncIfDue()
     .then((r) => { if (r?.reason && !['idle', 'later'].includes(r.reason)) logService.write('warn', `website orders sync: ${r.reason}`); })
     .catch(() => logService.write('warn', 'website orders sync failed'))
-    .finally(() => setTimeout(websiteOrdersTick, 60 * 1000).unref?.());
+    .finally(() => {
+      // The own domain, when it is time to look again (its records, GitHub's certificate)
+      website.domainCheckIfDue().catch(() => logService.write('warn', 'website domain check failed'));
+      setTimeout(websiteOrdersTick, 60 * 1000).unref?.();
+    });
 }
 setTimeout(websiteOrdersTick, 20 * 1000).unref?.();
 ipcMain.handle('website:getState', () => website.view());
@@ -1915,6 +1927,10 @@ ipcMain.handle('website:setTheme', (_, theme) => website.setTheme(theme));
 ipcMain.handle('website:setName', (_, name) => website.setName(name));
 ipcMain.handle('website:setDomain', (_, domain) => website.setDomain(domain));
 ipcMain.handle('website:removeDomain', () => website.removeDomain());
+ipcMain.handle('website:domainCheck', () => website.domainCheck());
+ipcMain.handle('website:domainRetry', () => website.domainRetry());
+ipcMain.handle('website:domainSearch', (_, args = {}) => website.domainSearch(args || {}));
+ipcMain.handle('website:domainOpenBuy', (_, args = {}) => website.domainOpenBuy(args || {}));
 ipcMain.handle('website:update', () => website.update());
 ipcMain.handle('website:connect', (_, provider) => website.connect(provider));
 ipcMain.handle('website:githubStart', () => website.githubStart());

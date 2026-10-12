@@ -201,13 +201,29 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
         const r = await call(`${repoPath(owner, name)}/pages`, { token });
         if (r.status === 404) return null;
         if (!r.ok) fail(r);
-        return { url: String(r.data.html_url || ''), status: r.data.status || null };
+        return pagesOf(r.data);
+    }
+
+    /**
+     * The website's own domain on GitHub Pages (cname; null = none, back on
+     * the free address) and whether https is required. -> the Pages state, or
+     * { refused: true } when GitHub does not accept the domain (used by
+     * another GitHub website, or not a valid domain).
+     */
+    async function updatePages(token, owner, name, { cname, httpsEnforced } = {}) {
+        const body = {};
+        if (cname !== undefined) body.cname = cname;
+        if (httpsEnforced !== undefined) body.https_enforced = !!httpsEnforced;
+        const r = await call(`${repoPath(owner, name)}/pages`, { method: 'PUT', token, body });
+        if (r.status === 400 || r.status === 422) return { refused: true };
+        if (!r.ok) fail(r);
+        return getPages(token, owner, name);
     }
 
     /** Switch GitHub Pages on, from the branch's root (already on: its state). */
     async function enablePages(token, owner, name, { branch = 'main' } = {}) {
         const r = await call(`${repoPath(owner, name)}/pages`, { method: 'POST', token, body: { build_type: 'legacy', source: { branch, path: '/' } } });
-        if (r.status === 201) return { url: String(r.data.html_url || ''), status: r.data.status || null };
+        if (r.status === 201) return pagesOf(r.data);
         if (r.status === 409) return getPages(token, owner, name);
         return fail(r);
     }
@@ -217,9 +233,17 @@ function createGithubClient({ clientId, fetch: fetchImpl, webBase = WEB, apiBase
         webBase,
         manageUrl: `${webBase}${MANAGE_PATH}`,
         requestDeviceCode, pollToken, getUser, getRepository, createRepository,
-        commitFiles, getPages, enablePages,
+        commitFiles, getPages, enablePages, updatePages,
     };
 }
+
+/** GitHub Pages as Afus uses it: address, build state, own domain, its certificate, https required. */
+const pagesOf = (d) => ({
+    url: String(d.html_url || ''), status: d.status || null,
+    cname: d.cname ? String(d.cname).toLowerCase() : null,
+    certificate: d.https_certificate?.state ? String(d.https_certificate.state) : null,
+    httpsEnforced: !!d.https_enforced,
+});
 
 const repoOf = (d) => ({
     id: d.id ?? null,

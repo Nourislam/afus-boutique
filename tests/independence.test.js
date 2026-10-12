@@ -29,6 +29,8 @@ const NETWORK_ALLOWED = {
     'electron/website/cloudflare.js': "the shop's own Cloudflare account (Website Manager, optional module)",
     // Create Website: is the shop's own published website / API answering, its order requests
     'electron/website/publish/ping.js': "the shop's own published website and its API (Website Manager, optional module)",
+    // Only when the owner uses Domain (optional): is a name registered (RDAP), does it point to the website (DNS over https)
+    'electron/website/domain/lookup.js': "public domain look-ups for the shop's own domain (Website Manager › Domain, optional)",
     // Not run by the program: uploaded to the shop's Cloudflare account as its website API
     'electron/website/worker/worker.mjs': "the shop's website API, run by Cloudflare (never by the program)",
     // Not run by the program: the published website's script reads its own search.json, in the customer's browser
@@ -61,7 +63,7 @@ describe('offline-first core', () => {
         const allowed = /shopify\.dev|help\.shopify\.com|woocommerce\.(com|github\.io)|your-store\.com|^https:\/\/wa\.me\b/;
         // The shop's own free website address: shown to the shop, never opened by the program
         // The shop's own website / API addresses, built from its names (GitHub Pages, workers.dev)
-        const WEBSITE_FILES = ['electron/website/websiteState.js', 'electron/website/publish/deployer.js', 'electron/website/cloudflare.js', 'src/pages/WebsitePage.jsx'];
+        const WEBSITE_FILES = ['electron/website/websiteState.js', 'electron/website/publish/deployer.js', 'electron/website/cloudflare.js', 'src/pages/WebsitePage.jsx', 'electron/website/domain/domainManager.js'];
         const shopAddress = ([file, url]) => WEBSITE_FILES.includes(file) && (url.startsWith('https://${') || url.startsWith('https://<')
             // Examples in the empty fields of the shop's own links (Website screen): never opened by the program
             || (file === 'src/pages/WebsitePage.jsx' && /^https:\/\/(facebook\.com|instagram\.com|tiktok\.com|maps\.app\.goo\.gl)\/(…|@…)$/.test(url)));
@@ -69,7 +71,9 @@ describe('offline-first core', () => {
         const github = ([file, url]) => file === 'electron/website/github.js' && ['https://github.com', 'https://api.github.com'].includes(url);
         // Cloudflare's own sign-in and API, in the Cloudflare module only
         const cloudflare = ([file, url]) => file === 'electron/website/cloudflare.js' && /^https:\/\/(dash|api)\.cloudflare\.com(\/|$)/.test(url);
-        expect(urls.filter((entry) => !allowed.test(entry[1]) && !shopAddress(entry) && !github(entry) && !cloudflare(entry))).toEqual([]);
+        // The registries' public list (IANA) and a public DNS resolver, in the domain look-up module only
+        const domainLookup = ([file, url]) => file === 'electron/website/domain/lookup.js' && ['https://data.iana.org/rdap/dns.json', 'https://cloudflare-dns.com/dns-query'].includes(url);
+        expect(urls.filter((entry) => !allowed.test(entry[1]) && !shopAddress(entry) && !github(entry) && !cloudflare(entry) && !domainLookup(entry))).toEqual([]);
     });
 
     it('listens on this computer only for the browser coming back from a sign-in (127.0.0.1)', () => {

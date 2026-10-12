@@ -87,10 +87,11 @@ describe('website service (settings key "website", catalogue read only)', () => 
         expect(await codeOf(() => service.setTheme('neon'))).toBe('WEBSITE_THEME_UNKNOWN');
         expect(service.setName('yasmine-shop').freeUrl).toContain('/yasmine-shop/');
         expect(await codeOf(() => service.setDomain('not a domain'))).toBe('WEBSITE_DOMAIN_INVALID');
-        expect(service.setDomain('https://www.yasmine.dz/').domain).toMatchObject({ name: 'www.yasmine.dz', status: 'pending' });
+        // Saved, waiting for its records (the website is not published yet: said so)
+        expect(service.setDomain('https://www.yasmine.dz/').domain).toMatchObject({ name: 'www.yasmine.dz', status: 'dns_needed', source: 'own' });
         // The free address keeps working with or without a domain
         expect(service.view().freeUrl).toContain('/yasmine-shop/');
-        expect(service.removeDomain().domain).toMatchObject({ name: '', status: 'none' });
+        expect((await service.removeDomain()).domain).toMatchObject({ name: '', status: 'none' });
         settings.website.publishedAt = '2026-10-11T00:00:00Z';
         expect(await codeOf(() => service.setName('again-other'))).toBe('WEBSITE_NAME_LOCKED');
     });

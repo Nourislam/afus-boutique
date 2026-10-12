@@ -90,6 +90,8 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
         repos: new Map(), blobs: new Map(), trees: new Map(), commits: new Map(), requests: [], pagesBuildPolls,
         // 'PATCH /git/refs/heads/main' -> { status, times } (times: how many calls fail; none = always)
         refuse: {},
+        // Domains another GitHub website already uses (GitHub refuses them); looks before a certificate
+        takenDomains: new Set(), certPolls: 2, certFails: false,
     };
     const cf = {
         tokens: new Set(), codes: new Map(), revoked: [], accounts: accounts || [{ id: 'a'.repeat(32), name: 'Boutique' }],
@@ -182,13 +184,38 @@ async function startFakeCloud({ scopes = 'repo', login = 'yasmine-shop', d1Facto
                 return send(201, { html_url: repo.pages.url, status: null });
             }
             if (!repo.pages) return send(404, {});
+            if (req.method === 'PUT') {
+                // As GitHub: the own domain is written as a CNAME file on the branch (one commit)
+                const j = JSON.parse(body || '{}');
+                if ('cname' in j) {
+                    const cname = j.cname ? String(j.cname).toLowerCase() : null;
+                    if (cname && gh.takenDomains.has(cname)) return send(400, { message: 'The CNAME is already taken' });
+                    const files = filesOf(repo);
+                    if (cname) files.set('CNAME', Buffer.from(cname)); else files.delete('CNAME');
+                    commitTree(repo, files, cname ? `Create CNAME` : 'Delete CNAME');
+                    repo.pages.cname = cname;
+                    repo.pages.certPolls = 0;
+                    repo.pages.https = false;
+                }
+                if ('https_enforced' in j) {
+                    if (j.https_enforced && repo.pages.cert !== 'approved') return send(422, { message: 'The certificate does not exist yet' });
+                    repo.pages.https = !!j.https_enforced;
+                }
+                return send(204, null);
+            }
             // A build takes a few looks after each change
             let status = 'built';
             if (repo.builtHead !== repo.head) {
                 status = 'building';
                 if (++repo.buildPolls >= gh.pagesBuildPolls) { repo.builtHead = repo.head; status = 'built'; }
             }
-            return send(200, { html_url: repo.pages.url, status });
+            let cert = null;
+            if (repo.pages.cname) {
+                cert = ++repo.pages.certPolls >= gh.certPolls ? (gh.certFails ? 'errored' : 'approved') : 'authorization_pending';
+                repo.pages.cert = cert;
+            }
+            const htmlUrl = repo.pages.cname ? `${repo.pages.https ? 'https' : 'http'}://${repo.pages.cname}/` : repo.pages.url;
+            return send(200, { html_url: htmlUrl, status, cname: repo.pages.cname || null, https_enforced: !!repo.pages.https, https_certificate: cert ? { state: cert, domains: [repo.pages.cname] } : undefined });
         }
         return send(404, {});
     }

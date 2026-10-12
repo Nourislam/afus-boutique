@@ -30,6 +30,9 @@ const { createGithubClient } = require('./github');
 const { createCloudflareConnector } = require('./cloudflareConnector');
 const { createCloudflareClient } = require('./cloudflare');
 const { createDeployer, dataHash } = require('./publish/deployer');
+const { createDomainManager } = require('./domain/domainManager');
+const { createLookup } = require('./domain/lookup');
+const domainProviders = require('./domain/providers');
 const { canPublishPages } = require('./github');
 const publishPing = require('./publish/ping');
 const orderBook = require('./orders/orderBook');
@@ -48,7 +51,7 @@ const REPO_TRIES = 5;
 
 const KEY = 'website';
 
-function createWebsiteService({ api, getSetting, saveSetting, codedError, github = {}, cloudflare = {}, blockedMode = () => null, publish = {}, currentEmployee = () => null }) {
+function createWebsiteService({ api, getSetting, saveSetting, codedError, github = {}, cloudflare = {}, blockedMode = () => null, publish = {}, domain = {}, currentEmployee = () => null }) {
     const read = () => state.normalizeState(getSetting(KEY));
     const write = (next) => { saveSetting(KEY, next); return next; };
     const shopName = () => (getSetting('store_config') || {}).businessName || '';
@@ -138,6 +141,36 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         log: publish.log,
     });
 
+    // The shop's own domain (optional): bought by the shop at a provider, connected to the website
+    const startUpdate = () => {
+        if (!read().publishedAt || blockedMode()) return;
+        const r = deployer.start();
+        // A run already going (built before the domain changed): one more right after it
+        if (!r.started && r.reason === 'running') deployer.pending().then(() => deployer.start()).catch(() => {});
+    };
+    const domains = createDomainManager({
+        read,
+        // The website value of the open shop (the demo shop's own in the demo): every step that goes online is blocked there
+        write,
+        github: {
+            client,
+            keys: () => {
+                if (!connector.linked()) return null;
+                const k = connector.token();
+                return k?.token ? { token: k.token } : null;
+            },
+        },
+        lookup: domain.lookup || createLookup({ fetch: domain.fetch || publish.fetch }),
+        providers: domainProviders.loadProviders(domain.providers, { log: publish.log }),
+        startUpdate,
+        ping: (url) => publishPing.ping(url, { fetch: domain.fetch || publish.fetch }),
+        openExternal: domain.openExternal || (async () => {}),
+        now: domain.now,
+        log: publish.log,
+        blocked: () => !!blockedMode(),
+        codedError,
+    });
+
     /** The Cloudflare account as shown: "connected" only while its keys are really kept here; no account id. */
     function cloudflareView(account) {
         const { accountId: _hidden, ...shown } = account;
@@ -174,13 +207,15 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         const deploy = saved.deploy.status === 'running' && !deployer.running()
             ? { ...saved.deploy, status: 'failed', reason: 'interrupted', steps: saved.deploy.steps.map(x => (x.status === 'running' ? { ...x, status: 'failed', reason: 'interrupted' } : x)) }
             : saved.deploy;
-        const { resources: _made, repository: _repo, ...shown } = saved;
+        const { resources: _made, repository: _repo, affiliateRef: _ref, ...shown } = saved;
         const s = { ...shown, deploy, accounts: { github: githubView(saved.accounts.github), cloudflare: cloudflareView(saved.accounts.cloudflare) } };
         const blocked = blockedMode();
         const owner = saved.resources.repo?.owner || (saved.accounts.github.status === 'connected' ? saved.accounts.github.login : '');
         return {
             ...s,
+            domain: domains.view(),
             site: {
+                freeUrl: saved.site.freeUrl || null,
                 url: saved.site.url || null, publishedAt: saved.site.publishedAt || null, pending: !!saved.site.pending, summary: saved.site.summary || null,
                 // The last update found nothing new (the website kept as it was), and when it looked
                 unchanged: !!saved.site.unchanged, checkedAt: saved.site.checkedAt || null,
@@ -266,19 +301,51 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return view();
     }
 
-    /** Own domain (optional). Linked automatically once Cloudflare is linked. */
-    function setDomain(domain) {
-        const s = mustExist(read());
-        const clean = state.cleanDomain(domain);
-        if (!clean) throw codedError('WEBSITE_DOMAIN_INVALID');
-        write({ ...s, domain: { name: clean, status: 'pending', addedAt: new Date().toISOString() } });
+    /**
+     * Own domain (optional): the shop's, bought by the shop. Saved, then
+     * connected step by step (domain/domainManager.js); the free address
+     * keeps working until it is ready.
+     */
+    function setDomain(arg) {
+        mustExist(read());
+        const { domain: name, source, provider } = typeof arg === 'string' ? { domain: arg } : (arg || {});
+        domains.set({ domain: name, source, provider });
+        // A first look right away (records may already be there)
+        domains.check().catch(() => {});
         return view();
     }
 
-    function removeDomain() {
-        const s = mustExist(read());
-        write({ ...s, domain: { name: '', status: 'none', addedAt: null } });
+    async function removeDomain() {
+        mustExist(read());
+        const r = await domains.remove();
+        return { ...view(), result: { removed: r.removed, cleanup: r.cleanup } };
+    }
+
+    async function domainCheck() {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        await domains.check();
         return view();
+    }
+
+    async function domainRetry() {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        await domains.retry();
+        return view();
+    }
+
+    /** Domain search for "Buy a new domain" (who sells it, registered or not: a guide). */
+    async function domainSearch({ query } = {}) {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        return domains.search(query);
+    }
+
+    /** The provider's page for this domain, with Afus' affiliate link (the shop buys it there, for itself). */
+    async function domainOpenBuy(args = {}) {
+        mustExist(read());
+        return domains.openBuy(args);
     }
 
     /**
@@ -720,6 +787,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
         publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, changes,
+        domainCheck, domainRetry, domainSearch, domainOpenBuy, domainCheckIfDue: () => domains.checkIfDue(),
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),

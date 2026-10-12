@@ -379,7 +379,7 @@ function WebsiteDashboard({ site, setSite, preview, busy, run }) {
             </section>
 
             {/* Custom Domain (optional) */}
-            <CustomDomain site={site} busy={busy} run={run} />
+            <CustomDomain site={site} setSite={setSite} busy={busy} run={run} />
         </div>
     );
 }
@@ -400,36 +400,211 @@ function RenameAddress({ site, busy, run }) {
     );
 }
 
-function CustomDomain({ site, busy, run }) {
+const DOMAIN_STEPS = ['dns', 'connected', 'https', 'active'];
+// How far each status is along the steps (failed / wrong: where it stopped)
+const DOMAIN_REACHED = { dns_needed: 0, dns_wrong: 0, connecting: 1, https_pending: 2, active: 4, failed: 0 };
+const DOMAIN_STYLE = {
+    dns_needed: 'bg-amber-500/15 text-amber-300', dns_wrong: 'bg-red-500/15 text-red-300', connecting: 'bg-sky-500/15 text-sky-300',
+    https_pending: 'bg-sky-500/15 text-sky-300', active: 'bg-emerald-500/15 text-emerald-300', failed: 'bg-red-500/15 text-red-300',
+};
+
+/**
+ * Domain: the free address (always there, works without buying anything)
+ * and, optionally, the shop's own domain: one it already has, or one it
+ * buys now at a provider (on its own account: the domain is the shop's).
+ * Connecting is step by step; the free address keeps working until the
+ * domain is ready.
+ */
+function CustomDomain({ site, setSite, busy, run }) {
     const { t } = useT();
-    const [domain, setDomain] = useState('');
     const api = window.electronAPI.website;
-    const has = !!site.domain?.name;
+    const d = site.domain || { name: '', status: 'none', providers: [] };
+    const has = !!d.name;
+    const [mode, setMode] = useState(null); // 'own' | 'buy'
+    const [domain, setDomain] = useState('');
+    const [query, setQuery] = useState('');
+    const [found, setFound] = useState(null);
+    const [opened, setOpened] = useState(null); // { domain, provider } after a buy link
+    const [cleanup, setCleanup] = useState(null);
+    const free = site.site?.freeUrl || site.freeUrl;
+    const published = !!site.publishedAt;
+
+    // Waiting for the records or GitHub: look again by itself while the screen is open
+    useEffect(() => {
+        if (!has || !['dns_needed', 'dns_wrong', 'connecting', 'https_pending'].includes(d.status)) return undefined;
+        const timer = setInterval(() => { api.getState().then(setSite).catch(() => {}); }, 30000);
+        return () => clearInterval(timer);
+    }, [has, d.status]);
+
+    const connect = (name, source, provider = null) => run('domain', () => api.setDomain({ domain: name, source, provider }), () => {
+        setDomain(''); setMode(null); setFound(null); setOpened(null); setCleanup(null);
+        toast.success(t('website.domainSaved'));
+    });
+    const search = () => run('domainSearch', async () => { setFound(await api.domainSearch({ query })); return null; });
+    const buy = (name, provider) => run('domainBuy', async () => {
+        await api.domainOpenBuy({ domain: name, provider });
+        setOpened({ domain: name, provider });
+        return null;
+    });
+    const remove = () => run('domain', () => api.removeDomain(), (next) => setCleanup(next?.result?.cleanup?.length ? next.result : null));
+    const copy = (text) => navigator.clipboard?.writeText(text).then(() => toast.success(t('website.copied')), () => {});
+    const reached = DOMAIN_REACHED[d.status] ?? 0;
+
     return (
-        <section className="card space-y-3" data-testid="website-domain">
-            <h2 className="font-semibold flex items-center gap-2"><Globe className="w-4 h-4 text-indigo-300" /> {t('website.domain')} <span className="badge bg-dark-tertiary text-zinc-400">{t('common.optional')}</span></h2>
-            <p className="text-xs text-zinc-500 leading-relaxed">{t('website.domainHint')}</p>
-            {has ? (
-                <div className="space-y-2">
-                    <div className="flex items-center gap-2 rounded-lg bg-dark-tertiary/60 px-3 py-2">
-                        <span dir="ltr" className="font-mono text-sm flex-1 min-w-0 break-all">{site.domain.name}</span>
-                        <Button size="sm" variant="ghost" onClick={() => run('domain', () => api.removeDomain())} title={t('website.domainRemove')} aria-label={t('website.domainRemove')}>
-                            <X className="w-4 h-4" />
-                        </Button>
+        <section className="card space-y-4" data-testid="website-domain">
+            <h2 className="font-semibold flex items-center gap-2"><Globe className="w-4 h-4 text-indigo-300" /> {t('website.domain.title')}</h2>
+
+            {/* 1. The free address: always there */}
+            <div className="rounded-xl border border-dark-border p-3 space-y-1" data-testid="website-domain-free">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{t('website.domain.free')}</span>
+                    <span className={`badge ${published ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dark-tertiary text-zinc-400'}`} data-testid="website-domain-free-status">
+                        {t(published ? 'website.domain.freeActive' : 'website.domain.freeSoon')}
+                    </span>
+                </div>
+                {free && <p dir="ltr" className="font-mono text-xs break-all text-zinc-300">{free}</p>}
+                <p className="text-xs text-zinc-500">{t(d.status === 'active' ? 'website.domain.freeRedirects' : 'website.domain.freeHint')}</p>
+            </div>
+
+            {/* 2. The shop's own domain (optional) */}
+            <div className="rounded-xl border border-dark-border p-3 space-y-3" data-testid="website-domain-custom">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{t('website.domain.custom')}</span>
+                    <span className="badge bg-dark-tertiary text-zinc-400">{t('common.optional')}</span>
+                </div>
+
+                {!has && !mode && (
+                    <div className="grid sm:grid-cols-2 gap-2">
+                        <Button variant="secondary" onClick={() => setMode('own')} data-testid="website-domain-have">{t('website.domain.have')}</Button>
+                        <Button variant="secondary" onClick={() => setMode('buy')} data-testid="website-domain-buy">{t('website.domain.buy')}</Button>
+                        <p className="sm:col-span-2 text-xs text-zinc-500 leading-relaxed">{t('website.domain.optionalHint')}</p>
                     </div>
-                    <span className="badge bg-amber-500/15 text-amber-300">{t(`website.domainStatus.${site.domain.status}`)}</span>
-                    <p className="text-xs text-zinc-500">{t('website.domainPendingHint')}</p>
-                </div>
-            ) : (
-                <div className="flex flex-wrap gap-2">
-                    <input dir="ltr" className="input flex-1 min-w-[12rem] font-mono" placeholder="boutique-yasmine.com" value={domain}
-                        onChange={(e) => setDomain(e.target.value)} aria-label={t('website.domain')} data-testid="website-domain-input" />
-                    <Button variant="secondary" onClick={() => run('domain', () => api.setDomain(domain), () => { setDomain(''); toast.success(t('website.domainSaved')); })}
-                        loading={busy === 'domain'} disabled={!domain.trim()} data-testid="website-domain-save">
-                        {t('common.save')}
-                    </Button>
-                </div>
-            )}
+                )}
+
+                {!has && mode === 'own' && (
+                    <div className="space-y-2">
+                        <p className="text-xs text-zinc-400">{t('website.domain.haveHint')}</p>
+                        <div className="flex flex-wrap gap-2">
+                            <input dir="ltr" className="input flex-1 min-w-[12rem] font-mono" placeholder="boutique-yasmine.com" value={domain}
+                                onChange={(e) => setDomain(e.target.value)} aria-label={t('website.domain.custom')} data-testid="website-domain-input" />
+                            <Button onClick={() => connect(domain, 'own')} loading={busy === 'domain'} disabled={!domain.trim()} data-testid="website-domain-save">{t('website.domain.connect')}</Button>
+                            <Button variant="ghost" onClick={() => setMode(null)}>{t('common.cancel')}</Button>
+                        </div>
+                    </div>
+                )}
+
+                {!has && mode === 'buy' && (
+                    <div className="space-y-3" data-testid="website-domain-buy-panel">
+                        <p className="text-xs text-zinc-400 leading-relaxed">{t('website.domain.buyHint')}</p>
+                        <div className="flex flex-wrap gap-2">
+                            <input className="input flex-1 min-w-[12rem]" placeholder={t('website.domain.searchPlaceholder')} value={query}
+                                onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && query.trim()) search(); }}
+                                aria-label={t('website.domain.search')} data-testid="website-domain-search" />
+                            <Button onClick={search} loading={busy === 'domainSearch'} disabled={!query.trim()} data-testid="website-domain-search-btn">{t('website.domain.search')}</Button>
+                            <Button variant="ghost" onClick={() => { setMode(null); setFound(null); }}>{t('common.cancel')}</Button>
+                        </div>
+                        {found && found.providersAvailable === 0 && <p className="text-xs text-amber-300" data-testid="website-domain-no-providers">{t('website.domain.noProviders')}</p>}
+                        {found && (
+                            <ul className="space-y-2" data-testid="website-domain-results">
+                                {found.results.map(r => (
+                                    <li key={r.domain} className="rounded-lg bg-dark-tertiary/50 p-2 space-y-2" data-testid="website-domain-result" data-domain={r.domain} data-status={r.status}>
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <span dir="ltr" className="font-mono text-sm">{r.domain}</span>
+                                            <span className={`badge ${r.status === 'available' ? 'bg-emerald-500/15 text-emerald-300' : r.status === 'taken' ? 'bg-red-500/15 text-red-300' : 'bg-dark-tertiary text-zinc-400'}`}>{t(`website.domain.avail.${r.status}`)}</span>
+                                        </div>
+                                        {r.status !== 'taken' && r.providers.length > 0 && (
+                                            <div className="flex flex-wrap gap-2">
+                                                {r.providers.map(p => (
+                                                    <Button key={p.id} size="sm" variant="secondary" onClick={() => buy(r.domain, p.id)} loading={busy === 'domainBuy'} data-testid="website-domain-buy-at" data-provider={p.id}>
+                                                        {t('website.domain.buyAt', { name: p.name })}
+                                                        {p.price && <span className="text-zinc-400 ms-1">· {t('website.domain.from', { price: `${formatNumber(p.price.from)} ${p.price.currency}` })}</span>}
+                                                    </Button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                        {found && <p className="text-xs text-zinc-500 leading-relaxed">{t('website.domain.ownership')}</p>}
+                        {opened && (
+                            <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2" data-testid="website-domain-bought">
+                                <p className="text-sm">{t('website.domain.afterBuy', { domain: opened.domain })}</p>
+                                <Button size="sm" onClick={() => connect(opened.domain, 'bought', opened.provider)} loading={busy === 'domain'} data-testid="website-domain-bought-connect">{t('website.domain.boughtConnect')}</Button>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {has && (
+                    <div className="space-y-3">
+                        <div className="rounded-lg bg-dark-tertiary/60 px-3 py-2 space-y-1.5">
+                            <p dir="ltr" className="font-mono text-sm [overflow-wrap:anywhere] text-start" data-testid="website-domain-name">{d.name}</p>
+                            <span className={`badge ${DOMAIN_STYLE[d.status] || ''}`} data-testid="website-domain-status" data-status={d.status}>{t(`website.domain.status.${d.status}`)}</span>
+                        </div>
+                        <ol className="grid grid-cols-2 gap-2" data-testid="website-domain-steps">
+                            {DOMAIN_STEPS.map((id, i) => {
+                                const st = i < reached ? 'done' : i === reached && !['failed', 'dns_wrong'].includes(d.status) ? 'running' : i === reached ? 'failed' : 'pending';
+                                return (
+                                    <li key={id} className="flex items-center gap-1.5 text-xs" data-status={st}>
+                                        {STEP_ICON[st === 'running' ? 'waiting' : st]}<span className="leading-snug">{t(`website.domain.step.${id}`)}</span>
+                                    </li>
+                                );
+                            })}
+                        </ol>
+                        <p className="text-sm text-zinc-300 leading-relaxed" data-testid="website-domain-explain">
+                            {t(`website.domain.explain.${d.reason || d.status}`, { domain: d.name, url: `https://${d.name}/` })}
+                        </p>
+
+                        {['dns_needed', 'dns_wrong'].includes(d.status) && d.records?.length > 0 && d.reason !== 'not_published' && (
+                            <div className="space-y-2" data-testid="website-domain-records">
+                                <p className="text-xs text-zinc-400 leading-relaxed">{t('website.domain.recordsHint')}</p>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                        <thead className="text-zinc-500"><tr>{['type', 'host', 'value'].map(k => <th key={k} className="text-start font-medium py-1 px-2">{t(`website.domain.col.${k}`)}</th>)}<th /></tr></thead>
+                                        <tbody dir="ltr">
+                                            {d.records.map((r, i) => (
+                                                <tr key={i} className="border-t border-dark-border" data-testid="website-domain-record">
+                                                    <td className="py-1.5 px-2 font-mono">{r.type}</td>
+                                                    <td className="py-1.5 px-2 font-mono">{r.host}</td>
+                                                    <td className="py-1.5 px-2 font-mono break-all">{r.value}</td>
+                                                    <td className="py-1.5 px-2 text-end"><Button size="sm" variant="ghost" onClick={() => copy(r.value)} aria-label={t('website.copy')}><Copy className="w-3.5 h-3.5" /></Button></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {d.status === 'dns_wrong' && d.found && (
+                                    <p className="text-xs text-red-300" dir="ltr" data-testid="website-domain-found">{t('website.domain.foundNow')}: {[...(d.found.a || []), ...(d.found.cname || [])].join(', ') || '—'}</p>
+                                )}
+                                <p className="text-xs text-zinc-500">{t('website.domain.autoCheck')}</p>
+                            </div>
+                        )}
+
+                        <div className="flex flex-wrap gap-2">
+                            {d.status !== 'failed' && d.status !== 'active' && (
+                                <Button size="sm" variant="secondary" onClick={() => run('domainCheck', () => api.domainCheck())} loading={busy === 'domainCheck'} data-testid="website-domain-check">
+                                    <RefreshCw className="w-4 h-4" /> {t('website.domain.checkNow')}
+                                </Button>
+                            )}
+                            {d.status === 'failed' && (
+                                <Button size="sm" onClick={() => run('domainCheck', () => api.domainRetry())} loading={busy === 'domainCheck'} data-testid="website-domain-retry">{t('website.publish.retry')}</Button>
+                            )}
+                            {d.status === 'active' && (
+                                <Button size="sm" variant="secondary" onClick={() => window.open(`https://${d.name}/`, '_blank', 'noopener')}><Globe className="w-4 h-4" /> {t('website.publish.open')}</Button>
+                            )}
+                            <Button size="sm" variant="ghost" onClick={remove} loading={busy === 'domain'} data-testid="website-domain-remove"><X className="w-4 h-4" /> {t('website.domainRemove')}</Button>
+                        </div>
+                    </div>
+                )}
+
+                {cleanup && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-1" data-testid="website-domain-cleanup">
+                        <p className="text-sm text-amber-300">{t('website.domain.cleanup', { domain: cleanup.removed })}</p>
+                        <p className="text-xs text-zinc-400" dir="ltr">{cleanup.cleanup.map(r => `${r.type} ${r.host} → ${r.value}`).join(' · ')}</p>
+                    </div>
+                )}
+            </div>
         </section>
     );
 }

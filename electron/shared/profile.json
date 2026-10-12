@@ -8,5 +8,10 @@
   "githubClientId": "",
   "cloudflareClientId": "",
   "cloudflareScopes": [],
-  "cloudflareRedirectPorts": [47651, 47652, 47653]
+  "cloudflareRedirectPorts": [
+    47651,
+    47652,
+    47653
+  ],
+  "domainProviders": []
 }

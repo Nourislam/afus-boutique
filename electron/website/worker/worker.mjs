@@ -30,6 +30,8 @@
  *   SHOP_KEY   secret, known only to Afus Boutique on the shop's computer
  *   STORE_ID   this shop's id (Afus sends it back on every call)
  *   SITE_URL   the website's address (where customers come back to)
+ *   SITE_URLS  every address of the same website (JSON list: the free address
+ *              and the shop's own domain once connected); optional
  *   SHOP_NAME  the shop's name
  *
  * No article, price or stock is kept here: the articles are the shop's, in
@@ -66,6 +68,27 @@ const SECURITY = {
 
 function siteOrigin(env) {
     try { return new URL(env.SITE_URL).origin; } catch { return ''; }
+}
+
+/** Every address of the shop's website (https only): its free address, its own domain. */
+function siteUrls(env) {
+    let list = [];
+    try { list = JSON.parse(env.SITE_URLS || '[]'); } catch { list = []; }
+    return [env.SITE_URL, ...(Array.isArray(list) ? list : [])].filter(u => {
+        // https only (plain http for a local test server only, never a real address)
+        try { const x = new URL(u); return typeof u === 'string' && (x.protocol === 'https:' || ['127.0.0.1', 'localhost'].includes(x.hostname)); } catch { return false; }
+    });
+}
+const originOf = (u) => { try { return new URL(u).origin; } catch { return ''; } };
+
+/**
+ * The address the customer is on (from the browser's Origin, else its
+ * Referer), when it is one of the shop's: the answer and the way back use
+ * it. Anything else: the website's main address.
+ */
+function siteFor(env, request) {
+    const from = request.headers.get('Origin') || originOf(request.headers.get('Referer') || '');
+    return siteUrls(env).find(u => from && originOf(u) === from) || env.SITE_URL;
 }
 
 function json(env, status, body, extra = {}) {
@@ -300,8 +323,10 @@ async function health(env) {
 }
 
 export default {
-    async fetch(request, env) {
+    async fetch(request, envIn) {
         const url = new URL(request.url);
+        // The answers and the way back follow the address the customer came from (one of the shop's)
+        const env = envIn.SITE_URL ? { ...envIn, SITE_URL: siteFor(envIn, request) } : envIn;
         try {
             // HTTPS only (an http:// call is not answered with data)
             if (url.protocol !== 'https:') return json(env, 403, { ok: false, error: 'https' });
@@ -312,7 +337,8 @@ export default {
             if (url.pathname === '/api/orders' && request.method === 'POST') {
                 // From the shop's own website only (a browser always says where the form was)
                 const origin = request.headers.get('Origin');
-                if (origin && siteOrigin(env) && origin !== siteOrigin(env)) return json(env, 403, { ok: false, error: 'origin' });
+                const known = siteUrls(envIn).map(originOf);
+                if (origin && known.length && !known.includes(origin)) return json(env, 403, { ok: false, error: 'origin' });
                 return await createOrder(request, env);
             }
             if (url.pathname === '/api/orders' && request.method === 'GET') return await listOrders(request, env, url);

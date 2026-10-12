@@ -109,6 +109,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         setName: (name) => ipcRenderer.invoke('website:setName', name),
         setDomain: (domain) => ipcRenderer.invoke('website:setDomain', domain),
         removeDomain: () => ipcRenderer.invoke('website:removeDomain'),
+        // Own domain (optional): connect it, look again, buy one at a provider (its affiliate link)
+        domainCheck: () => ipcRenderer.invoke('website:domainCheck'),
+        domainRetry: () => ipcRenderer.invoke('website:domainRetry'),
+        domainSearch: (args) => ipcRenderer.invoke('website:domainSearch', args),
+        domainOpenBuy: (args) => ipcRenderer.invoke('website:domainOpenBuy', args),
         update: () => ipcRenderer.invoke('website:update'),
         connect: (provider) => ipcRenderer.invoke('website:connect', provider),
         // The shop's GitHub account (the key itself never comes to the window)
