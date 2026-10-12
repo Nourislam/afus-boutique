@@ -209,6 +209,21 @@ describe('Website management (simulated GitHub and Cloudflare, the real Worker)'
         expect(service.changes()).toEqual({ outdated: false });
     });
 
+    it('Change Theme while an update is going on: the new look is published right after it', async () => {
+        const service = makeService();
+        await publish(service);
+        api.run("UPDATE products SET price = 3100 WHERE id = 'jean'");
+        service.publishSite(); // an update going on, built with the old look
+        const v = service.setTheme('kids', { publish: true });
+        expect(v.result).toEqual({ published: true, reason: null });
+        await service.publishPending();
+        await new Promise(r => setTimeout(r, 50));
+        await service.publishPending();
+        expect(catalogJson().theme).toBe('kids');
+        expect(catalogJson().products.find(p => p.id === 'jean').price).toBe(3100);
+        expect(service.changes()).toEqual({ outdated: false });
+    });
+
     it('the management view: status, free address, own domain, theme, last updated — and the free address before / after publishing', async () => {
         const service = makeService();
         let v = service.view();

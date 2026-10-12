@@ -135,7 +135,7 @@ describe('the records to add, and whether they are in place', () => {
 
 describe('connecting the shop\'s own domain to its website (simulated GitHub and Cloudflare, the real Worker)', () => {
     const DOMAIN = 'boutique-yasmine.com';
-    let api, settings, dir, cloud, SQL, mode, logs, dns, opened, rdap;
+    let api, settings, dir, cloud, SQL, mode, logs, dns, opened, rdap, gate = null;
 
     const fakeSafeStorage = () => ({
         isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret',
@@ -164,7 +164,7 @@ describe('connecting the shop\'s own domain to its website (simulated GitHub and
             domain: {
                 providers: providerList,
                 lookup: {
-                    records: async (name, type) => (dns[`${name}/${type}`] === undefined ? [] : dns[`${name}/${type}`]),
+                    records: async (name, type) => { if (gate) await gate; return dns[`${name}/${type}`] === undefined ? [] : dns[`${name}/${type}`]; },
                     availability: async (d) => ({ status: rdap[d] || 'unknown' }),
                 },
                 fetch: siteFetch,
@@ -382,6 +382,40 @@ describe('connecting the shop\'s own domain to its website (simulated GitHub and
         // Bought (on the provider's site, by the shop): connected like any domain of its own
         service.setDomain({ domain: 'boutique-yasmine.com', source: 'bought', provider: 'regx' });
         expect(service.view().domain).toMatchObject({ name: 'boutique-yasmine.com', source: 'bought', provider: 'regx', status: 'dns_needed' });
+    });
+
+    it('removed while a look is going on: the look finishes first, then the domain is taken off — never left on GitHub', async () => {
+        const service = makeService();
+        await published(service);
+        service.setDomain(DOMAIN);
+        await service.domainCheck();
+        pointToGithub();
+        let open;
+        gate = new Promise(r => { open = r; });
+        const looking = service.domainCheck();
+        const removing = service.removeDomain();
+        open(); gate = null;
+        await Promise.all([looking, removing]);
+        await service.publishPending();
+        expect(service.view().domain).toMatchObject({ name: '', status: 'none' });
+        expect(repo().pages.cname || null).toBeNull();
+        expect(files().has('CNAME')).toBe(false);
+    });
+
+    it('a look that ends after the domain was changed never writes on the new one', async () => {
+        const service = makeService();
+        await published(service);
+        service.setDomain(DOMAIN);
+        await service.domainCheck();
+        pointToGithub();
+        let open;
+        gate = new Promise(r => { open = r; });
+        const looking = service.domainCheck();
+        service.setDomain('other-shop.com');
+        open(); gate = null;
+        await looking;
+        expect(service.view().domain).toMatchObject({ name: 'other-shop.com', status: 'dns_needed' });
+        expect(repo().pages.cname || null).toBeNull();
     });
 
     it('owner-only channels; one domain at a time once connected', async () => {

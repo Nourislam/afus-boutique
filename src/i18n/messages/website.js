@@ -77,20 +77,11 @@ export default {
     'website.statusText.ready': ["Both accounts are linked: press Create website to put it online.", "Les deux comptes sont liés : appuyez sur Créer le site pour le mettre en ligne.", "الحسابان مربوطان: اضغط «إنشاء الموقع» لنشره."],
     'website.statusText.live': ["Your website is online. Update it after changing articles or prices.", "Votre site est en ligne. Mettez-le à jour après avoir changé des articles ou des prix.", "موقعك منشور. حدّثه بعد تغيير السلع أو الأسعار."],
     'website.statusText.error': ["The last update did not work. Try again in a moment.", "La dernière mise à jour n'a pas marché. Réessayez dans un moment.", "لم ينجح التحديث الأخير. أعد المحاولة بعد قليل."],
-    'website.step.created': ["Website created", "Site créé", "إنشاء الموقع"],
-    'website.step.github': ["GitHub linked", "GitHub lié", "ربط GitHub"],
-    'website.step.cloudflare': ["Cloudflare linked", "Cloudflare lié", "ربط Cloudflare"],
-    'website.step.published': ["Online", "En ligne", "النشر"],
-    'website.lastUpdate': ["Last update: {date}", "Dernière mise à jour : {date}", "آخر تحديث: {date}"],
-    'website.neverUpdated': ["Not updated yet", "Pas encore mis à jour", "لم يُحدَّث بعد"],
 
     // Update Website
     'website.updateNow': ["Update website", "Mettre à jour le site", "تحديث الموقع"],
-    'website.update.needAccounts': ["{n} articles prepared. Link the accounts to put them online.", "{n} articles préparés. Liez les comptes pour les mettre en ligne.", "تم تحضير {n} سلعة. اربط الحسابات لنشرها."],
-    'website.update.prepared': ["{n} articles prepared", "{n} articles préparés", "تم تحضير {n} سلعة"],
 
     // Free Website URL
-    'website.freeUrl': ["Free website address", "Adresse gratuite du site", "رابط الموقع المجاني"],
     'website.urlAfterGithub': ["The address appears once GitHub is linked. It is free, no domain to buy.", "L'adresse apparaît une fois GitHub lié. Elle est gratuite, aucun domaine à acheter.", "يظهر الرابط بعد ربط GitHub. وهو مجاني، دون شراء دومين."],
     'website.urlLive': ["Share it with your customers (WhatsApp, Facebook, Instagram…).", "Partagez-la avec vos clients (WhatsApp, Facebook, Instagram…).", "شاركه مع زبائنك (واتساب، فيسبوك، إنستغرام…)."],
     'website.urlSoon': ["This address works as soon as the website is online. It is free, no domain to buy.", "Cette adresse marche dès que le site est en ligne. Elle est gratuite, aucun domaine à acheter.", "يعمل هذا الرابط بمجرد نشر الموقع. وهو مجاني، دون شراء دومين."],
@@ -108,9 +99,7 @@ export default {
     'website.account.cloudflareHint': ["Shows your website to your customers, fast", "Affiche votre site à vos clients, rapidement", "يعرض موقعك لزبائنك بسرعة"],
     'website.account.connect.github': ["Connect GitHub", "Connecter GitHub", "ربط GitHub"],
     'website.account.connect.cloudflare': ["Connect Cloudflare", "Connecter Cloudflare", "ربط Cloudflare"],
-    'website.account.isLinked': ["Linked", "Lié", "مربوط"],
     'website.account.linked': ["{name} linked", "{name} lié", "تم ربط {name}"],
-    'website.account.soon': ["Linking the accounts comes in the next update of the program.", "La liaison des comptes arrive dans la prochaine mise à jour du programme.", "ربط الحسابات يأتي في التحديث القادم للبرنامج."],
     'website.soon': ["Soon", "Bientôt", "قريبًا"],
 
     // Create Website / Update website
@@ -140,7 +129,6 @@ export default {
     'website.publish.ok.cloudflare': ["Cloudflare linked", "Cloudflare lié", "Cloudflare مربوط"],
     'website.publish.liveTitle': ["Your website is online", "Votre site est en ligne", "موقعك على الإنترنت"],
     'website.publish.open': ["Open the website", "Ouvrir le site", "افتح الموقع"],
-    'website.publish.lastPublished': ["Last published {date}", "Dernière publication {date}", "آخر نشر {date}"],
     'website.publish.waiting': ["The website is sent; GitHub is preparing the address (this can take a few minutes).", "Le site est envoyé ; GitHub prépare l'adresse (cela peut prendre quelques minutes).", "أُرسل الموقع؛ GitHub يجهّز الرابط (قد يستغرق ذلك بضع دقائق)."],
     'website.publish.checkNow': ["Check now", "Vérifier", "تحقق الآن"],
     'website.publish.stillWaiting': ["Not yet: try again in a minute.", "Pas encore : réessayez dans une minute.", "ليس بعد: أعد المحاولة بعد دقيقة."],
@@ -432,11 +420,6 @@ export default {
     'website.domain.autoCheck': ["The program looks by itself every few minutes; you can also press Check now.", "Le programme vérifie tout seul toutes les quelques minutes ; vous pouvez aussi appuyer sur Vérifier.", "البرنامج يتحقق وحده كل بضع دقائق، ويمكنك أيضًا الضغط على «تحقق الآن»."],
     'website.domain.checkNow': ["Check now", "Vérifier", "تحقق الآن"],
     'website.domain.cleanup': ["{domain} was taken off your website. At your domain company, also remove these records (so no other website can use them):", "{domain} a été retiré de votre site. Chez votre société de domaine, supprimez aussi ces réglages (pour qu'aucun autre site ne les utilise) :", "أُزيل {domain} من موقعك. احذف أيضًا هذه الإعدادات لدى شركة الدومين (حتى لا يستعملها موقع آخر):"],
-    'website.domain': ["Domain of your own", "Nom de domaine à vous", "دومين خاص"],
-    'website.domainHint': ["Optional. If you bought a name (for example boutique-yasmine.com), type it here. The free address keeps working.", "Facultatif. Si vous avez acheté un nom (par exemple boutique-yasmine.com), tapez-le ici. L'adresse gratuite continue de marcher.", "اختياري. إذا اشتريت اسمًا (مثلًا boutique-yasmine.com) فاكتبه هنا. الرابط المجاني يبقى يعمل."],
     'website.domainSaved': ["Domain saved", "Domaine enregistré", "تم حفظ الدومين"],
     'website.domainRemove': ["Remove the domain", "Retirer le domaine", "إزالة الدومين"],
-    'website.domainStatus.none': ["No domain", "Pas de domaine", "بدون دومين"],
-    'website.domainStatus.pending': ["Waiting to be linked", "En attente de liaison", "في انتظار الربط"],
-    'website.domainPendingHint': ["It is linked to your website automatically once Cloudflare is linked.", "Il est lié à votre site automatiquement une fois Cloudflare lié.", "يُربط بموقعك تلقائيًا بعد ربط Cloudflare."],
 };

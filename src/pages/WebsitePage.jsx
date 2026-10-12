@@ -231,8 +231,6 @@ function ThemeStudio({ site, busy, run }) {
     const [device, setDevice] = useState('desktop');
     const [preview, setPreview] = useState(null);
     const [failed, setFailed] = useState(false);
-    const box = useRef(null);
-    const [boxWidth, setBoxWidth] = useState(800);
 
     useEffect(() => { setPicked(site.theme); }, [site.theme]);
     useEffect(() => {
@@ -241,16 +239,6 @@ function ThemeStudio({ site, busy, run }) {
         api.previewTheme({ theme: picked, page }).then((r) => { if (alive) setPreview(r); }, () => { if (alive) setFailed(true); });
         return () => { alive = false; };
     }, [picked, page]);
-    useEffect(() => {
-        if (!box.current || typeof ResizeObserver === 'undefined') return undefined;
-        const ro = new ResizeObserver(([entry]) => setBoxWidth(entry.contentRect.width));
-        ro.observe(box.current);
-        return () => ro.disconnect();
-    }, []);
-
-    const width = PREVIEW_WIDTH[device];
-    // Slightly under the measured width, so rounding never pushes the frame out
-    const scale = Math.min(1, Math.max(0.1, (boxWidth - 2) / width));
     const chosen = site.themes.find(x => x.id === picked);
     const online = !!site.publishedAt;
     // Online already: the website's pages are made again with the new look (the shop's data is only read)
@@ -287,27 +275,8 @@ function ThemeStudio({ site, busy, run }) {
                 </div>
             </div>
 
-            {/* The outer line is measured (full width); the frame box inside takes the device's width */}
-            <div ref={box} className="w-full">
-            <div className="relative rounded-xl border border-dark-border bg-white overflow-hidden mx-auto" style={{ width: Math.floor(width * scale), maxWidth: '100%', height: PREVIEW_HEIGHT }}>
-                {failed ? (
-                    <p className="p-6 text-sm text-zinc-500">{t('website.previewFailed')}</p>
-                ) : preview && (
-                    <iframe
-                        title={t('website.previewTitle', { name: themeText(chosen, 'name', lang) })}
-                        // No script, no access to the program, no navigation
-                        sandbox=""
-                        referrerPolicy="no-referrer"
-                        srcDoc={preview.html}
-                        data-testid="website-preview-frame"
-                        data-theme={preview.theme}
-                        // Laid out at the device's width, then drawn smaller from the box's
-                        // top-left corner (the same in every language: the page has its own direction)
-                        style={{ position: 'absolute', top: 0, left: 0, width, height: PREVIEW_HEIGHT / scale, transform: `scale(${scale})`, transformOrigin: 'top left', border: 0, display: 'block' }}
-                    />
-                )}
-            </div>
-            </div>
+            {failed ? <p className="p-6 text-sm text-zinc-500">{t('website.previewFailed')}</p>
+                : <PreviewFrame html={preview?.html} device={device} title={t('website.previewTitle', { name: themeText(chosen, 'name', lang) })} theme={preview?.theme} />}
             {preview && preview.products === 0 && <p className="text-xs text-amber-300">{t('website.previewEmpty')}</p>}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -338,7 +307,10 @@ function PreviewFrame({ html, device = 'desktop', title, testId = 'website-previ
         return () => ro.disconnect();
     }, []);
     const width = PREVIEW_WIDTH[device];
+    // Slightly under the measured width, so rounding never pushes the frame out
     const scale = Math.min(1, Math.max(0.1, (boxWidth - 2) / width));
+    // Laid out at the device's width, then drawn smaller from the box's top-left corner
+    // (the same in every language: the page has its own direction)
     return (
         <div ref={box} className="w-full">
             <div className="relative rounded-xl border border-dark-border bg-white overflow-hidden mx-auto" style={{ width: Math.floor(width * scale), maxWidth: '100%', height: PREVIEW_HEIGHT }}>
@@ -417,20 +389,15 @@ function WebsitePreview({ site, onClose, onUpdate }) {
  * free address, its own domain, the theme in use, when it was last
  * updated, and the three actions: Update website, Preview website, Change theme.
  */
-function WebsiteOverview({ site, busy, run }) {
+function WebsiteOverview({ site, busy, run, outdated = null }) {
     const { t, lang } = useT();
     const api = window.electronAPI.website;
     const [previewing, setPreviewing] = useState(false);
-    const [outdated, setOutdated] = useState(null);
     const running = site.deploy?.status === 'running';
     const published = !!site.publishedAt;
     const theme = site.themes?.find(x => x.id === site.theme);
     const d = site.domain || { name: '', status: 'none' };
     const free = site.site?.freeUrl || site.freeUrl;
-    useEffect(() => {
-        if (running || !published) { setOutdated(null); return; }
-        api.changes().then(r => setOutdated(r?.outdated ?? null), () => setOutdated(null));
-    }, [running, published, site.publishedAt, site.theme]);
     const update = () => run('publish', () => api.publish(), (next) => {
         const r = next?.result;
         if (r && !r.started && r.reason !== 'running') toast.error(t(`website.publish.reason.${r.reason}`), 7000);
@@ -492,16 +459,31 @@ function WebsiteOverview({ site, busy, run }) {
     );
 }
 
+/** Changes in the shop the website does not show yet: looked at once, shared by the cards. */
+function useOutdated(site) {
+    const [outdated, setOutdated] = useState(null);
+    const running = site.deploy?.status === 'running';
+    const published = !!site.publishedAt;
+    useEffect(() => {
+        if (running || !published) { setOutdated(null); return; }
+        let alive = true;
+        window.electronAPI.website.changes().then(r => { if (alive) setOutdated(r?.outdated ?? null); }, () => { if (alive) setOutdated(null); });
+        return () => { alive = false; };
+    }, [running, published, site.publishedAt, site.theme, site.site?.checkedAt]);
+    return outdated;
+}
+
 function WebsiteDashboard({ site, setSite, preview, busy, run }) {
     const { t } = useT();
+    const outdated = useOutdated(site);
 
     return (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4" data-testid="website-dashboard">
             {/* Create Website / Update website: requirements, progress, address */}
-            <PublishPanel site={site} setSite={setSite} busy={busy} run={run} />
+            <PublishPanel site={site} setSite={setSite} busy={busy} run={run} outdated={outdated} />
 
             {/* Website management: status, addresses, theme, last update, Update / Preview */}
-            <WebsiteOverview site={site} busy={busy} run={run} />
+            <WebsiteOverview site={site} busy={busy} run={run} outdated={outdated} />
 
             {/* Theme: pick, see the shop's own website in it, keep */}
             <ThemeStudio site={site} busy={busy} run={run} />
@@ -1048,7 +1030,7 @@ const STEP_ICON = {
  * technical part is made by the program on the shop's own accounts; the
  * screen names none of them.
  */
-function PublishPanel({ site, setSite, busy, run }) {
+function PublishPanel({ site, setSite, busy, run, outdated = null }) {
     const { t, lang } = useT();
     const api = window.electronAPI.website;
     const deploy = site.deploy || { status: 'idle', steps: [] };
@@ -1065,12 +1047,6 @@ function PublishPanel({ site, setSite, busy, run }) {
         const timer = setInterval(() => { api.getState().then(setSite).catch(() => {}); }, 1500);
         return () => clearInterval(timer);
     }, [running]);
-    // Changes in the shop the website does not show yet (looked at when the screen opens and after each run)
-    const [outdated, setOutdated] = useState(null);
-    useEffect(() => {
-        if (running || !published) return;
-        api.changes().then(r => setOutdated(r?.outdated ?? null), () => setOutdated(null));
-    }, [running, published, site.publishedAt, site.site?.checkedAt]);
     // Say how it ended
     useEffect(() => {
         if (last.current === 'running' && deploy.status !== 'running') {

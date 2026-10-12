@@ -47,9 +47,13 @@ function createDomainManager(deps) {
     let lastFound = null; // what the domain pointed to at the last look (shown to fix it)
     let checking = null;
 
-    const save = (fields) => {
+    // forName: written only if the domain is still that one (a look that ends after the
+    // shop removed or changed the domain never writes on the new one)
+    const save = (fields, forName = null) => {
         const s = read();
+        if (forName !== null && s.domain.name !== forName) return false;
         write({ ...s, domain: { ...s.domain, ...fields } });
+        return true;
     };
     const owner = (s) => s.resources.repo?.owner || '';
     const fail = deps.codedError || ((code, params = {}) => Object.assign(new Error(code), { code, params }));
@@ -69,7 +73,14 @@ function createDomainManager(deps) {
     const hostingerKey = () => {
         try { return JSON.parse(hostinger?.vault.get() || 'null')?.token || null; } catch { return null; }
     };
-    const hostingerView = () => (hostinger ? { linked: !!hostingerKey(), owns: hostingerOwns } : null);
+    // Whether a key is kept, remembered here (the screen asks often: no decryption each time)
+    let hostingerLinked = null;
+    const isLinked = () => {
+        if (hostingerLinked === null) hostingerLinked = !!hostingerKey();
+        return hostingerLinked;
+    };
+    const forgetKey = () => { hostinger.vault.remove(); hostingerLinked = false; hostingerOwns = null; };
+    const hostingerView = () => (hostinger ? { linked: isLinked(), owns: hostingerOwns } : null);
 
     function view() {
         const s = read();
@@ -161,6 +172,8 @@ function createDomainManager(deps) {
 
     /** The shop takes the domain off its website: back on the free address. */
     async function remove() {
+        // A look going on finishes first (it could otherwise give the old domain to GitHub after this)
+        if (checking) await checking.catch(() => {});
         const s = read();
         const was = s.domain;
         if (was.name && CONNECTED.includes(was.status) && !blocked()) {
@@ -189,22 +202,25 @@ function createDomainManager(deps) {
         const s = read();
         const d = s.domain;
         if (!d.name || ['none', 'failed'].includes(d.status) || blocked()) return view();
+        const keep = (fields) => save(fields, d.name);
+        const stillOurs = () => read().domain.name === d.name;
         const keys = github.keys();
-        if (!keys?.token) { save({ reason: 'github_missing', checkedAt: iso() }); return view(); }
+        if (!keys?.token) { keep({ reason: 'github_missing', checkedAt: iso() }); return view(); }
         const repo = s.resources.repo;
-        if (!s.publishedAt || !repo) { save({ reason: 'not_published', checkedAt: iso() }); return view(); }
+        if (!s.publishedAt || !repo) { keep({ reason: 'not_published', checkedAt: iso() }); return view(); }
         const pointing = await checkPointing(lookup, d.name, repo.owner);
         if (pointing.state !== 'unknown') lastFound = pointing.found;
 
         if (['dns_needed', 'dns_wrong'].includes(d.status)) {
             if (!pointing.ok) {
-                save({ status: pointing.state === 'wrong' ? 'dns_wrong' : (pointing.state === 'none' ? 'dns_needed' : d.status), reason: d.reason === 'dns_lost' ? 'dns_lost' : null, checkedAt: iso() });
+                keep({ status: pointing.state === 'wrong' ? 'dns_wrong' : (pointing.state === 'none' ? 'dns_needed' : d.status), reason: d.reason === 'dns_lost' ? 'dns_lost' : null, checkedAt: iso() });
                 return view();
             }
             // It points to GitHub: the domain is given to the website (GitHub sends the free address to it)
+            if (!stillOurs()) return view();
             const p = await github.client.updatePages(keys.token, repo.owner, repo.name, { cname: d.name });
-            if (p?.refused) { save({ status: 'failed', reason: 'taken', checkedAt: iso() }); return view(); }
-            save({ status: 'connecting', reason: null, dnsOkAt: iso(), connectedAt: iso(), checkedAt: iso(), misses: 0 });
+            if (p?.refused) { keep({ status: 'failed', reason: 'taken', checkedAt: iso() }); return view(); }
+            keep({ status: 'connecting', reason: null, dnsOkAt: iso(), connectedAt: iso(), checkedAt: iso(), misses: 0 });
             // The website with its CNAME file, the order service taking orders from the domain
             deps.startUpdate();
             return view();
@@ -214,35 +230,37 @@ function createDomainManager(deps) {
         if (!pointing.ok && pointing.state !== 'unknown') {
             const misses = (d.misses || 0) + 1;
             if (misses >= MISSES_TO_DETACH) {
+                if (!stillOurs()) return view();
                 await detach(s);
-                save({ status: 'dns_wrong', reason: 'dns_lost', misses: 0, checkedAt: iso() });
+                keep({ status: 'dns_wrong', reason: 'dns_lost', misses: 0, checkedAt: iso() });
                 deps.startUpdate();
                 log({ event: 'domain_detached', reason: 'dns_lost' });
                 return view();
             }
-            save({ misses, checkedAt: iso() });
+            keep({ misses, checkedAt: iso() });
             return view();
         }
         let pages = await github.client.getPages(keys.token, repo.owner, repo.name);
+        if (!stillOurs()) return view();
         if (pages && pages.cname !== d.name) {
             // Taken off on GitHub meanwhile: given again
             pages = await github.client.updatePages(keys.token, repo.owner, repo.name, { cname: d.name });
-            if (pages?.refused) { save({ status: 'failed', reason: 'taken', checkedAt: iso() }); return view(); }
+            if (pages?.refused) { keep({ status: 'failed', reason: 'taken', checkedAt: iso() }); return view(); }
         }
         if (CERT_FAILED.includes(pages?.certificate)) {
             // No certificate: off the website (the free address stays on https); Try again starts over
             await detach(s);
-            save({ status: 'failed', reason: 'https_failed', checkedAt: iso(), misses: 0 });
+            keep({ status: 'failed', reason: 'https_failed', checkedAt: iso(), misses: 0 });
             deps.startUpdate();
             return view();
         }
-        if (!CERT_READY.includes(pages?.certificate)) { save({ status: 'https_pending', checkedAt: iso(), misses: 0 }); return view(); }
+        if (!CERT_READY.includes(pages?.certificate)) { keep({ status: 'https_pending', checkedAt: iso(), misses: 0 }); return view(); }
         if (!pages.httpsEnforced) await github.client.updatePages(keys.token, repo.owner, repo.name, { httpsEnforced: true });
         const answer = await ping(`https://${d.name}/`);
         const answering = answer.ok || (answer.status >= 300 && answer.status < 400);
-        if (!answering) { save({ status: 'https_pending', checkedAt: iso(), misses: 0 }); return view(); }
+        if (!answering) { keep({ status: 'https_pending', checkedAt: iso(), misses: 0 }); return view(); }
         const first = d.status !== 'active';
-        save({ status: 'active', reason: null, checkedAt: iso(), misses: 0, ...(first ? { activeAt: iso() } : {}) });
+        keep({ status: 'active', reason: null, checkedAt: iso(), misses: 0, ...(first ? { activeAt: iso() } : {}) });
         // Now the main address: the website's links and the order service follow it
         if (first) deps.startUpdate();
         return view();
@@ -253,7 +271,7 @@ function createDomainManager(deps) {
         if (checking) return checking.then(() => check());
         checking = step().catch((error) => {
             log({ event: 'domain_check_failed', reason: error.reason || 'unknown', status: error.status || null });
-            save({ checkedAt: iso() });
+            save({ checkedAt: iso() }, read().domain.name || null);
             return { ...view(), error: error.reason || 'unknown' };
         }).finally(() => { checking = null; });
         return checking;
@@ -306,6 +324,7 @@ function createDomainManager(deps) {
             throw fail(error.reason === 'revoked' ? 'WEBSITE_HOSTINGER_KEY' : 'WEBSITE_HOSTINGER_FAILED', { reason: error.reason || 'unknown' });
         }
         hostinger.vault.set(JSON.stringify({ token: key, linkedAt: iso() }));
+        hostingerLinked = true;
         const d = read().domain;
         hostingerOwns = d.name ? list.some(x => x.domain === apexOf(d.name)) : null;
         log({ event: 'hostinger_linked', domains: list.length });
@@ -314,8 +333,7 @@ function createDomainManager(deps) {
 
     function hostingerForget() {
         if (!hostinger) return view();
-        hostinger.vault.remove();
-        hostingerOwns = null;
+        forgetKey();
         return view();
     }
 
@@ -350,10 +368,10 @@ function createDomainManager(deps) {
             await hostinger.client.update(key, zoneName, records);
         } catch (error) {
             if (error.code) throw error;
-            if (error.reason === 'revoked') { hostinger.vault.remove(); throw fail('WEBSITE_HOSTINGER_KEY'); }
+            if (error.reason === 'revoked') { forgetKey(); throw fail('WEBSITE_HOSTINGER_KEY'); }
             throw fail('WEBSITE_HOSTINGER_FAILED', { reason: error.reason || 'unknown' });
         }
-        save({ autoDns: 'hostinger', autoAt: iso() });
+        save({ autoDns: 'hostinger', autoAt: iso() }, d.name);
         log({ event: 'hostinger_records_written', records: records.length });
         // A first look (Hostinger's change takes from a few minutes to spread)
         return check();

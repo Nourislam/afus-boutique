@@ -149,11 +149,15 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     });
 
     // The shop's own domain (optional): bought by the shop at a provider, connected to the website
+    /** Update website now; a run already going (built before this change): one more right after it. */
     const startUpdate = () => {
-        if (!read().publishedAt || blockedMode()) return;
+        if (!read().publishedAt || blockedMode()) return { started: false, reason: 'not_published' };
         const r = deployer.start();
-        // A run already going (built before the domain changed): one more right after it
-        if (!r.started && r.reason === 'running') deployer.pending().then(() => deployer.start()).catch(() => {});
+        if (!r.started && r.reason === 'running') {
+            deployer.pending().then(() => deployer.start()).catch(() => {});
+            return { started: true, queued: true };
+        }
+        return r;
     };
     const domains = createDomainManager({
         read,
@@ -276,7 +280,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         write({ ...s, theme: id });
         let result = { published: false };
         if (publish && s.publishedAt && !blockedMode() && id !== s.theme) {
-            const r = deployer.start();
+            const r = startUpdate();
             result = { published: !!r.started, reason: r.started ? null : r.reason };
         }
         return { ...view(), result };
