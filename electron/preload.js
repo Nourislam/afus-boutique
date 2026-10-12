@@ -137,6 +137,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
         // Changes in the shop the website does not show yet (read only)
         changes: () => ipcRenderer.invoke('website:changes'),
         orders: (args) => ipcRenderer.invoke('website:orders', args),
+        setSettings: (part) => ipcRenderer.invoke('website:setSettings', part),
+        blockPhone: (args) => ipcRenderer.invoke('website:blockPhone', args),
+        unblockPhone: (args) => ipcRenderer.invoke('website:unblockPhone', args),
+        blockSuggestions: () => ipcRenderer.invoke('website:blockSuggestions'),
+        confirmMessage: (args) => ipcRenderer.invoke('website:confirmMessage', args),
+        setTracking: (args) => ipcRenderer.invoke('website:setTracking', args),
+        openTracking: (url) => ipcRenderer.invoke('website:openTracking', url),
+        yalidineLink: (args) => ipcRenderer.invoke('website:yalidineLink', args),
+        yalidineForget: () => ipcRenderer.invoke('website:yalidineForget'),
+        yalidineSend: (args) => ipcRenderer.invoke('website:yalidineSend', args),
+        yalidineRefresh: (args) => ipcRenderer.invoke('website:yalidineRefresh', args),
+        stats: (args) => ipcRenderer.invoke('website:stats', args),
+        // The new-order alert was pressed: open the orders page
+        onNavigate: (callback) => {
+            const subscription = (_event, path) => { if (typeof path === 'string' && /^\/[a-z-]+$/.test(path)) callback(path); };
+            ipcRenderer.on('navigate', subscription);
+            return () => ipcRenderer.removeListener('navigate', subscription);
+        },
         // The website's customers (by phone) and one customer's history: AFUS only
         customers: (args) => ipcRenderer.invoke('website:customers', args),
         // The call to the customer: what they confirmed, then Confirmed (pieces put aside)

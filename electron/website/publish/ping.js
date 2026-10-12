@@ -71,4 +71,24 @@ async function ackOrders(apiUrl, key, ids, { storeId, fetch, timeoutMs, allowHtt
     return { ok: true, removed: Number(r.data.removed) || 0, waiting: Number(r.data.waiting) || 0 };
 }
 
-module.exports = { ping, fetchOrders, ackOrders, secure };
+/** The shop's rules for the API: numbers refused, coupons (by hash), delivery prices. */
+async function pushConfig(apiUrl, key, config, { storeId, fetch, timeoutMs, allowHttp = false } = {}) {
+    if (!secure(apiUrl, allowHttp)) return { ok: false, reason: 'insecure' };
+    const r = await call(`${apiUrl.replace(/\/$/, '')}/api/config`, {
+        method: 'POST', headers: { ...headersOf(key, storeId), 'Content-Type': 'application/json' }, body: JSON.stringify(config),
+    }, { fetch, timeoutMs });
+    if (!r.ok) return r;
+    if (storeId && r.data.store && r.data.store !== storeId) return { ok: false, reason: 'store' };
+    return { ok: true };
+}
+
+/** How many times each page was seen these last days: [{ day, page, views }]. */
+async function fetchViews(apiUrl, key, { storeId, fetch, timeoutMs, allowHttp = false } = {}) {
+    if (!secure(apiUrl, allowHttp)) return { ok: false, reason: 'insecure' };
+    const r = await call(`${apiUrl.replace(/\/$/, '')}/api/views`, { method: 'GET', headers: headersOf(key, storeId) }, { fetch, timeoutMs });
+    if (!r.ok) return r;
+    if (storeId && r.data.store && r.data.store !== storeId) return { ok: false, reason: 'store' };
+    return { ok: true, views: Array.isArray(r.data.views) ? r.data.views : [] };
+}
+
+module.exports = { ping, fetchOrders, ackOrders, pushConfig, fetchViews, secure };

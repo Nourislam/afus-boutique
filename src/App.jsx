@@ -9,7 +9,7 @@ import ProductsPage from './pages/ProductsPage';
 import InventoryPage from './pages/InventoryPage';
 import EmployeesPage from './pages/EmployeesPage';
 import ReportsPage from './pages/ReportsPage';
-import WebsitePage from './pages/WebsitePage';
+import WebsitePage, { WebsiteOrdersPage } from './pages/WebsitePage';
 import SettingsPage from './pages/SettingsPage';
 import DashboardPage from './pages/DashboardPage';
 import ManagerApprovalDialog from './components/auth/ManagerApprovalDialog';
@@ -38,6 +38,8 @@ function App() {
     const [showSetupWizard, setShowSetupWizard] = useState(false);
     // Subscribing to the language re-renders the whole tree when it changes
     const { t } = useT();
+    // A new-order alert pressed: the website's orders page
+    useEffect(() => window.electronAPI?.website?.onNavigate?.((path) => { window.location.hash = `#${path}`; }), []);
 
     useEffect(() => {
         // Everything is local: no account, activation or internet connection
@@ -197,6 +199,11 @@ function App() {
                     <Route path="/website" element={
                         <ProtectedRoute permission={PERMISSIONS.SETTINGS_VIEW}>
                             <ModuleGate module="website"><WebsitePage /></ModuleGate>
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/website-orders" element={
+                        <ProtectedRoute permission={PERMISSIONS.SETTINGS_VIEW}>
+                            <ModuleGate module="website"><WebsiteOrdersPage /></ModuleGate>
                         </ProtectedRoute>
                     } />
                     <Route path="/settings" element={

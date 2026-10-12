@@ -28,11 +28,34 @@ const LANGS = ['ar', 'fr', 'en'];
 const fileId = (id) => String(id).replace(/[^A-Za-z0-9_-]/g, '_');
 const STYLE = 'assets/store.css';
 const SCRIPT = 'assets/store.js';
+const TRACK = 'assets/track.js';
+
+/** The page's name for the visit counts: home, product-<id>, category-<id>, products... */
+function pageName(page, id) {
+    if (page === 'home' || page === 'thanks' || page === 'order-error') return page;
+    const file = linkFor(page === 'page' ? 'page' : page, id).replace(/\.html$/, '');
+    return /^[A-Za-z0-9_-]{1,100}$/.test(file) ? file : page;
+}
+
+/** The addresses each tool loads from and sends to (its own, as it documents them). */
+const TRACKER_HOSTS = {
+    facebook: { script: ['https://connect.facebook.net'], img: ['https://www.facebook.com'], connect: ['https://www.facebook.com', 'https://connect.facebook.net'] },
+    tiktok: { script: ['https://analytics.tiktok.com'], img: ['https://analytics.tiktok.com'], connect: ['https://analytics.tiktok.com'] },
+    snapchat: { script: ['https://sc-static.net'], img: ['https://tr.snapchat.com'], connect: ['https://tr.snapchat.com', 'https://tr-shadow.snapchat.com'] },
+    google: { script: ['https://www.googletagmanager.com'], img: ['https://www.google-analytics.com', 'https://www.googletagmanager.com'], connect: ['https://www.google-analytics.com', 'https://region1.google-analytics.com', 'https://www.googletagmanager.com'] },
+};
+function trackerHosts(track) {
+    const out = { script: new Set(), img: new Set(), connect: new Set() };
+    for (const k of Object.keys(track)) for (const kind of Object.keys(out)) for (const h of TRACKER_HOSTS[k]?.[kind] || []) out[kind].add(h);
+    const join = (set) => (set.size ? ` ${[...set].join(' ')}` : '');
+    return { script: join(out.script), img: join(out.img), connect: join(out.connect) };
+}
 
 /** The few words the website's script writes (cart messages). */
 const SCRIPT_TEXTS = ['added', 'chooseFirst', 'notThisOne', 'viewCart', 'remove', 'cartEmpty', 'maxQty',
     'errName', 'errPhone', 'errWilaya', 'errCommune', 'errAddress', 'errCourier', 'errOffice', 'errForm',
-    'errFullName', 'fullName', 'yourPhone', 'wilaya', 'commune', 'addressField', 'waColor', 'waSize', 'waQty', 'waDelivery', 'deliveryHome', 'deliveryOffice', 'orderText'];
+    'errFullName', 'fullName', 'yourPhone', 'wilaya', 'commune', 'addressField', 'waColor', 'waSize', 'waQty', 'waDelivery', 'deliveryHome', 'deliveryOffice', 'orderText',
+    'deliveryChoose', 'deliveryByPhone', 'notDelivered', 'deliveryFree', 'couponOk', 'couponBad', 'couponDown'];
 const scriptTexts = (t) => Object.fromEntries(SCRIPT_TEXTS.map(k => [k, t(k)]));
 
 /** Where each page lives on the published website (all in one folder). */
@@ -58,6 +81,8 @@ function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', pr
         current: page === 'home' ? 'home' : `${page}:${id}`,
         orderUrl: !preview && orderUrl && /^https?:\/\//.test(orderUrl) ? orderUrl : null,
     };
+    // The shop's website API (coupons, page counts): the address the orders go to, without /api/orders
+    ctx.apiBase = ctx.orderUrl ? ctx.orderUrl.replace(/\/api\/orders$/, '') : null;
     let main;
     let title = snapshot.shop.name || '';
     if (page === 'product') {
@@ -85,9 +110,13 @@ function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', pr
     }
     // Scripts and styles of the website itself only; the only form goes to the shop's own API
     const formTo = ctx.orderUrl ? new URL(ctx.orderUrl).origin : "'none'";
+    // The ads / visit tools the shop turned on (their ids): their own addresses only, nothing else
+    const track = preview ? {} : Object.fromEntries(Object.entries(snapshot.shop.tracking || {}).filter(([, v]) => v));
+    const hosts = trackerHosts(track);
+    const api = formTo === "'none'" ? '' : ` ${formTo}`;
     const policy = preview
         ? "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data: app:; font-src data:; base-uri 'none'; form-action 'none'"
-        : `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action ${formTo}`;
+        : `default-src 'none'; script-src 'self'${hosts.script}; style-src 'self' 'unsafe-inline'; img-src 'self' data:${hosts.img}; connect-src 'self'${api}${hosts.connect}; font-src 'self'; frame-src 'none'; base-uri 'none'; form-action ${formTo}`;
     // The website: the Arabic letters of the font asked for at once (the page is read in them)
     const style = preview ? `<style>${css(theme, { preview: true })}</style>`
         : `${language === 'ar' ? '<link rel="preload" href="assets/fonts/cairo-arabic.woff2" as="font" type="font/woff2" crossorigin>\n' : ''}<link rel="stylesheet" href="${STYLE}">`;
@@ -104,8 +133,9 @@ ${snapshot.shop.description ? `<meta name="description" content="${esc(snapshot.
 ${style}
 ${preview ? '' : `<link rel="icon" href="${esc(snapshot.shop.logo ? ctx.img(snapshot.shop.logo) : 'data:,')}">`}
 ${preview ? '' : `<script src="${SCRIPT}" defer></script>`}
+${preview || !Object.keys(track).length ? '' : `<script src="${TRACK}" defer></script>`}
 </head>
-<body class="theme-${esc(theme.id)} ${bodyClasses(theme)} page-${esc(page === 'page' ? id : page)}" data-lang="${language}" data-currency="${esc(snapshot.shop.currency)}"${preview ? '' : ` data-texts="${esc(JSON.stringify(scriptTexts(ctx.t)))}"`}>
+<body class="theme-${esc(theme.id)} ${bodyClasses(theme)} page-${esc(page === 'page' ? id : page)}" data-lang="${language}" data-currency="${esc(snapshot.shop.currency)}"${preview ? '' : ` data-page="${esc(pageName(page, id))}"${ctx.apiBase ? ` data-api="${esc(ctx.apiBase)}"` : ''}${Object.keys(track).length ? ` data-track="${esc(JSON.stringify(track))}"` : ''}`}${preview ? '' : ` data-texts="${esc(JSON.stringify(scriptTexts(ctx.t)))}"`}>
 ${C.header(ctx)}
 ${main}
 ${C.footer(ctx)}
@@ -126,4 +156,4 @@ function pagesOf(snapshot) {
     return pages;
 }
 
-module.exports = { renderPage, pagesOf, linkFor, scriptTexts, STYLE, SCRIPT };
+module.exports = { renderPage, pagesOf, linkFor, scriptTexts, STYLE, SCRIPT, TRACK, TRACKER_HOSTS };

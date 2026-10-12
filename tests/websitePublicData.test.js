@@ -16,6 +16,13 @@ const catalog = require('../electron/services/catalogService');
 const NOW = Date.parse('2026-10-11T12:00:00Z');
 const codeOf = (fn) => { try { fn(); } catch (e) { return e.code; } return null; };
 const flatten = (o) => JSON.stringify(o);
+// What the shop has not set yet on the Website screen: no delivery price, no ads tool, no size guide
+const UNSET = {
+    delivery: { home: null, office: null, freeOver: null, wilayas: [] },
+    tracking: { facebook: '', tiktok: '', snapchat: '', google: '' },
+    sizeGuides: [],
+};
+const INFO_UNSET = { ...UNSET, fewLeftAt: 3 };
 /** Every key used anywhere in an object. */
 const keysOf = (o, out = new Set()) => {
     if (Array.isArray(o)) o.forEach(v => keysOf(v, out));
@@ -108,7 +115,7 @@ describe('website public data: SQLite internal -> website public', () => {
             address: '12 rue Didouche', city: 'Alger', wilaya: 'Alger', currency: 'DZD', language: 'fr', hours: [], social: {}, mapUrl: '',
             // No courier ticked on the Website screen: every company is offered
             couriers: ['Yalidine', 'ZR Express', 'Maystro Delivery', 'Noest Express', 'Guepex', 'World Express', 'Procolis', 'EMS Algérie Poste'],
-            features: FEATURES,
+            features: FEATURES, ...UNSET,
         });
     });
 
@@ -168,11 +175,12 @@ describe('website public data: SQLite internal -> website public', () => {
     it('sizes and colours: each variant with its own availability and price; a colour code only when it is a real colour', () => {
         const jean = buildPublicData(api, { now: NOW }).products.find(p => p.id === 'jean');
         expect(jean.variants).toEqual([
-            { color: 'Noir', colorCode: '#111111', size: '38', price: null, available: true },
-            { color: 'Noir', colorCode: '#111111', size: '40', price: null, available: true },
-            { color: 'Noir', colorCode: '#111111', size: '42', price: null, available: false },
-            { color: 'Bleu', colorCode: '', size: '40', price: null, available: true },
-            { color: 'Noir', colorCode: '#111111', size: '44', price: 3500, available: true },
+            // few: 1 to 3 pieces left (the count itself is never published)
+            { color: 'Noir', colorCode: '#111111', size: '38', price: null, available: true, few: false },
+            { color: 'Noir', colorCode: '#111111', size: '40', price: null, available: true, few: true },
+            { color: 'Noir', colorCode: '#111111', size: '42', price: null, available: false, few: false },
+            { color: 'Bleu', colorCode: '', size: '40', price: null, available: true, few: true },
+            { color: 'Noir', colorCode: '#111111', size: '44', price: 3500, available: true, few: true },
         ]);
         // On the article page: every size to choose, sold-out ones marked and not choosable; both colours by name
         const html = renderPage({ snapshot: buildPublicData(api, { now: NOW }), theme: registry.get('classic'), page: 'product', id: 'jean', lang: 'fr' });
@@ -228,16 +236,16 @@ describe('website public data: SQLite internal -> website public', () => {
             mapUrl: 'https://maps.app.goo.gl/abc123',
             // Known companies only, each once
             couriers: ['yalidine', 'zr-express'],
-            features: FEATURES,
+            features: FEATURES, ...INFO_UNSET,
         });
-        expect(publicInfo({ social: { facebook: 'https://facebook.com.evil.example/x', instagram: 'https://user:pw@instagram.com/x' }, mapUrl: 'https://evil.example/maps' })).toEqual({ hours: [], social: {}, mapUrl: '', couriers: [], features: FEATURES });
+        expect(publicInfo({ social: { facebook: 'https://facebook.com.evil.example/x', instagram: 'https://user:pw@instagram.com/x' }, mapUrl: 'https://evil.example/maps' })).toEqual({ hours: [], social: {}, mapUrl: '', couriers: [], features: FEATURES, ...INFO_UNSET });
 
         const settings = { website: { created: true, name: 'boutique-yasmine', theme: 'classic' } };
         const service = createWebsiteService({ api, getSetting: (k) => settings[k] ?? null, saveSetting: (k, v) => { settings[k] = JSON.parse(JSON.stringify(v)); }, codedError: catalog.codedError });
         const before = api.all('SELECT * FROM settings ORDER BY key');
         const r = service.setPublicInfo({ hours: 'Tous les jours 9h-21h', social: { instagram: 'https://instagram.com/yasmine', tiktok: 'https://evil.example' }, mapUrl: 'https://www.google.com/maps/place/Alger' });
         expect(r.result.refused).toEqual(['tiktok']);
-        expect(r.publicInfo).toEqual({ hours: ['Tous les jours 9h-21h'], social: { instagram: 'https://instagram.com/yasmine' }, mapUrl: 'https://www.google.com/maps/place/Alger', couriers: [], features: FEATURES });
+        expect(r.publicInfo).toEqual({ hours: ['Tous les jours 9h-21h'], social: { instagram: 'https://instagram.com/yasmine' }, mapUrl: 'https://www.google.com/maps/place/Alger', couriers: [], features: FEATURES, ...INFO_UNSET });
         // The shop's own settings are not touched
         expect(api.all('SELECT * FROM settings ORDER BY key')).toEqual(before);
         const html = service.previewTheme({ page: 'home' }).html;

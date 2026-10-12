@@ -111,12 +111,12 @@ function cartPage(ctx) {
  */
 function checkoutPage(ctx) {
     const off = ctx.orderUrl ? '' : ' disabled';
-    const { wilayas, field, text, phone, deliveries, home, office, features } = C.formParts(ctx, off);
+    const { wilayas, field, text, phone, deliveries, home, office, features, prices, coupon, summary } = C.formParts(ctx, off);
     const couriers = ctx.snap.shop.couriers || [];
     return html(
         pageHead(ctx, ctx.t('checkout'), ctx.t('codOnly')),
         `<main class="container section checkout" data-checkout>`,
-        `<form class="checkout-form" method="post" novalidate${ctx.orderUrl ? ` action="${esc(ctx.orderUrl)}"` : ''} accept-charset="utf-8" data-checkout-form>`,
+        `<form class="checkout-form" method="post" novalidate${ctx.orderUrl ? ` action="${esc(ctx.orderUrl)}"` : ''} accept-charset="utf-8" data-checkout-form ${prices}>`,
         `<input type="hidden" name="order_key" data-order-key value=""><input type="hidden" name="items" data-items value="[]"><input type="hidden" name="product_id" data-first-id value=""><input type="hidden" name="product_name" data-first-name value="">`,
         `<label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>`,
         `<div class="co-main">`,
@@ -142,9 +142,8 @@ function checkoutPage(ctx) {
         features.noteField && `<fieldset class="co-block"><div class="fields">${field('note', ctx.t('note'), `<textarea name="note" rows="2" maxlength="500"${off}></textarea>`, true)}</div></fieldset>`,
         `</div>`,
         `<aside class="cart-total summary" data-summary><h2 class="co-title"><b>3</b>${esc(ctx.t('orderSummary'))}</h2><div data-summary-lines></div>`,
-        `<p class="sum-row"><span>${esc(ctx.t('subtotal'))}</span><span data-cart-sum></span></p>`,
-        `<p class="sum-row"><span>${esc(ctx.t('deliveryCost'))}</span><span>${esc(ctx.t('deliveryByPhone'))}</span></p>`,
-        `<p class="sum-row sum-total"><span>${esc(ctx.t('total'))}</span><strong data-cart-sum></strong></p>`,
+        coupon,
+        summary,
         `<p class="hint">${esc(ctx.t('checkoutHint'))}</p>`,
         `<p class="form-msg is-bad" data-form-msg role="alert" hidden></p>`,
         `<button class="btn btn-primary btn-block" type="submit" data-confirm${off}>${esc(ctx.t('confirmOrder'))}</button>`,

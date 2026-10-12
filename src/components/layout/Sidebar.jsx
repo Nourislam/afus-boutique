@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
     LayoutDashboard, ShoppingCart, Package, Boxes, UserCog, BarChart3, Settings, LogOut, Percent, QrCode,
     History, CreditCard, FileText, LibraryBig, Users, Truck,
-    GraduationCap, Globe,
+    GraduationCap, Globe, ShoppingBag,
 } from 'lucide-react';
 import { useAuthStore, PERMISSIONS } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -48,6 +48,7 @@ const NAV_GROUPS = [
             // Promotions, packs and gift cards: shown while one of them is on and allowed
             { path: '/offers', icon: Percent, label: 'nav.offers', show: (features, can) => offerTabs(features, can).length > 0 },
             { path: '/website', icon: Globe, label: 'nav.website', permission: PERMISSIONS.SETTINGS_VIEW, feature: 'website' },
+            { path: '/website-orders', icon: ShoppingBag, label: 'nav.websiteOrders', permission: PERMISSIONS.SETTINGS_VIEW, feature: 'website' },
         ],
     },
     {

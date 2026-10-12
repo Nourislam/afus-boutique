@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS orders (
     note TEXT NOT NULL DEFAULT '',
     ip_hash TEXT NOT NULL DEFAULT '',
     order_key TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'new'
+    status TEXT NOT NULL DEFAULT 'new',
+    delivery_fee REAL,
+    coupon_code TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS orders_created ON orders (created_at);
 CREATE INDEX IF NOT EXISTS orders_ip ON orders (ip_hash, created_at);
@@ -47,4 +49,11 @@ CREATE INDEX IF NOT EXISTS hits_who ON hits (kind, who, created_at);
 CREATE TABLE IF NOT EXISTS site_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+-- How many times each page was seen, per day (no person, no address), kept 14 days
+CREATE TABLE IF NOT EXISTS views (
+    day TEXT NOT NULL,
+    page TEXT NOT NULL,
+    views INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, page)
 );

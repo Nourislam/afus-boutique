@@ -20,10 +20,14 @@
  *         currentEmployee() -> the employee logged in (who changes an order's status) }
  */
 const state = require('./websiteState');
+const { isPromotionLive, parseIds } = require('../shared/promotions.mjs');
 const providers = require('./providers');
 const { summarize } = require('./catalogSnapshot');
 const { buildPublicData, checkSiteFiles, publicInfo } = require('./publicData');
 const { FEATURES } = require('./publicData/public');
+const { createYalidineClient, parcelOf } = require('./couriers/yalidine');
+const { phoneKey } = require('./orders/phone');
+const crypto = require('crypto');
 const { registry } = require('./themes/registry');
 const { renderPage } = require('./storefront/render');
 const { STORE_PAGES } = require('./storefront/pages');
@@ -57,7 +61,7 @@ const KEY = 'website';
 // The shop's own Hostinger API key (secure store item)
 const HOSTINGER_ITEM = 'hostinger';
 
-function createWebsiteService({ api, getSetting, saveSetting, codedError, github = {}, cloudflare = {}, blockedMode = () => null, publish = {}, domain = {}, currentEmployee = () => null }) {
+function createWebsiteService({ api, getSetting, saveSetting, codedError, github = {}, cloudflare = {}, blockedMode = () => null, publish = {}, domain = {}, currentEmployee = () => null, couriers = {} }) {
     const read = () => state.normalizeState(getSetting(KEY));
     const write = (next) => { saveSetting(KEY, next); return next; };
     const shopName = () => (getSetting('store_config') || {}).businessName || '';
@@ -239,6 +243,9 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             },
             // Delivery companies the shop can offer for pick up at their office
             couriersList: COURIERS.map(([id, name]) => ({ id, name })),
+            // For the settings tabs: the categories (size guides), the default WhatsApp message
+            categoriesList: (() => { try { return api.all('SELECT id, name FROM categories ORDER BY name'); } catch { return []; } })(),
+            defaultConfirmMessage: state.CONFIRM_MESSAGE,
             status: state.statusOf(s),
             steps: state.stepsOf(s),
             freeUrl: saved.site.url || state.freeUrl(s.name, owner),
@@ -585,6 +592,176 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     }
 
     /**
+     * The website's other settings (Website screen › Settings tabs). Public
+     * ones (delivery prices, ads / visit measures, size guides, "few left"
+     * level) go on the website at the next update; private ones (WhatsApp
+     * message, tracking pages, new-order alert) stay in AFUS.
+     */
+    function setSettings(part = {}) {
+        const s = mustExist(read());
+        const pub = {};
+        for (const k of ['delivery', 'tracking', 'sizeGuides', 'fewLeftAt']) if (k in part) pub[k] = part[k];
+        const tools = { ...s.tools };
+        if ('confirmMessage' in part) tools.confirmMessage = String(part.confirmMessage || '');
+        if ('trackingLinks' in part) tools.trackingLinks = part.trackingLinks;
+        if ('notify' in part) tools.notify = part.notify === true;
+        write({ ...s, publicInfo: publicInfo({ ...s.publicInfo, ...pub }), tools });
+        return view();
+    }
+
+    /** No more orders from this number (the website's API refuses them after the next sync). */
+    function blockPhone({ phone, note = '' } = {}) {
+        const s = mustExist(read());
+        const key = phoneKey(phone);
+        if (!key) throw codedError('WEBSITE_PHONE_INVALID', {});
+        const blocked = [...s.tools.blocked.filter(b => b.phone !== key), { phone: key, note: String(note || '').slice(0, 120), at: new Date().toISOString() }];
+        write({ ...s, tools: { ...s.tools, blocked } });
+        return view();
+    }
+    function unblockPhone({ phone } = {}) {
+        const s = mustExist(read());
+        const key = phoneKey(phone);
+        write({ ...s, tools: { ...s.tools, blocked: s.tools.blocked.filter(b => b.phone !== key) } });
+        return view();
+    }
+    /** Customers who often send parcels back and never paid one: to think about blocking. */
+    function blockSuggestions() {
+        const s = read();
+        const known = new Set(s.tools.blocked.map(b => b.phone));
+        return orderBook.customerStats(api, { limit: 500 })
+            .filter(c => c.returned + c.cancelled >= 2 && c.successful === 0 && !known.has(c.phone))
+            .map(customerView).slice(0, 50);
+    }
+
+    /** The order's WhatsApp message to the customer, from the shop's own words ({name}, {number}...). */
+    function confirmMessage({ id } = {}) {
+        const s = read();
+        const o = orderBook.listOrders(api, { id })[0];
+        if (!o) throw codedError('WEBSITE_ORDER_NOT_FOUND', {});
+        const v = orderView(o);
+        const lang = (getSetting('store_config') || {}).defaultLanguage === 'fr' ? 'fr' : 'ar';
+        const money = (n) => `${Math.round(n).toLocaleString('fr-DZ').replace(/\u202f/g, ' ')} DA`;
+        const items = v.items.map(i => `- ${[i.productName, i.color, i.size].filter(Boolean).join(' ')} × ${i.quantity}`).join('\n');
+        const place = v.delivery === 'office'
+            ? `${lang === 'fr' ? 'Bureau' : 'مكتب'} ${[v.courier?.company, v.commune, v.wilaya].filter(Boolean).join(' - ')}`
+            : [v.address, v.commune, v.wilaya].filter(Boolean).join('، ');
+        const fill = { name: v.customerName, number: v.number, shop: shopName(), items, total: money(v.toCollect), delivery: place, phone: v.phone };
+        const text = (s.tools.confirmMessage || state.CONFIRM_MESSAGE).replace(/\{(name|number|shop|items|total|delivery|phone)\}/g, (_, k) => fill[k] ?? '');
+        const digits = phoneKey(v.phone).replace(/^0/, '213');
+        return { text, url: `https://wa.me/${digits}?text=${encodeURIComponent(text)}` };
+    }
+
+    /** The parcel's tracking number at the courier (typed, or given by Yalidine). */
+    function setTracking({ id, number = '', courierState = null } = {}) {
+        const n = String(number || '').trim().slice(0, 40);
+        if (n && !/^[A-Za-z0-9-]{4,40}$/.test(n)) throw codedError('WEBSITE_TRACKING_INVALID', {});
+        if (!orderBook.listOrders(api, { id })[0]) throw codedError('WEBSITE_ORDER_NOT_FOUND', {});
+        api.run('UPDATE website_orders SET tracking_number = ? WHERE id = ?', [n, id]);
+        if (courierState !== null) api.run("UPDATE website_orders SET courier_state = ?, courier_state_at = datetime('now') WHERE id = ?", [String(courierState).slice(0, 80), id]);
+        return orderView(orderBook.listOrders(api, { id })[0]);
+    }
+
+    // Yalidine: the shop's own API id and token, kept encrypted (never shown again)
+    const yalidine = couriers.yalidine || createYalidineClient({ fetch: publish.fetch });
+    const YALIDINE_ITEM = 'yalidine';
+    const yalidineKey = () => { try { return JSON.parse(store.get(YALIDINE_ITEM) || 'null'); } catch { return null; } };
+    async function yalidineLink({ id, token, fromWilaya = '' } = {}) {
+        const s = mustExist(read());
+        const apiId = String(id || '').trim();
+        const apiToken = String(token || '').trim();
+        if (!/^[A-Za-z0-9_-]{6,128}$/.test(apiId) || !/^[A-Za-z0-9_-]{6,256}$/.test(apiToken)) throw codedError('WEBSITE_COURIER_KEY', {});
+        try { await yalidine.check(apiId, apiToken); } catch (e) { throw codedError(e.reason === 'key' ? 'WEBSITE_COURIER_KEY' : 'WEBSITE_COURIER_DOWN', {}); }
+        store.set(YALIDINE_ITEM, JSON.stringify({ id: apiId, token: apiToken, fromWilaya: String(fromWilaya || '').slice(0, 60) }));
+        write({ ...s, tools: { ...s.tools, yalidine: { linked: true, linkedAt: new Date().toISOString() } } });
+        return view();
+    }
+    function yalidineForget() {
+        const s = mustExist(read());
+        store.remove(YALIDINE_ITEM);
+        write({ ...s, tools: { ...s.tools, yalidine: { linked: false, linkedAt: null } } });
+        return view();
+    }
+    /** Send a confirmed home-delivery order to Yalidine: its tracking number comes back. */
+    async function yalidineSend({ id } = {}) {
+        const k = yalidineKey();
+        if (!k) throw codedError('WEBSITE_COURIER_NOT_LINKED', {});
+        const o = orderBook.listOrders(api, { id })[0];
+        if (!o) throw codedError('WEBSITE_ORDER_NOT_FOUND', {});
+        const v = orderView(o);
+        if (v.delivery !== 'home') throw codedError('WEBSITE_COURIER_HOME_ONLY', {});
+        if (v.trackingNumber) throw codedError('WEBSITE_COURIER_SENT', {});
+        if (!['confirmed', 'preparing'].includes(v.status)) throw codedError('WEBSITE_COURIER_CONFIRM_FIRST', {});
+        let r;
+        try { r = await yalidine.createParcel(k.id, k.token, parcelOf(v, { fromWilaya: k.fromWilaya, shopName: shopName() })); } catch (e) { throw codedError(e.reason === 'key' ? 'WEBSITE_COURIER_KEY' : 'WEBSITE_COURIER_DOWN', {}); }
+        api.run("UPDATE website_orders SET tracking_number = ?, courier_company = CASE WHEN courier_company = '' THEN 'Yalidine' ELSE courier_company END WHERE id = ?", [r.tracking, id]);
+        return orderView(orderBook.listOrders(api, { id })[0]);
+    }
+    async function yalidineRefresh({ id } = {}) {
+        const k = yalidineKey();
+        if (!k) throw codedError('WEBSITE_COURIER_NOT_LINKED', {});
+        const o = orderBook.listOrders(api, { id })[0];
+        if (!o || !o.tracking_number) throw codedError('WEBSITE_ORDER_NOT_FOUND', {});
+        let r;
+        try { r = await yalidine.parcelStatus(k.id, k.token, o.tracking_number); } catch (e) { throw codedError(e.reason === 'key' ? 'WEBSITE_COURIER_KEY' : 'WEBSITE_COURIER_DOWN', {}); }
+        api.run("UPDATE website_orders SET courier_state = ?, courier_state_at = datetime('now') WHERE id = ?", [r.status, id]);
+        return orderView(orderBook.listOrders(api, { id })[0]);
+    }
+
+    /**
+     * The rules the website's API applies itself (sent at each sync when they
+     * changed): numbers refused, coupons (only their hash with the shop's
+     * key leaves AFUS), delivery prices.
+     */
+    function apiConfig(key) {
+        const s = read();
+        const now = Date.now();
+        const coupons = s.publicInfo.features.coupons ? api.all("SELECT * FROM promotions WHERE coupon_code IS NOT NULL AND TRIM(coupon_code) <> ''")
+            .filter(p => isPromotionLive(p, now) && ['percentage', 'fixed'].includes(p.type))
+            .map(p => ({
+                hash: crypto.createHash('sha256').update(`${p.coupon_code.trim().toUpperCase()}|${key}`).digest('hex'),
+                type: p.type, value: Number(p.value) || 0, appliesTo: p.applies_to || 'all', ids: parseIds(p.applies_to_ids).map(String),
+                minPurchase: Number(p.min_purchase) || 0, endsAt: p.end_date ? String(p.end_date).slice(0, 10) : null, name: String(p.name || '').slice(0, 80),
+            })) : [];
+        return { blocked: s.tools.blocked.map(b => b.phone), coupons, delivery: s.publicInfo.delivery };
+    }
+
+    /** Views per day (the website's counts) and the orders of the same days, by article. */
+    function stats({ days = 7 } = {}) {
+        const n = Math.min(30, Math.max(1, parseInt(days, 10) || 7));
+        const since = new Date(Date.now() + 3600000 - (n - 1) * 86400000).toISOString().slice(0, 10);
+        const views = api.all('SELECT day, page, views FROM website_views WHERE day >= ? ORDER BY day', [since]);
+        const perDay = {};
+        for (const v of views) perDay[v.day] = (perDay[v.day] || 0) + v.views;
+        const orders = api.all("SELECT date(received_at, '+1 hour') AS day, COUNT(*) AS n FROM website_orders WHERE date(received_at, '+1 hour') >= ? GROUP BY day", [since]);
+        const products = new Map();
+        for (const v of views.filter(x => x.page.startsWith('product-'))) {
+            const id = v.page.slice(8);
+            products.set(id, { id, views: (products.get(id)?.views || 0) + v.views, orders: 0 });
+        }
+        for (const r of api.all(`SELECT i.product_id AS id, COUNT(DISTINCT i.order_id) AS n FROM website_order_items i JOIN website_orders o ON o.id = i.order_id
+                                 WHERE date(o.received_at, '+1 hour') >= ? GROUP BY i.product_id`, [since])) {
+            const key = String(r.id).replace(/[^A-Za-z0-9_-]/g, '_');
+            const x = products.get(key) || { id: key, views: 0, orders: 0 };
+            x.orders = r.n;
+            products.set(key, x);
+        }
+        const names = new Map(api.all('SELECT id, name FROM products').map(p => [String(p.id).replace(/[^A-Za-z0-9_-]/g, '_'), p.name]));
+        const list = [...products.values()].map(p => ({ ...p, name: names.get(p.id) || p.id, rate: p.views ? Math.round((p.orders / p.views) * 1000) / 10 : null }))
+            .sort((a, b) => b.views - a.views).slice(0, 30);
+        const totalViews = Object.values(perDay).reduce((a, b) => a + b, 0);
+        const totalOrders = orders.reduce((a, b) => a + b.n, 0);
+        return {
+            days: n, since, viewsAt: read().tools.viewsAt,
+            perDay: Array.from({ length: n }, (_, i) => {
+                const day = new Date(Date.parse(`${since}T00:00:00Z`) + i * 86400000).toISOString().slice(0, 10);
+                return { day, views: perDay[day] || 0, orders: orders.find(o => o.day === day)?.n || 0 };
+            }),
+            totalViews, totalOrders, rate: totalViews ? Math.round((totalOrders / totalViews) * 1000) / 10 : null,
+            products: list,
+        };
+    }
+
+    /**
      * Are there changes in Afus Boutique the website does not show yet
      * (articles, prices, pictures, stock, offers, categories, shop details,
      * new in / best sellers)? { outdated: true | false | null (not known) }.
@@ -631,8 +808,22 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             customerName: o.customer_name || [o.first_name, o.last_name].filter(Boolean).join(' '), firstName: o.first_name || '', lastName: o.last_name || '',
             phone: o.phone, wilaya: o.wilaya, commune: o.commune, address: o.address, note: o.note, delivery: o.delivery,
             courier: o.delivery === 'office' ? { company: o.courier_company, wilaya: o.office_wilaya, commune: o.office_commune, office: o.courier_office } : null,
+            // Delivery price asked of the customer, the coupon, what the courier collects
+            deliveryFee: o.delivery_fee === null || o.delivery_fee === undefined ? null : Number(o.delivery_fee),
+            coupon: o.coupon_code ? { code: o.coupon_code, discount: Number(o.coupon_discount) || 0 } : null,
+            toCollect: Math.round((total - (Number(o.coupon_discount) || 0) + (Number(o.delivery_fee) || 0)) * 100) / 100,
+            trackingNumber: o.tracking_number || '', trackingUrl: trackingUrl(o), courierState: o.courier_state || '', courierStateAt: o.courier_state_at || null,
             items,
         };
+    }
+
+    /** The courier's own page of the parcel, from the address the owner gave for that company ({number}). */
+    function trackingUrl(o) {
+        if (!o.tracking_number) return '';
+        const company = (o.courier_company || '').toLowerCase();
+        const links = read().tools.trackingLinks || {};
+        const tpl = Object.entries(links).find(([name]) => name.toLowerCase() === company)?.[1] || links['*'] || '';
+        return tpl ? tpl.replace('{number}', encodeURIComponent(o.tracking_number)) : '';
     }
 
     /**
@@ -697,6 +888,28 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             if (!a.ok) { reason = 'ack'; break; }
             waiting = a.waiting;
             if (r.orders.length < PAGE || !waiting) break;
+        }
+        // The API's own rules (when they changed) and the views of the last days
+        if (!reason && !blockedMode()) {
+            try {
+                const config = apiConfig(key);
+                const hash = crypto.createHash('sha256').update(JSON.stringify(config)).digest('hex');
+                if (hash !== read().tools.configHash) {
+                    const c = await publishPing.pushConfig(apiUrl, key, config, opts);
+                    if (c.ok) write({ ...read(), tools: { ...read().tools, configHash: hash } });
+                }
+                const v = await publishPing.fetchViews(apiUrl, key, opts);
+                if (v.ok) {
+                    api.transaction(() => {
+                        for (const row of v.views) {
+                            if (!/^\d{4}-\d{2}-\d{2}$/.test(row.day) || !/^[A-Za-z0-9_-]{1,100}$/.test(row.page) || !Number.isInteger(row.views) || row.views < 0) continue;
+                            api.run(`INSERT INTO website_views (day, page, views) VALUES (?, ?, ?)
+                                     ON CONFLICT(day, page) DO UPDATE SET views = MAX(views, excluded.views)`, [row.day, row.page, row.views]);
+                        }
+                    });
+                    write({ ...read(), tools: { ...read().tools, viewsAt: new Date(now()).toISOString() } });
+                }
+            } catch { /* the orders are in; the rest comes at the next sync */ }
         }
         const at = new Date(now()).toISOString();
         const prev = read().sync;
@@ -857,7 +1070,8 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
-        publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, setFeatures, changes,
+        publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, setFeatures, setSettings, blockPhone, unblockPhone, blockSuggestions, confirmMessage, setTracking,
+        yalidineLink, yalidineForget, yalidineSend, yalidineRefresh, stats, apiConfig, changes,
         domainCheck, domainRetry, domainSearch, domainOpenBuy, domainHostingerLink, domainHostingerForget, domainHostingerSetup, domainCheckIfDue: () => domains.checkIfDue(),
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,

@@ -68,7 +68,7 @@ describe('offline-first core', () => {
         const WEBSITE_FILES = ['electron/website/websiteState.js', 'electron/website/publish/deployer.js', 'electron/website/cloudflare.js', 'src/pages/WebsitePage.jsx', 'electron/website/domain/domainManager.js'];
         const shopAddress = ([file, url]) => WEBSITE_FILES.includes(file) && (url.startsWith('https://${') || url.startsWith('https://<')
             // Examples in the empty fields of the shop's own links (Website screen): never opened by the program
-            || (file === 'src/pages/WebsitePage.jsx' && /^https:\/\/(facebook\.com|instagram\.com|tiktok\.com|maps\.app\.goo\.gl)\/(…|@…)$/.test(url)));
+            || (file === 'src/pages/WebsitePage.jsx' && (/^https:\/\/(facebook\.com|instagram\.com|tiktok\.com|maps\.app\.goo\.gl)\/(…|@…)$/.test(url) || url === 'https://…{number}')));
         // GitHub's own sign-in page and API, in the GitHub module only
         const github = ([file, url]) => file === 'electron/website/github.js' && ['https://github.com', 'https://api.github.com'].includes(url);
         // Cloudflare's own sign-in and API, in the Cloudflare module only
@@ -77,7 +77,12 @@ describe('offline-first core', () => {
         const domainLookup = ([file, url]) => (file === 'electron/website/domain/lookup.js' && ['https://data.iana.org/rdap/dns.json', 'https://cloudflare-dns.com/dns-query'].includes(url))
             // Hostinger's own API, in the Hostinger module only (the shop's own account)
             || (file === 'electron/website/domain/hostinger.js' && url === 'https://developers.hostinger.com');
-        expect(urls.filter((entry) => !allowed.test(entry[1]) && !shopAddress(entry) && !github(entry) && !cloudflare(entry) && !domainLookup(entry))).toEqual([]);
+        // The shop's own ads / visit tools (turned on by the shop with its own ids), from their own addresses only
+        const adsTools = ([file, url]) => ['electron/website/storefront/render.js', 'electron/website/storefront/assets/track.js'].includes(file)
+            && /^https:\/\/(connect\.facebook\.net|www\.facebook\.com|analytics\.tiktok\.com|sc-static\.net|tr\.snapchat\.com|tr-shadow\.snapchat\.com|www\.googletagmanager\.com|www\.google-analytics\.com|region1\.google-analytics\.com)(\/|$)/.test(url);
+        // The courier the shop links with its own key
+        const courier = ([file, url]) => file === 'electron/website/couriers/yalidine.js' && url === 'https://api.yalidine.app/v1/';
+        expect(urls.filter((entry) => !allowed.test(entry[1]) && !shopAddress(entry) && !github(entry) && !cloudflare(entry) && !domainLookup(entry) && !adsTools(entry) && !courier(entry))).toEqual([]);
     });
 
     it('listens on this computer only for the browser coming back from a sign-in (127.0.0.1)', () => {

@@ -18,10 +18,14 @@ const featuresOf = (ctx) => resolveFeatures(ctx.snap.shop.features);
  */
 function formParts(ctx, off) {
     const shopWilaya = ctx.snap.shop.wilaya || '';
+    // Wilayas the shop does not deliver to: shown, not choosable
+    const delivery = ctx.snap.shop.delivery || { home: null, office: null, freeOver: null, wilayas: [] };
+    const notDelivered = new Set((delivery.wilayas || []).filter(w => w.off).map(w => w.code));
     const wilayas = (name) => `<select name="${name}" required${off}><option value="">${esc(ctx.t('chooseWilaya'))}</option>${WILAYAS.map(w => {
         const text = wilayaLabel(w, ctx.lang);
-        const chosen = name === 'wilaya' && shopWilaya && (w[1] === shopWilaya || w[2].toLowerCase() === shopWilaya.toLowerCase());
-        return `<option value="${esc(text)}"${chosen ? ' selected' : ''}>${esc(text)}</option>`;
+        const no = name === 'wilaya' && notDelivered.has(w[0]);
+        const chosen = !no && name === 'wilaya' && shopWilaya && (w[1] === shopWilaya || w[2].toLowerCase() === shopWilaya.toLowerCase());
+        return `<option value="${esc(text)}"${chosen ? ' selected' : ''}${no ? ' disabled' : ''}>${esc(no ? `${text} — ${ctx.t('notDelivered')}` : text)}</option>`;
     }).join('')}</select>`;
     const err = (name) => `<small class="ferr" data-err-for="${name}" hidden></small>`;
     const field = (name, label, input, wide = false) => `<label class="field${wide ? ' field-wide' : ''}" data-field="${name}"><span>${esc(label)}</span>${input}${err(name)}</label>`;
@@ -35,7 +39,24 @@ function formParts(ctx, off) {
     const deliveries = home && office
         ? `<div class="dchoices">${choice('home', ctx.t('deliveryHome'), ctx.t('deliveryHomeSub'), true)}${choice('office', ctx.t('deliveryOffice'), ctx.t('deliveryOfficeSub'), false)}</div>`
         : `<input type="hidden" name="delivery" value="${home ? 'home' : 'office'}"${off}><p class="donly"><strong>${esc(ctx.t(home ? 'deliveryHome' : 'deliveryOffice'))}</strong> · ${esc(ctx.t(home ? 'deliveryHomeSub' : 'deliveryOfficeSub'))}</p>`;
-    return { wilayas, err, field, text, phone, deliveries, home, office, features: f };
+    // Delivery prices (the script works out the price of the chosen wilaya and way; the API again)
+    const prices = `data-delivery="${esc(JSON.stringify(delivery))}"`;
+    const coupon = f.coupons && ctx.apiBase ? html(
+        `<div class="coupon" data-coupon><span class="flabel">${esc(ctx.t('couponLabel'))}</span><div class="coupon-row">`,
+        `<input name="coupon_try" maxlength="30" autocomplete="off" dir="ltr" aria-label="${esc(ctx.t('couponLabel'))}"${off}>`,
+        `<button type="button" class="btn btn-ghost btn-sm" data-coupon-apply${off}>${esc(ctx.t('couponApply'))}</button></div>`,
+        `<small class="coupon-msg" data-coupon-msg role="status" aria-live="polite"></small><input type="hidden" name="coupon" value=""></div>`,
+    ) : '';
+    // What it costs: the goods, the coupon, the delivery, the total (filled by the script)
+    const summary = html(
+        `<div class="osum" data-osum>`,
+        `<p class="sum-row"><span>${esc(ctx.t('subtotal'))}</span><span data-sum-goods data-cart-sum></span></p>`,
+        `<p class="sum-row sum-coupon" data-sum-coupon-row hidden><span>${esc(ctx.t('couponDiscount'))}</span><span data-sum-coupon></span></p>`,
+        `<p class="sum-row"><span>${esc(ctx.t('deliveryCost'))}</span><span data-sum-delivery>${esc(ctx.t(delivery.home === null && delivery.office === null && !(delivery.wilayas || []).length ? 'deliveryByPhone' : 'deliveryChoose'))}</span></p>`,
+        `<p class="sum-row sum-total"><span>${esc(ctx.t('total'))}</span><strong data-sum-total></strong></p>`,
+        `</div>`,
+    );
+    return { wilayas, err, field, text, phone, deliveries, home, office, features: f, prices, coupon, summary };
 }
 
 const priceOf = (ctx, p) => money(p, ctx.lang, ctx.snap.shop.currency);
@@ -259,9 +280,9 @@ function orderForm(ctx, p) {
     const f = featuresOf(ctx);
     if (!f.orderForm) return whatsappOrder(ctx, p);
     const off = ctx.orderUrl ? '' : ' disabled';
-    const { wilayas, field, text, phone, deliveries, home } = formParts(ctx, off);
+    const { wilayas, field, text, phone, deliveries, home, prices, coupon, summary } = formParts(ctx, off);
     return html(
-        `<form class="quick-order" id="order" method="post" novalidate${ctx.orderUrl ? ` action="${esc(ctx.orderUrl)}"` : ''} accept-charset="utf-8" data-quick-order data-price="${onSale(p) ? p.salePrice : p.price}">`,
+        `<form class="quick-order" id="order" method="post" novalidate${ctx.orderUrl ? ` action="${esc(ctx.orderUrl)}"` : ''} accept-charset="utf-8" data-quick-order data-price="${onSale(p) ? p.salePrice : p.price}" data-cat="${esc(p.categoryId || '')}" ${prices}>`,
         `<input type="hidden" name="source" value="product"><input type="hidden" name="order_key" data-order-key value="">`,
         `<input type="hidden" name="items" data-items value="[]"><input type="hidden" name="product_id" value="${esc(p.id)}"><input type="hidden" name="product_name" value="${esc(p.name)}">`,
         `<label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>`,
@@ -275,6 +296,8 @@ function orderForm(ctx, p) {
         deliveries,
         home && `<div class="fields" data-when="home">${field('address', ctx.t('addressField'), text('address', { min: 3, max: 200, auto: 'street-address' }), true)}</div>`,
         f.noteField && `<div class="fields">${field('note', ctx.t('noteOptional'), `<textarea name="note" rows="2" maxlength="500"${off}></textarea>`, true)}</div>`,
+        coupon,
+        summary,
         `<p class="form-msg is-bad" data-form-msg role="alert" hidden></p>`,
         `<button class="btn btn-primary btn-block btn-order" type="submit" data-confirm${off}><span>${esc(ctx.t('orderNow'))}</span><small>${esc(ctx.t('trustCod'))}</small></button>`,
         whatsappOrder(ctx, p),
@@ -296,7 +319,7 @@ function messagePage(ctx, kind) {
  */
 function addToCart(ctx, p, colors, sizes) {
     const pp = ctx.theme.productPage;
-    const variants = p.variants.map(v => [v.color, v.size, v.available ? 1 : 0, v.price]);
+    const variants = p.variants.map(v => [v.color, v.size, v.available ? 1 : 0, v.price, v.few ? 1 : 0]);
     const off = ctx.preview ? ' disabled' : '';
     const colorChoice = colors.length && html(
         `<fieldset class="opt"><legend class="opt-title">${esc(ctx.t('colors'))}</legend><div class="opt-colors opt-${pp.colors}">`,
@@ -321,6 +344,13 @@ function addToCart(ctx, p, colors, sizes) {
         `<noscript><p class="hint">${esc(ctx.t('needScript'))}</p></noscript>`,
         `</form>`,
     );
+}
+
+/** The size guide of the article's category (written by the shop), folded. */
+function sizeGuide(ctx, p) {
+    const g = (ctx.snap.shop.sizeGuides || []).find(x => x.categoryId === p.categoryId);
+    if (!g) return '';
+    return `<details class="size-guide"><summary>${esc(ctx.t('sizeGuide'))}</summary><div class="sg-body">${g.text.split('\n').map(l => `<p>${esc(l)}</p>`).join('')}</div></details>`;
 }
 
 /** An article's own page, as the theme lays it out. */
@@ -359,6 +389,9 @@ function productPage(ctx, p) {
         `<h1 class="pdp-name">${esc(p.name)}</h1>`,
         `<div class="pdp-price">${priceTag(ctx, p)}${onSale(p) ? ` <span class="badge badge-pill badge-sale">-${percentOff(p)}%</span>` : ''}</div>`,
         `<p class="stock ${p.available ? 'is-in' : 'is-out'}">${esc(p.available ? ctx.t('inStock') : ctx.t('soldOut'))}</p>`,
+        // "Few left" (no count shown: the shop's stock stays its own)
+        p.available && featuresOf(ctx).fewLeft && `<p class="few-left" data-few${p.few ? '' : ' hidden'}>${esc(ctx.t('fewLeft'))}</p>`,
+        sizeGuide(ctx, p),
         p.available ? addToCart(ctx, p, colors, sizes) : html(colorBlock, sizeBlock),
         p.available && orderForm(ctx, p),
         p.available && featuresOf(ctx).trustBar && trustList(ctx),

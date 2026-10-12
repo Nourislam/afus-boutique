@@ -14,13 +14,14 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { renderPage, pagesOf, linkFor, scriptTexts, STYLE, SCRIPT } = require('../storefront/render');
+const { renderPage, pagesOf, linkFor, scriptTexts, STYLE, SCRIPT, TRACK } = require('../storefront/render');
 const { css } = require('../storefront/css');
 const { fontFiles } = require('../storefront/fonts');
 const { textsFor } = require('../storefront/texts');
 const { money, placeholder } = require('../storefront/html');
 
 const STORE_SCRIPT = path.join(__dirname, '..', 'storefront', 'assets', 'store.js');
+const TRACK_SCRIPT = path.join(__dirname, '..', 'storefront', 'assets', 'track.js');
 
 const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(jpe?g|png|webp|gif)$/i;
 const MAX_IMAGE = 5 * 1024 * 1024;
@@ -56,6 +57,7 @@ function searchCatalog(snap, theme, lang, asset) {
                 url: linkFor('product', p.id),
                 image: p.images[0] ? asset(p.images[0]) : placeholder(p.name, theme.tokens.colors),
                 price: onSale(p) ? p.salePrice : p.price,
+                cat: p.categoryId || '',
                 available: p.available,
                 variants: p.variants.map(v => [v.color, v.size, v.available, pay(v.price)]),
             };
@@ -90,6 +92,8 @@ function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, l
     files.push({ path: STYLE, content: css(theme) });
     files.push({ path: SCRIPT, content: fs.readFileSync(STORE_SCRIPT, 'utf8') });
     for (const f of fontFiles()) files.push({ path: f.path, content: f.data });
+    // The ads / visit tools, only when the shop turned one on
+    if (Object.values(snap.shop.tracking || {}).some(Boolean)) files.push({ path: TRACK, content: fs.readFileSync(TRACK_SCRIPT, 'utf8') });
     files.push({ path: 'search.json', content: JSON.stringify(searchCatalog(snap, theme, language, asset)) });
     files.push({ path: '404.html', content: renderPage({ snapshot: snap, theme, page: 'home', lang: language, assetUrl: asset, orderUrl }) });
     for (const [name, data] of images) if (data) files.push({ path: asset(name), content: data });

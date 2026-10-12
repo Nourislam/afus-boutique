@@ -514,6 +514,32 @@ const MIGRATIONS = [
             addColumnIfMissing(db, 'website_order_items', 'returned_damaged', 'INTEGER NOT NULL DEFAULT 0');
         },
     },
+    {
+        version: '2026_10_website_order_tools',
+        description: 'Website orders: delivery price, coupon, courier tracking; views of the website per day and article',
+        up(db) {
+            if (tableExists(db, 'website_orders')) {
+                // Delivery price asked of the customer (the courier's, not part of the sale)
+                addColumnIfMissing(db, 'website_orders', 'delivery_fee', 'REAL');
+                // A coupon typed on the website, and the discount it gives (checked again in AFUS)
+                addColumnIfMissing(db, 'website_orders', 'coupon_code', "TEXT NOT NULL DEFAULT ''");
+                addColumnIfMissing(db, 'website_orders', 'coupon_discount', 'REAL NOT NULL DEFAULT 0');
+                // The parcel at the courier: its tracking number, the courier's own state of it
+                addColumnIfMissing(db, 'website_orders', 'tracking_number', "TEXT NOT NULL DEFAULT ''");
+                addColumnIfMissing(db, 'website_orders', 'courier_state', "TEXT NOT NULL DEFAULT ''");
+                addColumnIfMissing(db, 'website_orders', 'courier_state_at', 'DATETIME');
+            }
+            // How many times each page was seen (no person, no address: a count per day)
+            db.run(`
+                CREATE TABLE IF NOT EXISTS website_views (
+                    day TEXT NOT NULL,
+                    page TEXT NOT NULL,
+                    views INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (day, page)
+                )
+            `);
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

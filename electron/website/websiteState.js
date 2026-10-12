@@ -11,6 +11,7 @@
  */
 const { registry, DEFAULT_THEME } = require('./themes/registry');
 const { publicInfo } = require('./publicData/public');
+const { phoneKey } = require('./orders/phone');
 
 // Free address of every shop: GitHub Pages, https://<account>.github.io/<name>/
 const FREE_HOST = 'github.io';
@@ -39,6 +40,9 @@ const DEFAULT_STATE = Object.freeze({
     site: {}, // { url, commit, hash, builtAt, publishedAt, pending, summary }
     // What the owner wrote for the website only (opening hours, social links, map)
     publicInfo: { hours: [], social: {}, mapUrl: '', couriers: [] },
+    // The shop's own tools for its website orders (never published): the WhatsApp message to the
+    // customer, numbers it takes no order from, the couriers' tracking pages, the new-order alert
+    tools: { confirmMessage: '', blocked: [], trackingLinks: {}, notify: true, yalidine: { linked: false, linkedAt: null }, configHash: '', viewsAt: null },
     // The last Create Website / Update website run, step by step
     deploy: { status: 'idle', steps: [], startedAt: null, finishedAt: null, failedStep: null, reason: null },
     // Optional own domain: the website always works on the free address first
@@ -78,9 +82,45 @@ function normalizeState(saved) {
         affiliateRef: typeof s.affiliateRef === 'string' && /^[a-f0-9]{12}$/.test(s.affiliateRef) ? s.affiliateRef : null,
         resources: resourcesOf(s.resources),
         publicInfo: publicInfo(s.publicInfo),
+        tools: toolsOf(s.tools),
         site: siteOf(s.site),
         deploy: deployOf(s.deploy),
         sync: syncOf(s.sync),
+    };
+}
+
+/** The default WhatsApp message to confirm an order ({…} filled from the order). */
+const CONFIRM_MESSAGE = 'السلام عليكم {name}،\nوصلنا طلبك رقم {number} من {shop}:\n{items}\nالمبلغ عند الاستلام: {total}\nالتوصيل: {delivery}\nهل نؤكد الطلب؟ شكرًا لثقتك.';
+
+/** Tracking page of a courier: an https address with {number} where the parcel's number goes. */
+const trackingTemplate = (v) => {
+    const t = String(v || '').trim();
+    if (!t.includes('{number}') || t.length > 300) return '';
+    try { return new URL(t.replace('{number}', 'X')).protocol === 'https:' ? t : ''; } catch { return ''; }
+};
+
+function toolsOf(x) {
+    const t = x && typeof x === 'object' ? x : {};
+    const seen = new Set();
+    const blocked = (Array.isArray(t.blocked) ? t.blocked : []).map(b => {
+        const key = phoneKey(b?.phone);
+        if (!key || seen.has(key)) return null;
+        seen.add(key);
+        return { phone: key, note: typeof b.note === 'string' ? b.note.slice(0, 120) : '', at: isText(b.at, 40) ? b.at : null };
+    }).filter(Boolean).slice(0, 5000);
+    const links = {};
+    for (const [name, url] of Object.entries(t.trackingLinks && typeof t.trackingLinks === 'object' ? t.trackingLinks : {})) {
+        const tpl = trackingTemplate(url);
+        if (tpl && isText(name, 60)) links[name] = tpl;
+    }
+    return {
+        confirmMessage: typeof t.confirmMessage === 'string' && t.confirmMessage.trim() ? t.confirmMessage.slice(0, 1000) : '',
+        blocked,
+        trackingLinks: links,
+        notify: t.notify !== false,
+        yalidine: { linked: t.yalidine?.linked === true, linkedAt: isText(t.yalidine?.linkedAt, 40) ? t.yalidine.linkedAt : null },
+        configHash: isText(t.configHash, 64) ? t.configHash : '',
+        viewsAt: isText(t.viewsAt, 40) ? t.viewsAt : null,
     };
 }
 
@@ -288,5 +328,5 @@ module.exports = {
     FREE_HOST, NAME_MIN, NAME_MAX, DEFAULT_STATE,
     GITHUB_STATUSES, GITHUB_REASONS, CLOUDFLARE_STATUSES, CLOUDFLARE_REASONS, cloudflareAccount,
     DOMAIN_STATUSES, DOMAIN_REASONS, domainOf,
-    normalizeState, githubAccount, repositoryName, slugify, suggestName, isValidName, cleanDomain, freeUrl, stepsOf, statusOf,
+    CONFIRM_MESSAGE, trackingTemplate, normalizeState, githubAccount, repositoryName, slugify, suggestName, isValidName, cleanDomain, freeUrl, stepsOf, statusOf,
 };

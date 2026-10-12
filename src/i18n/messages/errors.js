@@ -131,4 +131,12 @@ export default {
     'errors.BRAND_NAME_REQUIRED': ["Brand name is required", "Le nom de la marque est obligatoire", "اسم الماركة إجباري"],
     'errors.BRAND_EXISTS': ["This brand already exists", "Cette marque existe déjà", "هذه الماركة موجودة"],
     'errors.BRAND_NOT_FOUND': ["Brand not found", "Marque introuvable", "الماركة غير موجودة"],
+    'errors.WEBSITE_COURIER_CONFIRM_FIRST': ["Confirm the order before sending it to the courier", "Confirmez la commande avant de l'envoyer au transporteur", "أكّد الطلب قبل إرساله إلى شركة التوصيل"],
+    'errors.WEBSITE_COURIER_HOME_ONLY': ["Only home delivery orders can be sent from here", "Seules les commandes à domicile peuvent être envoyées d'ici", "يمكن إرسال طلبات التوصيل إلى المنزل فقط من هنا"],
+    'errors.WEBSITE_COURIER_KEY': ["Yalidine did not accept the API keys", "Yalidine n'a pas accepté les clés API", "لم يقبل Yalidine مفاتيح API"],
+    'errors.WEBSITE_COURIER_NOT_LINKED': ["Link your Yalidine account first (Website settings › Couriers)", "Liez d'abord votre compte Yalidine (Réglages du site › Transporteurs)", "اربط حساب Yalidine أولًا (إعدادات الموقع › شركات التوصيل)"],
+    'errors.WEBSITE_COURIER_SENT': ["This order already has a tracking number", "Cette commande a déjà un numéro de suivi", "لهذا الطلب رقم تتبع من قبل"],
+    'errors.WEBSITE_COURIER_DOWN': ["Yalidine could not be reached or refused the parcel. Try again later.", "Yalidine est injoignable ou a refusé le colis. Réessayez plus tard.", "تعذّر الوصول إلى Yalidine أو رُفض الطرد. أعد المحاولة لاحقًا."],
+    'errors.WEBSITE_PHONE_INVALID': ["Not a valid Algerian phone number", "Numéro de téléphone algérien non valide", "رقم هاتف جزائري غير صالح"],
+    'errors.WEBSITE_TRACKING_INVALID': ["Tracking number: letters, digits and dashes only (up to 40)", "Numéro de suivi : lettres, chiffres et tirets seulement (40 max)", "رقم التتبع: حروف وأرقام وشرطات فقط (40 كحد أقصى)"],
 };

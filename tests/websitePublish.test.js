@@ -138,13 +138,13 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         // search.json: what the pages show (name, price, picture, availability), nothing else
         const search = JSON.parse(files.get('search.json').toString());
         expect(Object.keys(search).sort()).toEqual(['money', 'products', 'texts', 'version']);
-        for (const p of search.products) expect(Object.keys(p).sort()).toEqual(['available', 'id', 'image', 'name', 'price', 'url', 'variants']);
+        for (const p of search.products) expect(Object.keys(p).sort()).toEqual(['available', 'cat', 'id', 'image', 'name', 'price', 'url', 'variants']);
         expect(search.products.find(p => p.id === 'jean')).toMatchObject({ url: 'product-jean.html', image: 'images/jean-1.jpg' });
 
         // Cloudflare: one D1 database with the website's tables, one Worker with its bindings
         expect([...cloud.cf.databases.values()].map(d => d.name)).toEqual(['boutique-yasmine-db']);
         const db = [...cloud.cf.databases.values()][0].db;
-        expect(db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")[0].values.flat()).toEqual(['hits', 'order_keys', 'orders', 'site_meta']);
+        expect(db.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")[0].values.flat()).toEqual(['hits', 'order_keys', 'orders', 'site_meta', 'views']);
         expect(db.exec("SELECT value FROM site_meta WHERE key='published_at'")[0].values[0][0]).toBe(v.publishedAt);
         const worker = cloud.cf.scripts.get('boutique-yasmine-api');
         expect(worker.enabled).toBe(true);
@@ -619,7 +619,7 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
             const key = r.auth.replace(/^Bearer /, '');
             if (key === gh) expect(r.path, r.path).toMatch(/^\/api\//);
             else if (key === cfKeys.accessToken) expect(r.path, r.path).toMatch(/^\/client\/v4\//);
-            else if (key === store.get('website-key')) expect(r.path).toBe('/w/boutique-yasmine-api/api/orders');
+            else if (key === store.get('website-key')) expect(r.path).toMatch(/^\/w\/boutique-yasmine-api\/api\/(orders|orders\/ack|config|views)$/);
         }
         expect(cloud.requests.filter(x => x.path.startsWith('/pages/')).every(x => !x.auth)).toBe(true);
         // The log of the run names steps only

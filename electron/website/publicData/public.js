@@ -63,13 +63,77 @@ function link(value, hosts) {
  *   trustBar        the strip "pay on delivery, delivery, a call first"
  * There is always a way to order (the form or the cart) and a way to deliver.
  */
-const FEATURES = { orderForm: true, whatsappOrder: true, cart: true, homeDelivery: true, officeDelivery: true, noteField: true, trustBar: true };
+const FEATURES = { orderForm: true, whatsappOrder: true, cart: true, homeDelivery: true, officeDelivery: true, noteField: true, trustBar: true, coupons: false, fewLeft: true };
 function features(value) {
     const given = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     const out = Object.fromEntries(Object.entries(FEATURES).map(([k, def]) => [k, typeof given[k] === 'boolean' ? given[k] : def]));
     if (!out.orderForm && !out.cart) out.orderForm = true;
     if (!out.homeDelivery && !out.officeDelivery) out.homeDelivery = true;
     return out;
+}
+
+/** A price of delivery in dinars (0 = free), or null (not set). */
+function fee(v) {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 && n <= 100000 ? Math.round(n) : null;
+}
+
+/**
+ * Delivery prices (Website screen › Delivery): one price for home and one
+ * for the courier office, the same everywhere, and the wilayas that differ
+ * (their own prices, or not delivered); free above an amount (optional).
+ */
+function deliveryPrices(d) {
+    const x = d && typeof d === 'object' && !Array.isArray(d) ? d : {};
+    const seen = new Set();
+    const wilayas = (Array.isArray(x.wilayas) ? x.wilayas : []).map(w => {
+        const code = parseInt(w?.code, 10);
+        if (!(code >= 1 && code <= 58) || seen.has(code)) return null;
+        seen.add(code);
+        const row = { code, home: fee(w.home), office: fee(w.office), off: w.off === true };
+        return row.home !== null || row.office !== null || row.off ? row : null;
+    }).filter(Boolean).sort((a, b) => a.code - b.code);
+    return { home: fee(x.home), office: fee(x.office), freeOver: fee(x.freeOver), wilayas };
+}
+
+/** The price of delivery to a wilaya (1-58) for 'home' or 'office': a number, null (by phone), or false (not delivered). */
+function deliveryFee(prices, wilayaCode, kind, amount = 0) {
+    const d = deliveryPrices(prices);
+    const w = d.wilayas.find(x => x.code === Number(wilayaCode));
+    if (w?.off) return false;
+    const price = w?.[kind] ?? d[kind];
+    if (price === null || price === undefined) return null;
+    if (d.freeOver !== null && amount >= d.freeOver) return 0;
+    return price;
+}
+
+/** Ads and visit measures the shop uses (its own accounts): ids only, each in its known form. */
+const TRACKERS = {
+    facebook: /^\d{10,20}$/,
+    tiktok: /^[A-Z0-9]{15,30}$/,
+    snapchat: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    google: /^G-[A-Z0-9]{6,14}$/,
+};
+function trackers(t) {
+    const x = t && typeof t === 'object' ? t : {};
+    return Object.fromEntries(Object.entries(TRACKERS).map(([k, re]) => {
+        const v = String(x[k] ?? '').trim();
+        const norm = k === 'snapchat' ? v.toLowerCase() : k === 'google' || k === 'tiktok' ? v.toUpperCase() : v;
+        return [k, re.test(norm) ? norm : ''];
+    }));
+}
+
+/** A size guide per category (a few lines each: "M: chest 96–100, length 72"). */
+function sizeGuides(list) {
+    const seen = new Set();
+    return (Array.isArray(list) ? list : []).map(g => {
+        const id = text(g?.categoryId, 80);
+        const body = multiline(g?.text, 800);
+        if (!id || !body || seen.has(id)) return null;
+        seen.add(id);
+        return { categoryId: id, text: body };
+    }).filter(Boolean).slice(0, 100);
 }
 
 /** What the owner wrote for the website (Website screen), cleaned. */
@@ -83,6 +147,11 @@ function publicInfo(info = {}) {
         // The delivery companies the shop works with (ids of storefront/couriers.js)
         couriers: [...new Set((Array.isArray(info.couriers) ? info.couriers : []).filter(id => COURIER_IDS.includes(id)))],
         features: features(info.features),
+        delivery: deliveryPrices(info.delivery),
+        tracking: trackers(info.tracking),
+        sizeGuides: sizeGuides(info.sizeGuides),
+        // "Few left" from this many pieces down (the counts themselves never leave SQLite)
+        fewLeftAt: Number.isInteger(info.fewLeftAt) && info.fewLeftAt >= 1 && info.fewLeftAt <= 20 ? info.fewLeftAt : 3,
     };
 }
 
@@ -104,6 +173,9 @@ function shopOf(store, info, pic) {
         mapUrl: extra.mapUrl,
         couriers: courierNames(extra.couriers),
         features: extra.features,
+        delivery: extra.delivery,
+        tracking: extra.tracking,
+        sizeGuides: extra.sizeGuides,
     };
 }
 
@@ -120,6 +192,7 @@ function toPublic(internal, { now = Date.now(), info = {}, preview = false } = {
             size: text(v.size, 20),
             price: money(v.price),
             available: flag(v.available),
+            few: flag(v.few),
         });
     }
     const products = internal.products.map(p => {
@@ -140,6 +213,7 @@ function toPublic(internal, { now = Date.now(), info = {}, preview = false } = {
             images: [...new Set(images)].slice(0, 6),
             variants: flag(p.has_variants) ? (byProduct.get(p.id) || []) : [],
             available: flag(p.available),
+            few: flag(p.few),
             createdAt: p.created_at ? String(p.created_at).slice(0, 30) : null,
         };
     }).filter(p => p.name);
@@ -181,6 +255,9 @@ const PUBLIC_SHAPE = {
         currency: 'string', language: 'string', hours: { '*': 'string' }, social: { facebook: 'string', instagram: 'string', tiktok: 'string' }, mapUrl: 'string',
         couriers: { '*': 'string' },
         features: Object.fromEntries(Object.keys(FEATURES).map(k => [k, 'boolean'])),
+        delivery: { home: 'number|null', office: 'number|null', freeOver: 'number|null', wilayas: { '*': { code: 'number', home: 'number|null', office: 'number|null', off: 'boolean' } } },
+        tracking: Object.fromEntries(Object.keys(TRACKERS).map(k => [k, 'string'])),
+        sizeGuides: { '*': { categoryId: 'string', text: 'string' } },
     },
     categories: { '*': { id: 'string', name: 'string', count: 'number' } },
     brands: { '*': 'string' },
@@ -190,11 +267,11 @@ const PUBLIC_SHAPE = {
         '*': {
             id: 'string', name: 'string', description: 'string', categoryId: 'string|null', brand: 'string', gender: 'string', season: 'string', collection: 'string',
             price: 'number', salePrice: 'number|null', images: { '*': 'string' },
-            variants: { '*': { color: 'string', colorCode: 'string', size: 'string', price: 'number|null', available: 'boolean' } },
-            available: 'boolean', createdAt: 'string|null',
+            variants: { '*': { color: 'string', colorCode: 'string', size: 'string', price: 'number|null', available: 'boolean', few: 'boolean' } },
+            available: 'boolean', few: 'boolean', createdAt: 'string|null',
         },
     },
     promotions: { '*': { id: 'string', name: 'string', type: 'string', value: 'number', appliesTo: 'string', ids: { '*': 'string' }, endsAt: 'string|null' } },
 };
 
-module.exports = { toPublic, publicInfo, features, FEATURES, PUBLIC_SHAPE, VERSION, IMAGE, SOCIAL_HOSTS, MAP_HOSTS };
+module.exports = { toPublic, publicInfo, features, FEATURES, deliveryPrices, deliveryFee, trackers, TRACKERS, sizeGuides, PUBLIC_SHAPE, VERSION, IMAGE, SOCIAL_HOSTS, MAP_HOSTS };

@@ -352,6 +352,24 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .stepper button:disabled{cursor:default;opacity:.4}
 .stepper input{width:46px;border:0;text-align:center;font:inherit;font-size:1rem;font-weight:700;background:none;color:var(--text);-moz-appearance:textfield;appearance:textfield;padding:0}
 .stepper input::-webkit-inner-spin-button,.stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+/* Totals, coupon, few left, size guide */
+.osum{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--border);padding-top:10px}
+.osum .sum-row span:last-child{color:var(--text)}
+.sum-coupon span:last-child{color:var(--sale)!important}
+.coupon{display:flex;flex-direction:column;gap:6px}
+.coupon-row{display:flex;gap:8px}
+.coupon-row input{flex:1;min-width:0;font:inherit;font-size:1rem;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:9px 12px;text-transform:uppercase}
+.coupon-msg{font-size:.85em;font-weight:600}
+.coupon-msg.is-ok{color:#15803d}
+.coupon-msg.is-bad{color:var(--sale)}
+.few-left{margin:0;color:var(--sale);font-weight:700;font-size:.9em}
+.few-left::before{content:"● ";animation:afus-pulse 1.6s ease-in-out infinite}
+@keyframes afus-pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.few-left::before{animation:none}}
+.size-guide{border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px}
+.size-guide summary{cursor:pointer;font-weight:600;font-size:.92em}
+.sg-body{margin-top:8px;color:var(--muted);font-size:.9em}
+.sg-body p{margin:2px 0}
 /* The order form of an article's page */
 .quick-order{display:flex;flex-direction:column;gap:12px;border:max(1px,var(--bw)) solid var(--border);border-radius:var(--card-radius);padding:16px;background:var(--bg);scroll-margin-top:80px}
 .qo-head{display:flex;flex-direction:column;gap:2px}

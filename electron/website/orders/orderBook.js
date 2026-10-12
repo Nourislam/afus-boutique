@@ -51,6 +51,7 @@
  */
 const catalog = require('../../services/catalogService');
 const { phoneKey } = require('./phone');
+const { isPromotionLive, promotionDiscount } = require('../../shared/promotions.mjs');
 const { nextReceiptNumber } = require('../../services/receiptNumber');
 
 const STATUSES = ['new', 'contacted', 'confirmed', 'preparing', 'shipped', 'delivered', 'money_received', 'returned', 'cancelled'];
@@ -94,6 +95,24 @@ function linesOf(o) {
     return o.product_id ? [{ product_id: o.product_id, product_name: o.product_name, size: o.size, color: o.color, quantity: o.quantity, unit_price: null }] : [];
 }
 
+/**
+ * The discount of a coupon typed on the website, worked out again here by the
+ * till's own rule (a live promotion with that code, its articles or
+ * categories, its minimum, its cap): 0 when the code gives nothing now.
+ */
+function couponDiscount(api, code, lines) {
+    const typed = String(code || '').trim().toLowerCase();
+    if (!typed) return 0;
+    const promo = api.all("SELECT * FROM promotions WHERE coupon_code IS NOT NULL AND TRIM(coupon_code) <> ''")
+        .find(p => p.coupon_code.trim().toLowerCase() === typed && isPromotionLive(p));
+    if (!promo) return 0;
+    const items = lines.map(i => ({
+        product_id: i.product_id, quantity: i.quantity, unit_price: Number(i.unit_price) || 0,
+        category_id: api.get('SELECT category_id FROM products WHERE id = ?', [i.product_id])?.category_id || null,
+    }));
+    return promotionDiscount(promo, items);
+}
+
 /** The orders the website API sent, added once each (by their id). Returns how many were new. */
 function importOrders(api, remote = []) {
     let added = 0;
@@ -107,14 +126,18 @@ function importOrders(api, remote = []) {
             const number = nextOrderNumber(api);
             // An order only: no sale and no stock movement until the money is received
             const receivedAt = Number.isNaN(at.getTime()) ? sqlTime(new Date()) : sqlTime(at);
+            // Delivery price worked out by the website's API from the shop's prices; coupon checked again here
+            const deliveryFee = Number.isFinite(Number(o.delivery_fee)) && o.delivery_fee !== null && o.delivery_fee !== '' && Number(o.delivery_fee) >= 0 ? Math.round(Number(o.delivery_fee)) : null;
+            const coupon = text(o.coupon_code, 30).trim().toUpperCase();
+            const discount = coupon ? couponDiscount(api, coupon, lines.map(i => ({ ...i, quantity: Math.min(20, Math.max(1, parseInt(i.quantity, 10) || 1)) }))) : 0;
             api.run(`INSERT INTO website_orders (id, number, received_at, customer_name, first_name, last_name, phone, phone_key, wilaya, commune, address, delivery,
-                                                 courier_company, office_wilaya, office_commune, courier_office, note, status, status_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`, [
+                                                 courier_company, office_wilaya, office_commune, courier_office, note, status, status_at, delivery_fee, coupon_code, coupon_discount)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)`, [
                 id, number, receivedAt,
                 text(o.customer_name, 80), text(o.first_name, 40), text(o.last_name, 40), text(o.phone, 20), phoneKey(o.phone), text(o.wilaya, 60), text(o.commune, 60), text(o.address, 200),
                 DELIVERY.includes(o.delivery) ? o.delivery : '',
                 text(o.courier_company, 60), text(o.office_wilaya, 60), text(o.office_commune, 60), text(o.courier_office, 120),
-                text(o.note, 500), sqlTime(new Date()),
+                text(o.note, 500), sqlTime(new Date()), deliveryFee, coupon, discount,
             ]);
             api.run("INSERT INTO website_order_events (order_id, status, at) VALUES (?, 'new', ?)", [id, receivedAt]);
             lines.forEach((i, n) => {
@@ -193,9 +216,12 @@ function recordSale(api, order, { employeeId, now, codedError }) {
     if (!lines.length) throw codedError('WEBSITE_ORDER_EMPTY', {});
     const saleId = api.uuid();
     const receipt = nextReceiptNumber(api, now);
-    const total = Math.round(lines.reduce((s, l) => s + l.total, 0) * 100) / 100;
+    const subtotal = Math.round(lines.reduce((s, l) => s + l.total, 0) * 100) / 100;
+    // The website coupon (checked when the order came in): a discount on the ticket, never more than the goods
+    const discount = Math.min(subtotal, Math.max(0, Number(order.coupon_discount) || 0));
+    const total = Math.round((subtotal - discount) * 100) / 100;
     api.run(`INSERT INTO sales (id, receipt_number, employee_id, customer_id, subtotal, tax_amount, discount_amount, total, status, notes, created_at)
-             VALUES (?, ?, ?, NULL, ?, 0, 0, ?, 'completed', ?, ?)`, [saleId, receipt, employeeId || null, total, total, `website:${order.id}`, sqlTime(now)]);
+             VALUES (?, ?, ?, NULL, ?, 0, ?, ?, 'completed', ?, ?)`, [saleId, receipt, employeeId || null, subtotal, discount, total, `website:${order.id}`, sqlTime(now)]);
     for (const l of lines) {
         api.run(`INSERT INTO sale_items (id, sale_id, product_id, variant_id, variant_label, sku, product_name, quantity, unit_price, discount, tax_amount, total, unit_cost)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`, [

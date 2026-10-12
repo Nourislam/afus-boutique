@@ -53,6 +53,12 @@ const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX = 5;
 
 const AUTH_FAIL_MAX = 10;
+// Page views counted per place (hashed) and coupon codes tried per place: both limited
+const VIEW_MAX = 300;
+const COUPON_MAX = 20;
+const PAGE_ID = /^[A-Za-z0-9_-]{1,100}$/;
+const PHONE_KEY = /^0\d{8,9}$/;
+const HASH = /^[a-f0-9]{64}$/;
 const ACK_MAX = 200;
 const KEY_DAYS = 30;
 const ORDER_KEY = /^[A-Za-z0-9-]{16,64}$/;
@@ -226,6 +232,15 @@ async function createOrder(request, env) {
     }
     const { order, error } = readOrder(fields || {});
     if (error) return isForm ? backTo(env, 'order-error.html') : json(env, 400, { ok: false, error });
+    // The shop's own rules (sent by Afus Boutique): numbers it does not take orders from,
+    // its delivery prices (worked out here, never taken from the page), its coupons
+    const config = await readConfig(env);
+    if (config.blocked.includes(order.phone)) return isForm ? backTo(env, 'order-error.html') : json(env, 403, { ok: false, error: 'blocked' });
+    const goods = order.items.reduce((s, i) => s + (i.unit_price || 0) * i.quantity, 0);
+    order.delivery_fee = deliveryFee(config.delivery, wilayaCode(order.wilaya), order.delivery, goods);
+    if (order.delivery_fee === false) return isForm ? backTo(env, 'order-error.html') : json(env, 400, { ok: false, error: 'not_delivered' });
+    const coupon = await findCoupon(env, config, clean(fields.coupon, 30));
+    order.coupon_code = coupon ? coupon.code : '';
     // Back to the thanks page; "cart=1" empties the cart (only an order of the cart does)
     const done = (id, status) => (isForm ? backTo(env, order.items.length && order.source !== 'product' ? 'thanks.html?cart=1' : 'thanks.html') : json(env, status, { ok: true, id, duplicate: status === 200 }));
 
@@ -244,11 +259,11 @@ async function createOrder(request, env) {
     // Key, order and rate count are written together (one D1 batch: all or nothing)
     const writes = [
         env.DB.prepare(`INSERT INTO orders (id, created_at, product_id, product_name, size, color, quantity, customer_name, first_name, last_name, phone, wilaya, commune, address, delivery,
-                          courier_company, office_wilaya, office_commune, courier_office, items, note, ip_hash, order_key)
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                          courier_company, office_wilaya, office_commune, courier_office, items, note, ip_hash, order_key, delivery_fee, coupon_code)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
             .bind(id, at, order.product_id, order.product_name, order.size, order.color, order.quantity,
                 order.customer_name, order.first_name, order.last_name, order.phone, order.wilaya, order.commune, order.address, order.delivery,
-                order.courier_company, order.office_wilaya, order.office_commune, order.courier_office, JSON.stringify(order.items), order.note, ipHash, key || ''),
+                order.courier_company, order.office_wilaya, order.office_commune, order.courier_office, JSON.stringify(order.items), order.note, ipHash, key || '', order.delivery_fee, order.coupon_code),
         env.DB.prepare('INSERT INTO hits (kind, who, created_at) VALUES (?, ?, ?)').bind('order', ipHash, at),
     ];
     if (key) writes.unshift(env.DB.prepare('INSERT INTO order_keys (order_key, order_id, created_at) VALUES (?, ?, ?)').bind(key, id, at));
@@ -299,7 +314,7 @@ async function listOrders(request, env, url) {
     const since = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(url.searchParams.get('since') || '') ? url.searchParams.get('since') : '1970-01-01T00:00:00.000Z';
     const limit = Math.min(ACK_MAX, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 100));
     const { results } = await env.DB.prepare(`SELECT id, created_at, product_id, product_name, size, color, quantity, customer_name, first_name, last_name, phone, wilaya, commune, address, delivery,
-                                              courier_company, office_wilaya, office_commune, courier_office, items, note, status
+                                              courier_company, office_wilaya, office_commune, courier_office, items, note, status, delivery_fee, coupon_code
                                               FROM orders WHERE created_at > ? ORDER BY created_at, id LIMIT ?`).bind(since, limit).all();
     const waiting = await env.DB.prepare('SELECT COUNT(*) AS n FROM orders').first();
     return json(env, 200, { ok: true, store: env.STORE_ID, orders: results || [], waiting: waiting?.n || 0 }, { 'Access-Control-Allow-Origin': 'null' });
@@ -338,6 +353,108 @@ async function ackOrders(request, env) {
     return json(env, 200, { ok: true, store: env.STORE_ID, removed, waiting: waiting?.n || 0 }, { 'Access-Control-Allow-Origin': 'null' });
 }
 
+/* ---------- The shop's rules, sent by Afus Boutique ---------- */
+
+const EMPTY_CONFIG = { blocked: [], coupons: [], delivery: { home: null, office: null, freeOver: null, wilayas: [] } };
+const price = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000 ? Math.round(v) : null);
+
+/** What Afus Boutique last sent (checked again: a value of the wrong kind is dropped). */
+function cleanConfig(c) {
+    const x = c && typeof c === 'object' ? c : {};
+    const blocked = (Array.isArray(x.blocked) ? x.blocked : []).filter(p => typeof p === 'string' && PHONE_KEY.test(p)).slice(0, 5000);
+    const coupons = (Array.isArray(x.coupons) ? x.coupons : []).filter(k => k && HASH.test(k.hash) && ['percentage', 'fixed'].includes(k.type) && typeof k.value === 'number' && k.value > 0).slice(0, 300)
+        .map(k => ({
+            hash: k.hash, type: k.type, value: k.value, appliesTo: ['all', 'category', 'product'].includes(k.appliesTo) ? k.appliesTo : 'all',
+            ids: (Array.isArray(k.ids) ? k.ids : []).filter(i => typeof i === 'string' && i.length <= 80).slice(0, 500),
+            minPurchase: price(k.minPurchase) || 0, endsAt: typeof k.endsAt === 'string' && k.endsAt.length <= 40 ? k.endsAt : null, name: typeof k.name === 'string' ? k.name.slice(0, 80) : '',
+        }));
+    const d = x.delivery && typeof x.delivery === 'object' ? x.delivery : {};
+    const wilayas = (Array.isArray(d.wilayas) ? d.wilayas : []).filter(w => Number.isInteger(w?.code) && w.code >= 1 && w.code <= 58).slice(0, 58)
+        .map(w => ({ code: w.code, home: price(w.home), office: price(w.office), off: w.off === true }));
+    return { blocked, coupons, delivery: { home: price(d.home), office: price(d.office), freeOver: price(d.freeOver), wilayas } };
+}
+
+async function readConfig(env) {
+    const row = await env.DB.prepare("SELECT value FROM site_meta WHERE key = 'config'").first().catch(() => null);
+    if (!row) return EMPTY_CONFIG;
+    try { return cleanConfig(JSON.parse(row.value)); } catch { return EMPTY_CONFIG; }
+}
+
+/** The price of delivery (a number), null when the shop gives it on the phone, false when not delivered there. */
+function deliveryFee(d, code, kind, goods) {
+    if (!['home', 'office'].includes(kind)) return null;
+    const w = d.wilayas.find(x => x.code === code);
+    if (w?.off) return false;
+    const p = w && w[kind] !== null ? w[kind] : d[kind];
+    if (p === null) return null;
+    return d.freeOver !== null && goods >= d.freeOver ? 0 : p;
+}
+
+/** A coupon of the shop (its code is only ever compared by its hash with the shop's key). */
+async function findCoupon(env, config, code) {
+    const typed = String(code || '').trim().toUpperCase();
+    if (!typed || !config.coupons.length) return null;
+    const hash = await sha256(`${typed}|${env.SHOP_KEY}`);
+    const k = config.coupons.find(c => c.hash === hash);
+    if (!k || (k.endsAt && k.endsAt < new Date().toISOString().slice(0, 10))) return null;
+    return { ...k, code: typed };
+}
+
+async function setConfig(request, env) {
+    const refused = await afusOnly(request, env);
+    if (refused) return refused;
+    if (!(request.headers.get('Content-Type') || '').includes('application/json')) return json(env, 415, { ok: false, error: 'json_only' }, { 'Access-Control-Allow-Origin': 'null' });
+    let body;
+    try {
+        const text = await request.text();
+        if (text.length > 256 * 1024) return json(env, 413, { ok: false, error: 'too_large' }, { 'Access-Control-Allow-Origin': 'null' });
+        body = JSON.parse(text);
+    } catch {
+        return json(env, 400, { ok: false, error: 'bad_request' }, { 'Access-Control-Allow-Origin': 'null' });
+    }
+    const config = cleanConfig(body);
+    await env.DB.prepare("INSERT INTO site_meta (key, value) VALUES ('config', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(JSON.stringify(config)).run();
+    return json(env, 200, { ok: true, store: env.STORE_ID, blocked: config.blocked.length, coupons: config.coupons.length }, { 'Access-Control-Allow-Origin': 'null' });
+}
+
+/** A coupon typed on the website: what it gives, or no (a few tries per place only). */
+async function checkCoupon(request, env, url) {
+    const cors = { 'Access-Control-Allow-Origin': siteOrigin(env) || 'null' };
+    const who = await whoIs(request, env);
+    if (await overLimit(env, 'coupon', who, COUPON_MAX, RATE_WINDOW_MS)) return json(env, 429, { ok: false, error: 'too_many' }, cors);
+    await env.DB.prepare('INSERT INTO hits (kind, who, created_at) VALUES (?, ?, ?)').bind('coupon', who, new Date().toISOString()).run();
+    const k = await findCoupon(env, await readConfig(env), url.searchParams.get('code'));
+    if (!k) return json(env, 200, { ok: false }, cors);
+    return json(env, 200, { ok: true, code: k.code, name: k.name, type: k.type, value: k.value, appliesTo: k.appliesTo, ids: k.ids, minPurchase: k.minPurchase }, cors);
+}
+
+/* ---------- How many times each page was seen (a count per day, no person) ---------- */
+
+const algiersDay = () => new Date(Date.now() + 3600000).toISOString().slice(0, 10);
+
+async function addView(request, env) {
+    const cors = { 'Access-Control-Allow-Origin': siteOrigin(env) || 'null' };
+    const text = (await request.text()).slice(0, 120).trim();
+    if (!PAGE_ID.test(text)) return json(env, 400, { ok: false }, cors);
+    const who = await whoIs(request, env);
+    if (await overLimit(env, 'view', who, VIEW_MAX, RATE_WINDOW_MS)) return json(env, 429, { ok: false }, cors);
+    await env.DB.batch([
+        env.DB.prepare('INSERT INTO hits (kind, who, created_at) VALUES (?, ?, ?)').bind('view', who, new Date().toISOString()),
+        env.DB.prepare('INSERT INTO views (day, page, views) VALUES (?, ?, 1) ON CONFLICT(day, page) DO UPDATE SET views = views + 1').bind(algiersDay(), text),
+    ]);
+    return json(env, 200, { ok: true }, cors);
+}
+
+/** The counts of the last days, for Afus Boutique (older ones leave). */
+async function listViews(request, env) {
+    const refused = await afusOnly(request, env);
+    if (refused) return refused;
+    const old = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+    await env.DB.prepare('DELETE FROM views WHERE day < ?').bind(old).run();
+    const { results } = await env.DB.prepare('SELECT day, page, views FROM views ORDER BY day, page LIMIT 5000').all();
+    return json(env, 200, { ok: true, store: env.STORE_ID, views: results || [] }, { 'Access-Control-Allow-Origin': 'null' });
+}
+
 async function health(env) {
     const row = await env.DB.prepare("SELECT value FROM site_meta WHERE key = 'published_at'").first().catch(() => null);
     return json(env, 200, { ok: true, shop: env.SHOP_NAME || '', publishedAt: row?.value || null });
@@ -364,6 +481,15 @@ export default {
             }
             if (url.pathname === '/api/orders' && request.method === 'GET') return await listOrders(request, env, url);
             if (url.pathname === '/api/orders/ack' && request.method === 'POST') return await ackOrders(request, env);
+            if (url.pathname === '/api/config' && request.method === 'POST') return await setConfig(request, env);
+            if (url.pathname === '/api/views' && request.method === 'GET') return await listViews(request, env);
+            if (url.pathname === '/api/coupon' && request.method === 'GET') return await checkCoupon(request, env, url);
+            if (url.pathname === '/api/view' && request.method === 'POST') {
+                const origin = request.headers.get('Origin');
+                const known = siteUrls(envIn).map(originOf);
+                if (origin && known.length && !known.includes(origin)) return json(env, 403, { ok: false, error: 'origin' });
+                return await addView(request, env);
+            }
             if (url.pathname === '/' && request.method === 'GET' && env.SITE_URL) return backTo(env, './');
             return json(env, 404, { ok: false });
         } catch {

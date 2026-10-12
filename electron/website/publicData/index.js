@@ -22,7 +22,7 @@ class PrivateDataError extends Error {
 }
 
 function buildPublicData(api, { now = Date.now(), info = {}, secrets = [], preview = false } = {}) {
-    const data = toPublic(readInternal(api, { now }), { now, info, preview });
+    const data = toPublic(readInternal(api, { now, fewAt: publicInfo(info).fewLeftAt }), { now, info, preview });
     const problems = checkPublic(data, { markers: readPrivateMarkers(api), secrets });
     if (problems.length) throw new PrivateDataError(problems);
     return data;

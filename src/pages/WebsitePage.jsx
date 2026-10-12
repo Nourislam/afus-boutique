@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
     Globe, Github, Cloud, Copy, RefreshCw, Palette, CheckCircle2, Circle, Sparkles, Package, Tag, Image as ImageIcon, Shirt, PackageCheck, X,
     XCircle, Clock, Loader2, ShoppingBag, Store, Users, Undo2, Printer, PhoneCall, FileDown, SlidersHorizontal,
+    LayoutDashboard, Settings2, KeyRound, BarChart3,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
+import { Tabs } from '../components/ui/Tabs';
+import { WILAYAS } from '../data/wilayas';
 import { StatTile } from '../components/ui/StatTile';
 import { toast } from '../components/ui/Toast';
 import { translateError } from '../i18n/errors';
@@ -42,8 +46,8 @@ const GITHUB_STYLE = {
  * optional own domain. Nothing technical is asked (no repository, token,
  * DNS...): the program chooses all that when the accounts are linked.
  */
-export default function WebsitePage() {
-    const { t } = useT();
+/** The Website screen's state and its one action at a time (both pages). */
+function useWebsite() {
     const [site, setSite] = useState(null);
     const [preview, setPreview] = useState(null);
     const [busy, setBusy] = useState('');
@@ -59,18 +63,6 @@ export default function WebsitePage() {
             setSite((s) => s || { created: false, status: 'none', themes: [], providers: {}, steps: [] });
         }
     }, []);
-    useEffect(() => {
-        // A linked GitHub account: is its key still accepted? (quietly, in the background)
-        load().then((view) => {
-            if (view?.accounts?.github?.status === 'connected') {
-                window.electronAPI.website.githubCheck().then(setSite).catch(() => {});
-            }
-            if (view?.accounts?.cloudflare?.status === 'connected') {
-                window.electronAPI.website.cloudflareCheck().then(setSite).catch(() => {});
-            }
-        });
-    }, [load]);
-
     // One action at a time; the screen shows the answer of the main process
     const run = async (id, fn, done) => {
         setBusy(id);
@@ -84,18 +76,57 @@ export default function WebsitePage() {
             setBusy('');
         }
     };
+    return { site, setSite, preview, busy, run, load };
+}
 
-    if (!site) {
-        return <div className="page"><div className="flex-1 flex items-center justify-center"><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div></div>;
-    }
+const Spinner = () => <div className="page"><div className="flex-1 flex items-center justify-center"><div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div></div>;
 
+export default function WebsitePage() {
+    const { t } = useT();
+    const { site, setSite, preview, busy, run, load } = useWebsite();
+    useEffect(() => {
+        // A linked GitHub account: is its key still accepted? (quietly, in the background)
+        load().then((view) => {
+            if (view?.accounts?.github?.status === 'connected') {
+                window.electronAPI.website.githubCheck().then(setSite).catch(() => {});
+            }
+            if (view?.accounts?.cloudflare?.status === 'connected') {
+                window.electronAPI.website.cloudflareCheck().then(setSite).catch(() => {});
+            }
+        });
+    }, [load]);
+
+    if (!site) return <Spinner />;
     return (
         <div className="page" data-testid="website-page">
             <PageHeader icon={Globe} title={t('website.title')} subtitle={t('website.subtitle')} />
             <div className="page-body">
                 {site.created
-                    ? <WebsiteDashboard site={site} setSite={setSite} preview={preview} busy={busy} run={run} reloadPreview={load} />
+                    ? <WebsiteDashboard site={site} setSite={setSite} preview={preview} busy={busy} run={run} />
                     : <CreateWebsite site={site} busy={busy} run={run} />}
+            </div>
+        </div>
+    );
+}
+
+/** The second page: the orders customers sent from the website, the customers, the figures. */
+export function WebsiteOrdersPage() {
+    const { t } = useT();
+    const { site, load } = useWebsite();
+    useEffect(() => { load(); }, [load]);
+    if (!site) return <Spinner />;
+    return (
+        <div className="page" data-testid="website-orders-page">
+            <PageHeader icon={ShoppingBag} title={t('website.ordersPage.title')} subtitle={t('website.ordersPage.subtitle')} />
+            <div className="page-body">
+                {site.created
+                    ? <div className="grid grid-cols-1 xl:grid-cols-3 gap-4"><WebsiteOrders /><WebsiteStats /></div>
+                    : (
+                        <section className="card space-y-3 max-w-xl" data-testid="website-orders-none">
+                            <p className="text-sm text-zinc-300">{t('website.ordersPage.none')}</p>
+                            <Link className="btn btn-primary px-3 py-1.5 text-sm inline-flex" to="/website">{t('website.ordersPage.create')}</Link>
+                        </section>
+                    )}
             </div>
         </div>
     );
@@ -473,57 +504,97 @@ function useOutdated(site) {
     return outdated;
 }
 
+const DASH_TABS = ['overview', 'design', 'settings', 'accounts'];
 function WebsiteDashboard({ site, setSite, preview, busy, run }) {
     const { t } = useT();
     const outdated = useOutdated(site);
+    const [params, setParams] = useSearchParams();
+    const tab = DASH_TABS.includes(params.get('tab')) ? params.get('tab') : 'overview';
+    const setTab = (id) => setParams((p) => { const next = new URLSearchParams(p); next.set('tab', id); return next; }, { replace: true });
+    const tabs = [
+        { id: 'overview', label: t('website.tab.overview'), icon: LayoutDashboard },
+        { id: 'design', label: t('website.tab.design'), icon: Palette },
+        { id: 'settings', label: t('website.tab.settings'), icon: Settings2 },
+        { id: 'accounts', label: t('website.tab.accounts'), icon: KeyRound },
+    ];
 
     return (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4" data-testid="website-dashboard">
-            {/* Create Website / Update website: requirements, progress, address */}
-            <PublishPanel site={site} setSite={setSite} busy={busy} run={run} outdated={outdated} />
+        <div className="space-y-4" data-testid="website-dashboard">
+            <Tabs tabs={tabs} value={tab} onChange={setTab} variant="underline" testId="website-tab" />
 
-            {/* Website management: status, addresses, theme, last update, Update / Preview */}
-            <WebsiteOverview site={site} busy={busy} run={run} outdated={outdated} />
+            {tab === 'overview' && (
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    {/* Create Website / Update website: requirements, progress, address */}
+                    <PublishPanel site={site} setSite={setSite} busy={busy} run={run} outdated={outdated} />
+                    {/* Website management: status, addresses, theme, last update, Update / Preview */}
+                    <WebsiteOverview site={site} busy={busy} run={run} outdated={outdated} />
+                    {/* The orders have their own page */}
+                    <section className="card space-y-2" data-testid="website-orders-link">
+                        <h2 className="font-semibold flex items-center gap-2"><ShoppingBag className="w-4 h-4 text-indigo-300" /> {t('website.ordersPage.title')}</h2>
+                        <p className="text-xs text-zinc-500">{t('website.ordersPage.subtitle')}</p>
+                        <Link className="btn btn-secondary px-3 py-1.5 text-sm inline-flex" to="/website-orders" data-testid="website-open-orders">{t('website.ordersPage.open')}</Link>
+                    </section>
+                    {/* What the website will show (read from the catalogue) */}
+                    <section className="card space-y-3 xl:col-span-2" data-testid="website-preview">
+                        <h2 className="font-semibold">{t('website.showsTitle')}</h2>
+                        {preview ? (
+                            <div className="grid fit-grid-sm gap-3">
+                                <StatTile icon={Package} label={t('website.shows.products')} value={formatNumber(preview.products)} />
+                                <StatTile icon={PackageCheck} label={t('website.shows.available')} value={formatNumber(preview.available)} iconTone="bg-emerald-500/15 text-emerald-300" />
+                                <StatTile icon={Tag} label={t('website.shows.onSale')} value={formatNumber(preview.onSale)} iconTone="bg-amber-500/15 text-amber-300" />
+                                <StatTile icon={ImageIcon} label={t('website.shows.withImages')} value={formatNumber(preview.withImages)} iconTone="bg-sky-500/15 text-sky-300" />
+                                <StatTile icon={Shirt} label={t('website.shows.categories')} value={formatNumber(preview.categories)} />
+                            </div>
+                        ) : <p className="text-sm text-zinc-500">…</p>}
+                        <p className="text-xs text-zinc-500">{t('website.showsHint')}</p>
+                    </section>
+                </div>
+            )}
 
             {/* Theme: pick, see the shop's own website in it, keep */}
-            <ThemeStudio site={site} busy={busy} run={run} />
+            {tab === 'design' && <ThemeStudio site={site} busy={busy} run={run} />}
 
-            {/* Connect GitHub / Connect Cloudflare */}
-            <section className="card space-y-3" data-testid="website-accounts">
-                <h2 className="font-semibold">{t('website.accounts')}</h2>
-                <p className="text-xs text-zinc-500">{t('website.accountsHint')}</p>
-                <ul className="space-y-2">
-                    <GithubAccount site={site} setSite={setSite} busy={busy} run={run} />
-                    <CloudflareAccount site={site} setSite={setSite} busy={busy} run={run} />
-                </ul>
-            </section>
+            {tab === 'settings' && <WebsiteSettings site={site} busy={busy} run={run} />}
 
-            {/* What the website says about the shop beyond its settings: hours, social pages, map */}
-            <PublicInfoCard site={site} busy={busy} run={run} />
+            {tab === 'accounts' && (
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    {/* Connect GitHub / Connect Cloudflare */}
+                    <section className="card space-y-3" data-testid="website-accounts">
+                        <h2 className="font-semibold">{t('website.accounts')}</h2>
+                        <p className="text-xs text-zinc-500">{t('website.accountsHint')}</p>
+                        <ul className="space-y-2">
+                            <GithubAccount site={site} setSite={setSite} busy={busy} run={run} />
+                            <CloudflareAccount site={site} setSite={setSite} busy={busy} run={run} />
+                        </ul>
+                    </section>
+                    {/* Custom Domain (optional) */}
+                    <CustomDomain site={site} setSite={setSite} busy={busy} run={run} />
+                </div>
+            )}
+        </div>
+    );
+}
 
-            {/* What the website offers: order form, WhatsApp, cart, deliveries, note, trust strip */}
-            <FeaturesCard site={site} busy={busy} run={run} />
-
-            {/* Order requests customers sent from the website */}
-            {site.hasOrders && <WebsiteOrders />}
-
-            {/* What the website will show (read from the catalogue) */}
-            <section className="card space-y-3 xl:col-span-2" data-testid="website-preview">
-                <h2 className="font-semibold">{t('website.showsTitle')}</h2>
-                {preview ? (
-                    <div className="grid fit-grid-sm gap-3">
-                        <StatTile icon={Package} label={t('website.shows.products')} value={formatNumber(preview.products)} />
-                        <StatTile icon={PackageCheck} label={t('website.shows.available')} value={formatNumber(preview.available)} iconTone="bg-emerald-500/15 text-emerald-300" />
-                        <StatTile icon={Tag} label={t('website.shows.onSale')} value={formatNumber(preview.onSale)} iconTone="bg-amber-500/15 text-amber-300" />
-                        <StatTile icon={ImageIcon} label={t('website.shows.withImages')} value={formatNumber(preview.withImages)} iconTone="bg-sky-500/15 text-sky-300" />
-                        <StatTile icon={Shirt} label={t('website.shows.categories')} value={formatNumber(preview.categories)} />
-                    </div>
-                ) : <p className="text-sm text-zinc-500">…</p>}
-                <p className="text-xs text-zinc-500">{t('website.showsHint')}</p>
-            </section>
-
-            {/* Custom Domain (optional) */}
-            <CustomDomain site={site} setSite={setSite} busy={busy} run={run} />
+/** The website's settings, one subject per tab (saved each on its own). */
+const SETTINGS_TABS = ['info', 'features', 'delivery', 'messages', 'tracking', 'blocked', 'sizes', 'couriers'];
+function WebsiteSettings({ site, busy, run }) {
+    const { t } = useT();
+    const [params, setParams] = useSearchParams();
+    const tab = SETTINGS_TABS.includes(params.get('s')) ? params.get('s') : 'info';
+    const setTab = (id) => setParams((p) => { const next = new URLSearchParams(p); next.set('s', id); return next; }, { replace: true });
+    return (
+        <div className="space-y-4" data-testid="website-settings">
+            <Tabs tabs={SETTINGS_TABS.map(id => ({ id, label: t(`website.settingsTab.${id}`) }))} value={tab} onChange={setTab} testId="website-settings-tab" />
+            <div className="max-w-4xl">
+                {tab === 'info' && <PublicInfoCard site={site} busy={busy} run={run} />}
+                {tab === 'features' && <FeaturesCard site={site} busy={busy} run={run} />}
+                {tab === 'delivery' && <DeliveryPricesCard site={site} busy={busy} run={run} />}
+                {tab === 'messages' && <MessagesCard site={site} busy={busy} run={run} />}
+                {tab === 'tracking' && <TrackingCard site={site} busy={busy} run={run} />}
+                {tab === 'blocked' && <BlockedPhonesCard site={site} busy={busy} run={run} />}
+                {tab === 'sizes' && <SizeGuidesCard site={site} busy={busy} run={run} />}
+                {tab === 'couriers' && <CourierApiCard site={site} busy={busy} run={run} />}
+            </div>
         </div>
     );
 }
@@ -1263,8 +1334,17 @@ function WebsiteOrders() {
                                             </span>
                                         )}
                                         {o.note && <span className="block text-xs text-zinc-500">{o.note}</span>}
+                                        {/* The money: delivery price, coupon, what the courier collects */}
+                                        <span className="block text-xs text-zinc-400 mt-1" data-testid="website-order-money">
+                                            {o.deliveryFee !== null && <span className="block">{t('website.orders.deliveryFee')}: <bdi dir="ltr">{formatMoney(o.deliveryFee)}</bdi></span>}
+                                            {o.coupon && <span className="block text-emerald-300">{t('website.orders.coupon')} <bdi dir="ltr">{o.coupon.code}</bdi>: <bdi dir="ltr">-{formatMoney(o.coupon.discount)}</bdi></span>}
+                                            <span className="block font-semibold text-zinc-200">{t('website.orders.toCollect')}: <bdi dir="ltr">{formatMoney(o.toCollect)}</bdi></span>
+                                        </span>
                                     </td>
-                                    <td className="py-2 px-2"><OrderStatus order={o} onChanged={() => load()} onConfirm={setConfirming} onLabel={setLabelFor} /></td>
+                                    <td className="py-2 px-2 space-y-2">
+                                        <OrderStatus order={o} onChanged={() => load()} onConfirm={setConfirming} onLabel={setLabelFor} />
+                                        <OrderTools order={o} onChanged={() => load()} />
+                                    </td>
                                 </tr>
                             ))}
                                 </tbody>
@@ -1660,6 +1740,7 @@ const FEATURE_KEYS = [
     ['orderForm', 'website.features.orderForm'], ['whatsappOrder', 'website.features.whatsappOrder'], ['cart', 'website.features.cart'],
     ['homeDelivery', 'website.features.homeDelivery'], ['officeDelivery', 'website.features.officeDelivery'],
     ['noteField', 'website.features.noteField'], ['trustBar', 'website.features.trustBar'],
+    ['coupons', 'website.features.coupons'], ['fewLeft', 'website.features.fewLeft'],
 ];
 function FeaturesCard({ site, busy, run }) {
     const { t } = useT();
@@ -1743,5 +1824,359 @@ function PublicInfoCard({ site, busy, run }) {
                 <Button size="sm" onClick={save} loading={busy === 'info'} data-testid="website-info-save">{t('common.save')}</Button>
             </div>
         </section>
+    );
+}
+
+
+/**
+ * Under an order's status: the WhatsApp message to the customer (the shop's
+ * own words), the parcel's tracking number (typed, or given by Yalidine when
+ * it is linked) and the courier's page of it.
+ */
+function OrderTools({ order, onChanged }) {
+    const { t } = useT();
+    const [busy, setBusy] = useState('');
+    const [number, setNumber] = useState(order.trackingNumber || '');
+    const [linked, setLinked] = useState(false);
+    useEffect(() => { setNumber(order.trackingNumber || ''); }, [order.trackingNumber]);
+    useEffect(() => { window.electronAPI.website.getState().then(v => setLinked(!!v?.tools?.yalidine?.linked)).catch(() => {}); }, []);
+    const go = async (id, fn, ok) => {
+        setBusy(id);
+        try { await fn(); if (ok) toast.success(ok); onChanged?.(); } catch (e) { toast.error(translateError(e)); } finally { setBusy(''); }
+    };
+    return (
+        <div className="space-y-1.5 min-w-[11rem]" data-testid="website-order-tools">
+            <Button size="sm" variant="secondary" className="w-full" loading={busy === 'wa'} data-testid={`website-order-whatsapp-${order.number}`}
+                onClick={() => go('wa', () => window.electronAPI.website.confirmMessage({ id: order.id, open: true }))}>
+                <PhoneCall className="w-4 h-4" /> {t('website.orders.whatsappConfirm')}
+            </Button>
+            <div className="flex gap-1">
+                <input className="input input-sm flex-1 min-w-0 font-mono" dir="ltr" value={number} onChange={(e) => setNumber(e.target.value)} placeholder={t('website.orders.trackingPh')}
+                    aria-label={t('website.orders.tracking')} maxLength={40} data-testid={`website-order-tracking-${order.number}`} />
+                <Button size="sm" variant="ghost" loading={busy === 'tr'} disabled={number === (order.trackingNumber || '')}
+                    onClick={() => go('tr', () => window.electronAPI.website.setTracking({ id: order.id, number }), t('website.orders.trackingSaved'))} data-testid={`website-order-tracking-save-${order.number}`}>
+                    {t('common.save')}
+                </Button>
+            </div>
+            {order.trackingUrl && (
+                <button type="button" className="text-xs text-indigo-300 underline" onClick={() => window.electronAPI.website.openTracking(order.trackingUrl)}>{t('website.orders.trackingOpen')}</button>
+            )}
+            {linked && order.delivery === 'home' && !order.trackingNumber && ['confirmed', 'preparing'].includes(order.status) && (
+                <Button size="sm" variant="ghost" className="w-full" loading={busy === 'ya'} data-testid={`website-order-yalidine-${order.number}`}
+                    onClick={() => go('ya', () => window.electronAPI.website.yalidineSend({ id: order.id }), t('website.orders.yalidineSent'))}>
+                    {t('website.orders.yalidineSend')}
+                </Button>
+            )}
+            {linked && order.trackingNumber && (
+                <button type="button" className="text-xs text-zinc-400 underline" onClick={() => go('yr', () => window.electronAPI.website.yalidineRefresh({ id: order.id }))}>
+                    {t('website.orders.courierRefresh')}
+                </button>
+            )}
+            {order.courierState && <span className="block text-xs text-sky-300" data-testid="website-order-courier-state">{order.courierState}</span>}
+        </div>
+    );
+}
+
+/** Visits of the website and its orders, day by day and by article (the counts sent by the website). */
+function WebsiteStats() {
+    const { t } = useT();
+    const [days, setDays] = useState(7);
+    const [data, setData] = useState(null);
+    useEffect(() => { window.electronAPI.website.stats({ days }).then(setData).catch(() => setData(null)); }, [days]);
+    const max = Math.max(1, ...(data?.perDay || []).map(d => d.views));
+    return (
+        <section className="card space-y-3 xl:col-span-3" data-testid="website-stats">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-semibold flex items-center gap-2"><BarChart3 className="w-4 h-4 text-indigo-300" /> {t('website.stats.title')}</h2>
+                <Tabs tabs={[7, 14, 30].map(n => ({ id: String(n), label: t('website.stats.days', { n }) }))} value={String(days)} onChange={(v) => setDays(Number(v))} testId="website-stats-days" />
+            </div>
+            <p className="text-xs text-zinc-500">{t('website.stats.hint')}</p>
+            {data && (
+                <>
+                    <div className="grid fit-grid-sm gap-3">
+                        <StatTile icon={Globe} label={t('website.stats.views')} value={formatNumber(data.totalViews)} />
+                        <StatTile icon={ShoppingBag} label={t('website.stats.orders')} value={formatNumber(data.totalOrders)} iconTone="bg-emerald-500/15 text-emerald-300" />
+                        <StatTile icon={BarChart3} label={t('website.stats.rate')} value={data.rate === null ? '—' : `${data.rate}%`} iconTone="bg-amber-500/15 text-amber-300" />
+                    </div>
+                    <div className="flex items-end gap-1 h-28" aria-label={t('website.stats.views')}>
+                        {data.perDay.map(d => (
+                            <div key={d.day} className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0" title={`${d.day}: ${d.views} / ${d.orders}`}>
+                                <div className="w-full rounded-t bg-indigo-500/60" style={{ height: `${Math.max(2, (d.views / max) * 96)}px` }} />
+                                <span className="text-[10px] text-zinc-500">{d.day.slice(8)}</span>
+                            </div>
+                        ))}
+                    </div>
+                    {data.products.length > 0 && (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm" data-testid="website-stats-products">
+                                <thead className="text-zinc-500 text-xs"><tr>{['article', 'views', 'orders', 'rate'].map(k => <th key={k} className="text-start font-medium py-1.5 px-2">{t(`website.stats.col.${k}`)}</th>)}</tr></thead>
+                                <tbody>
+                                    {data.products.map(p => (
+                                        <tr key={p.id} className="border-t border-dark-border">
+                                            <td className="py-1.5 px-2"><bdi>{p.name}</bdi></td>
+                                            <td className="py-1.5 px-2">{formatNumber(p.views)}</td>
+                                            <td className="py-1.5 px-2">{formatNumber(p.orders)}</td>
+                                            <td className={`py-1.5 px-2 ${p.views >= 20 && !p.orders ? 'text-amber-300' : ''}`}>{p.rate === null ? '—' : `${p.rate}%`}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                    {data.viewsAt && <p className="text-xs text-zinc-500">{t('website.stats.at', { when: formatDate(data.viewsAt, 'datetime') })}</p>}
+                </>
+            )}
+        </section>
+    );
+}
+
+/** One card of the settings tabs: title, hint, body, a Save at the bottom when it has one. */
+function SettingsCard({ testId, icon: Icon = Settings2, title, hint, children, onSave, saving }) {
+    const { t } = useT();
+    return (
+        <section className="card space-y-3" data-testid={testId}>
+            <h2 className="font-semibold flex items-center gap-2"><Icon className="w-4 h-4 text-indigo-300" /> {title}</h2>
+            {hint && <p className="text-xs text-zinc-500 leading-relaxed">{hint}</p>}
+            {children}
+            {onSave && <div className="flex justify-end"><Button size="sm" onClick={onSave} loading={saving} data-testid={`${testId}-save`}>{t('common.save')}</Button></div>}
+        </section>
+    );
+}
+
+/** Delivery prices: home and courier office everywhere, the wilayas that differ, free above an amount. */
+function DeliveryPricesCard({ site, busy, run }) {
+    const { t, lang } = useT();
+    const saved = site.publicInfo?.delivery || { home: null, office: null, freeOver: null, wilayas: [] };
+    const asText = (v) => (v === null || v === undefined ? '' : String(v));
+    const fromSaved = () => ({
+        home: asText(saved.home), office: asText(saved.office), freeOver: asText(saved.freeOver),
+        rows: Object.fromEntries((saved.wilayas || []).map(w => [w.code, { home: asText(w.home), office: asText(w.office), off: !!w.off }])),
+    });
+    const [form, setForm] = useState(fromSaved);
+    useEffect(() => { setForm(fromSaved()); }, [JSON.stringify(saved)]);
+    const setRow = (code, key, value) => setForm(f => ({ ...f, rows: { ...f.rows, [code]: { home: '', office: '', off: false, ...f.rows[code], [key]: value } } }));
+    const num = (v) => (String(v).trim() === '' ? null : Number(v));
+    const save = () => run('delivery', () => window.electronAPI.website.setSettings({
+        delivery: {
+            home: num(form.home), office: num(form.office), freeOver: num(form.freeOver),
+            wilayas: Object.entries(form.rows).map(([code, r]) => ({ code: Number(code), home: num(r.home), office: num(r.office), off: !!r.off })),
+        },
+    }), () => toast.success(t('website.info.saved')));
+    const money = (value, onChange, testid, label) => (
+        <input className="input w-full" type="number" min="0" step="10" inputMode="numeric" dir="ltr" value={value} onChange={(e) => onChange(e.target.value)}
+            placeholder="—" aria-label={label} data-testid={testid} />
+    );
+    return (
+        <SettingsCard testId="website-delivery" icon={Package} title={t('website.delivery.title')} hint={t('website.delivery.hint')} onSave={save} saving={busy === 'delivery'}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.delivery.home')}</span>{money(form.home, (v) => setForm(f => ({ ...f, home: v })), 'website-delivery-home', t('website.delivery.home'))}</label>
+                <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.delivery.office')}</span>{money(form.office, (v) => setForm(f => ({ ...f, office: v })), 'website-delivery-office', t('website.delivery.office'))}</label>
+                <label className="space-y-1"><span className="text-xs text-zinc-400">{t('website.delivery.freeOver')}</span>{money(form.freeOver, (v) => setForm(f => ({ ...f, freeOver: v })), 'website-delivery-free', t('website.delivery.freeOver'))}</label>
+            </div>
+            <p className="text-xs text-zinc-500">{t('website.delivery.perWilaya')}</p>
+            <div className="max-h-[420px] overflow-y-auto border border-dark-border rounded-lg">
+                <table className="w-full text-sm" data-testid="website-delivery-wilayas">
+                    <thead className="text-xs text-zinc-500 sticky top-0 bg-dark-secondary"><tr>
+                        <th className="text-start font-medium p-2">{t('website.delivery.wilaya')}</th><th className="text-start font-medium p-2">{t('website.delivery.home')}</th>
+                        <th className="text-start font-medium p-2">{t('website.delivery.office')}</th><th className="text-start font-medium p-2">{t('website.delivery.off')}</th>
+                    </tr></thead>
+                    <tbody>
+                        {WILAYAS.map(([code, fr, ar]) => {
+                            const n = Number(code);
+                            const r = form.rows[n] || { home: '', office: '', off: false };
+                            return (
+                                <tr key={code} className="border-t border-dark-border">
+                                    <td className="p-2 whitespace-nowrap"><bdi>{code} - {lang === 'ar' ? ar : fr}</bdi></td>
+                                    <td className="p-1.5 w-32">{money(r.home, (v) => setRow(n, 'home', v), `website-delivery-${n}-home`, `${code} ${t('website.delivery.home')}`)}</td>
+                                    <td className="p-1.5 w-32">{money(r.office, (v) => setRow(n, 'office', v), `website-delivery-${n}-office`, `${code} ${t('website.delivery.office')}`)}</td>
+                                    <td className="p-2"><input type="checkbox" checked={!!r.off} onChange={(e) => setRow(n, 'off', e.target.checked)} aria-label={`${code} ${t('website.delivery.off')}`} data-testid={`website-delivery-${n}-off`} /></td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </SettingsCard>
+    );
+}
+
+/** The WhatsApp message to confirm an order, and the new-order alert. */
+function MessagesCard({ site, busy, run }) {
+    const { t } = useT();
+    const saved = site.tools?.confirmMessage || '';
+    const [text, setText] = useState(saved || site.defaultConfirmMessage || '');
+    useEffect(() => { setText(saved || site.defaultConfirmMessage || ''); }, [saved]);
+    return (
+        <div className="space-y-4">
+            <SettingsCard testId="website-messages" icon={PhoneCall} title={t('website.messages.title')} hint={t('website.messages.hint')}
+                onSave={() => run('messages', () => window.electronAPI.website.setSettings({ confirmMessage: text === site.defaultConfirmMessage ? '' : text }), () => toast.success(t('website.info.saved')))} saving={busy === 'messages'}>
+                <textarea className="input w-full font-sans" rows={7} maxLength={1000} value={text} onChange={(e) => setText(e.target.value)} data-testid="website-messages-text" />
+                <p className="text-xs text-zinc-500">{t('website.messages.fields')}</p>
+                <button type="button" className="text-xs text-indigo-300 underline" onClick={() => setText(site.defaultConfirmMessage || '')}>{t('website.messages.reset')}</button>
+            </SettingsCard>
+            <SettingsCard testId="website-notify" icon={ShoppingBag} title={t('website.notify.title')} hint={t('website.notify.hint')}>
+                <label className="flex items-center gap-3 text-sm cursor-pointer">
+                    <input type="checkbox" checked={site.tools?.notify !== false} data-testid="website-notify-on"
+                        onChange={(e) => run('notify', () => window.electronAPI.website.setSettings({ notify: e.target.checked }))} />
+                    {t('website.notify.on')}
+                </label>
+            </SettingsCard>
+        </div>
+    );
+}
+
+const TRACKERS = [
+    ['facebook', 'website.tracking.facebook', '1234567890123456'],
+    ['tiktok', 'website.tracking.tiktok', 'C4ABCDEFGHIJ1234KLMN'],
+    ['snapchat', 'website.tracking.snapchat', 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'],
+    ['google', 'website.tracking.google', 'G-XXXXXXXXXX'],
+];
+/** Ads and visit tools of the shop's own accounts: an id each, checked; empty = off. */
+function TrackingCard({ site, busy, run }) {
+    const { t } = useT();
+    const saved = site.publicInfo?.tracking || {};
+    const [form, setForm] = useState(saved);
+    useEffect(() => { setForm(saved); }, [JSON.stringify(saved)]);
+    const save = () => run('tracking', () => window.electronAPI.website.setSettings({ tracking: form }), (next) => {
+        const kept = next?.publicInfo?.tracking || {};
+        const refused = TRACKERS.filter(([k]) => String(form[k] || '').trim() && !kept[k]).map(([, label]) => t(label));
+        if (refused.length) toast.error(t('website.tracking.refused', { list: refused.join('، ') }), 7000);
+        else toast.success(t('website.info.saved'));
+    });
+    return (
+        <SettingsCard testId="website-tracking" icon={BarChart3} title={t('website.tracking.title')} hint={t('website.tracking.hint')} onSave={save} saving={busy === 'tracking'}>
+            {TRACKERS.map(([k, label, ph]) => (
+                <label key={k} className="block space-y-1">
+                    <span className="text-xs text-zinc-400 flex items-center gap-2">{t(label)} {saved[k] && <span className="badge bg-emerald-500/15 text-emerald-300">{t('website.tracking.on')}</span>}</span>
+                    <input className="input w-full font-mono" dir="ltr" value={form[k] || ''} onChange={(e) => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={ph} maxLength={60} data-testid={`website-tracking-${k}`} />
+                </label>
+            ))}
+            <p className="text-xs text-zinc-500">{t('website.tracking.privacy')}</p>
+        </SettingsCard>
+    );
+}
+
+/** Numbers the website takes no order from; customers who often send parcels back. */
+function BlockedPhonesCard({ site, busy, run }) {
+    const { t } = useT();
+    const [phone, setPhone] = useState('');
+    const [note, setNote] = useState('');
+    const [suggested, setSuggested] = useState([]);
+    const list = site.tools?.blocked || [];
+    useEffect(() => { window.electronAPI.website.blockSuggestions().then(setSuggested).catch(() => setSuggested([])); }, [list.length]);
+    const block = (p, n = '') => run('block', () => window.electronAPI.website.blockPhone({ phone: p, note: n }), () => { setPhone(''); setNote(''); toast.success(t('website.blocked.added')); });
+    return (
+        <SettingsCard testId="website-blocked" icon={XCircle} title={t('website.blocked.title')} hint={t('website.blocked.hint')}>
+            <div className="flex flex-wrap gap-2">
+                <input className="input flex-1 min-w-[10rem] font-mono" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0661 22 33 44" data-testid="website-blocked-phone" />
+                <input className="input flex-1 min-w-[10rem]" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('website.blocked.note')} maxLength={120} />
+                <Button size="sm" onClick={() => block(phone, note)} disabled={!phone.trim()} loading={busy === 'block'} data-testid="website-blocked-add">{t('website.blocked.add')}</Button>
+            </div>
+            {list.length === 0 ? <p className="text-sm text-zinc-500">{t('website.blocked.none')}</p> : (
+                <ul className="divide-y divide-white/5" data-testid="website-blocked-list">
+                    {list.map(b => (
+                        <li key={b.phone} className="flex items-center justify-between gap-3 py-2">
+                            <span className="min-w-0"><bdi dir="ltr" className="font-mono">{b.phone}</bdi>{b.note && <span className="ms-2 text-xs text-zinc-500">{b.note}</span>}</span>
+                            <Button size="sm" variant="ghost" onClick={() => run('unblock', () => window.electronAPI.website.unblockPhone({ phone: b.phone }))} data-testid={`website-unblock-${b.phone}`}>{t('website.blocked.remove')}</Button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {suggested.length > 0 && (
+                <div className="space-y-2" data-testid="website-blocked-suggested">
+                    <p className="text-xs text-amber-300">{t('website.blocked.suggested')}</p>
+                    <ul className="divide-y divide-white/5">
+                        {suggested.map(c => (
+                            <li key={c.phone} className="flex items-center justify-between gap-3 py-2 text-sm">
+                                <span className="min-w-0"><bdi>{c.name}</bdi> <bdi dir="ltr" className="font-mono text-zinc-400">{c.phone}</bdi>
+                                    <span className="ms-2 text-xs text-amber-300">{t('website.customers.returnedN', { n: c.returned })}</span></span>
+                                <Button size="sm" variant="ghost" onClick={() => block(c.phone, t('website.blocked.autoNote'))}>{t('website.blocked.add')}</Button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+        </SettingsCard>
+    );
+}
+
+/** A size guide per category, the "few left" level, coupons on the website. */
+function SizeGuidesCard({ site, busy, run }) {
+    const { t } = useT();
+    const cats = site.categoriesList || [];
+    const saved = site.publicInfo?.sizeGuides || [];
+    const fromSaved = () => Object.fromEntries(saved.map(g => [g.categoryId, g.text]));
+    const [texts, setTexts] = useState(fromSaved);
+    const [few, setFew] = useState(String(site.publicInfo?.fewLeftAt ?? 3));
+    useEffect(() => { setTexts(fromSaved()); }, [JSON.stringify(saved)]);
+    const save = () => run('sizes', () => window.electronAPI.website.setSettings({
+        sizeGuides: Object.entries(texts).filter(([, v]) => String(v || '').trim()).map(([categoryId, text]) => ({ categoryId, text })),
+        fewLeftAt: Math.min(20, Math.max(1, parseInt(few, 10) || 3)),
+    }), () => toast.success(t('website.info.saved')));
+    return (
+        <SettingsCard testId="website-sizes" icon={Shirt} title={t('website.sizes.title')} hint={t('website.sizes.hint')} onSave={save} saving={busy === 'sizes'}>
+            <label className="flex items-center gap-3 text-sm">
+                <span className="text-zinc-300">{t('website.sizes.fewAt')}</span>
+                <input className="input w-20" type="number" min="1" max="20" value={few} onChange={(e) => setFew(e.target.value)} data-testid="website-few-at" />
+            </label>
+            {cats.length === 0 ? <p className="text-sm text-zinc-500">{t('website.sizes.noCategories')}</p> : cats.map(c => (
+                <label key={c.id} className="block space-y-1">
+                    <span className="text-xs text-zinc-400"><bdi>{c.name}</bdi></span>
+                    <textarea className="input w-full" rows={3} maxLength={800} value={texts[c.id] || ''} onChange={(e) => setTexts(x => ({ ...x, [c.id]: e.target.value }))}
+                        placeholder={t('website.sizes.placeholder')} data-testid={`website-size-guide-${c.id}`} />
+                </label>
+            ))}
+        </SettingsCard>
+    );
+}
+
+/** The couriers: their tracking pages, and Yalidine's own account (to send parcels from AFUS). */
+function CourierApiCard({ site, busy, run }) {
+    const { t } = useT();
+    const saved = site.tools?.trackingLinks || {};
+    const [links, setLinks] = useState(saved);
+    const [key, setKey] = useState({ id: '', token: '', fromWilaya: '' });
+    useEffect(() => { setLinks(saved); }, [JSON.stringify(saved)]);
+    const companies = (site.couriersList || []).map(c => c.name);
+    const linked = !!site.tools?.yalidine?.linked;
+    return (
+        <div className="space-y-4">
+            <SettingsCard testId="website-tracking-links" icon={Package} title={t('website.couriers.linksTitle')} hint={t('website.couriers.linksHint')}
+                onSave={() => run('links', () => window.electronAPI.website.setSettings({ trackingLinks: links }), (next) => {
+                    const kept = next?.tools?.trackingLinks || {};
+                    const refused = Object.entries(links).filter(([k, v]) => String(v || '').trim() && !kept[k]).map(([k]) => k);
+                    if (refused.length) toast.error(t('website.couriers.linkRefused', { list: refused.join('، ') }), 7000);
+                    else toast.success(t('website.info.saved'));
+                })} saving={busy === 'links'}>
+                {companies.map(name => (
+                    <label key={name} className="block space-y-1">
+                        <span className="text-xs text-zinc-400" dir="ltr">{name}</span>
+                        <input className="input w-full font-mono text-xs" dir="ltr" value={links[name] || ''} onChange={(e) => setLinks(l => ({ ...l, [name]: e.target.value }))}
+                            placeholder="https://…{number}" maxLength={300} data-testid={`website-tracking-link-${name.replace(/\W+/g, '-')}`} />
+                    </label>
+                ))}
+            </SettingsCard>
+            <SettingsCard testId="website-yalidine" icon={KeyRound} title={t('website.couriers.yalidineTitle')} hint={t('website.couriers.yalidineHint')}>
+                {linked ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="badge bg-emerald-500/15 text-emerald-300" data-testid="website-yalidine-linked">{t('website.couriers.linked', { when: formatDate(site.tools.yalidine.linkedAt, 'date') })}</span>
+                        <Button size="sm" variant="ghost" loading={busy === 'yforget'} onClick={() => run('yforget', () => window.electronAPI.website.yalidineForget())}>{t('website.couriers.forget')}</Button>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <input className="input font-mono" dir="ltr" placeholder="API ID" value={key.id} onChange={(e) => setKey(k => ({ ...k, id: e.target.value }))} autoComplete="off" data-testid="website-yalidine-id" />
+                        <input className="input font-mono" dir="ltr" type="password" placeholder="API TOKEN" value={key.token} onChange={(e) => setKey(k => ({ ...k, token: e.target.value }))} autoComplete="off" data-testid="website-yalidine-token" />
+                        <input className="input" placeholder={t('website.couriers.fromWilaya')} value={key.fromWilaya} onChange={(e) => setKey(k => ({ ...k, fromWilaya: e.target.value }))} data-testid="website-yalidine-from" />
+                        <div className="sm:col-span-3 flex justify-end">
+                            <Button size="sm" loading={busy === 'ylink'} disabled={!key.id || !key.token} data-testid="website-yalidine-link"
+                                onClick={() => run('ylink', () => window.electronAPI.website.yalidineLink(key), () => { setKey({ id: '', token: '', fromWilaya: '' }); toast.success(t('website.couriers.linkedOk')); })}>
+                                {t('website.couriers.link')}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+                <p className="text-xs text-zinc-500">{t('website.couriers.yalidineNote')}</p>
+            </SettingsCard>
+        </div>
     );
 }

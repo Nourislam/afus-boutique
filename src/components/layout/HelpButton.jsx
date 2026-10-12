@@ -20,6 +20,7 @@ const SCREENS = {
     '/employees': ['help.employees', 'nav.employees'],
     '/reports': ['help.reports', 'nav.reports'],
     '/website': ['help.website', 'nav.website'],
+    '/website-orders': ['help.websiteOrders', 'nav.websiteOrders'],
     '/settings': ['help.settings', 'nav.settings'],
     '/': ['help.dashboard', 'nav.dashboard'],
 };

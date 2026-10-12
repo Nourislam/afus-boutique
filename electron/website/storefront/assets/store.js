@@ -81,6 +81,105 @@
         return b;
     }
 
+    /* The shop's ads / visit tools (assets/track.js, when turned on): what was seen or ordered, no person */
+    function track(event, data) {
+        if (window.afusTrack) { window.afusTrack(event, data); return; }
+        (window.afusTrackQueue = window.afusTrackQueue || []).push([event, data]);
+    }
+
+    /*
+     * What an order costs, under its form: the goods, the coupon, the delivery
+     * (the shop's price for the wilaya and the way chosen; the API works it
+     * out again), the total. getLines() -> [{ id, cat, price, qty }].
+     */
+    function setupTotals(form, getLines) {
+        var box = form.querySelector('[data-osum]');
+        var texts = window.AFUS_TEXTS || {};
+        var prices = {};
+        try { prices = JSON.parse(form.getAttribute('data-delivery') || '{}') || {}; } catch { prices = {}; }
+        var coupon = null;
+        var fmt = null;
+        function wilaya() { var w = form.elements.wilaya; return w ? parseInt(w.value, 10) || 0 : 0; }
+        function way() { var d = form.elements.delivery; return (d && d.value) || 'home'; }
+        function has(v) { return v !== null && v !== undefined; }
+        function fee(goods) {
+            var code = wilaya();
+            if (!code) return undefined;
+            var w = (prices.wilayas || []).filter(function (x) { return x.code === code; })[0];
+            if (w && w.off) return false;
+            var p = w && has(w[way()]) ? w[way()] : prices[way()];
+            if (!has(p)) return null;
+            return has(prices.freeOver) && goods >= prices.freeOver ? 0 : p;
+        }
+        function discount(lines) {
+            if (!coupon) return 0;
+            var all = lines.reduce(function (n, l) { return n + l.price * l.qty; }, 0);
+            if (coupon.minPurchase && all < coupon.minPurchase) return 0;
+            var base = lines.filter(function (l) {
+                return coupon.appliesTo === 'all' || (coupon.appliesTo === 'product' && coupon.ids.indexOf(l.id) !== -1) || (coupon.appliesTo === 'category' && coupon.ids.indexOf(l.cat) !== -1);
+            }).reduce(function (n, l) { return n + l.price * l.qty; }, 0);
+            var d = coupon.type === 'percentage' ? base * coupon.value / 100 : Math.min(coupon.value, base);
+            return Math.round(Math.max(0, d) * 100) / 100;
+        }
+        function put(sel, amount) {
+            var e = box.querySelector(sel);
+            if (!e) return;
+            e.textContent = '';
+            e.appendChild(priced(fmt, amount));
+        }
+        var last = { goods: 0, fee: null, discount: 0, total: 0 };
+        function update() {
+            if (!box || !fmt) return last;
+            var lines = getLines();
+            var goods = lines.reduce(function (n, l) { return n + l.price * l.qty; }, 0);
+            var d = discount(lines);
+            var f = fee(goods);
+            put('[data-sum-goods]', goods);
+            var row = box.querySelector('[data-sum-coupon-row]');
+            if (row) row.hidden = !d;
+            if (d) put('[data-sum-coupon]', -d);
+            var de = box.querySelector('[data-sum-delivery]');
+            if (f === undefined) de.textContent = texts.deliveryChoose || '';
+            else if (f === null) de.textContent = texts.deliveryByPhone || '';
+            else if (f === false) de.textContent = texts.notDelivered || '';
+            else if (f === 0) de.textContent = texts.deliveryFree || '';
+            else { de.textContent = ''; de.appendChild(priced(fmt, f)); }
+            var total = goods - d + (typeof f === 'number' ? f : 0);
+            put('[data-sum-total]', total);
+            last = { goods: goods, fee: f, discount: d, total: total };
+            return last;
+        }
+        loadCatalog().then(function (data) { fmt = data.money; update(); }).catch(function () { /* no figures: the shop gives them on the phone */ });
+        form.addEventListener('change', update);
+        form.addEventListener('input', function (e) { if (e.target.name === 'qty') update(); });
+
+        // A coupon: checked by the shop's API (a few tries only), checked again when the order arrives
+        var cbox = form.querySelector('[data-coupon]');
+        var api = document.body.getAttribute('data-api');
+        if (cbox && api) {
+            var input = cbox.querySelector('input[name="coupon_try"]');
+            var hidden = cbox.querySelector('input[name="coupon"]');
+            var msg = cbox.querySelector('[data-coupon-msg]');
+            var apply = function () {
+                var code = String(input.value || '').trim();
+                if (!code) { coupon = null; hidden.value = ''; msg.textContent = ''; update(); return; }
+                fetch(api + '/api/coupon?code=' + encodeURIComponent(code), { credentials: 'omit' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (j) {
+                        coupon = j && j.ok ? { type: j.type, value: Number(j.value) || 0, appliesTo: j.appliesTo || 'all', ids: j.ids || [], minPurchase: Number(j.minPurchase) || 0 } : null;
+                        hidden.value = coupon ? j.code : '';
+                        msg.textContent = coupon ? (texts.couponOk || '') + (j.name ? ' — ' + j.name : '') : texts.couponBad || '';
+                        msg.className = 'coupon-msg ' + (coupon ? 'is-ok' : 'is-bad');
+                        update();
+                    })
+                    .catch(function () { msg.textContent = texts.couponDown || ''; msg.className = 'coupon-msg is-bad'; });
+            };
+            cbox.querySelector('[data-coupon-apply]').addEventListener('click', apply);
+            input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+        }
+        return { update: update, last: function () { return last; } };
+    }
+
     /* ---------- Article page: choose colour and size, add to cart ---------- */
     function setupAddForm(form) {
         var variants = [];
@@ -93,9 +192,16 @@
         function available(color, size) {
             return variants.some(function (v) { return v[2] && (!color || v[0] === color) && (!size || v[1] === size); });
         }
+        var few = document.querySelector('[data-few]');
+        var fewProduct = few ? !few.hidden : false;
         function refresh() {
             var color = chosen('color');
             var size = chosen('size');
+            // "Few left": for the colour and size chosen (else the whole article)
+            if (few) {
+                var v = variants.filter(function (x) { return (x[0] || '') === color && (x[1] || '') === size; })[0];
+                few.hidden = v ? !(v[2] && v[4]) : !fewProduct;
+            }
             form.querySelectorAll('input[name="size"]').forEach(function (input) {
                 var ok = available(color, input.value);
                 input.disabled = !ok;
@@ -146,6 +252,7 @@
             }
             var added = addLine({ id: form.getAttribute('data-id'), color: color, size: size, qty: asked });
             if (!added) return;
+            track('add_to_cart', { id: form.getAttribute('data-id'), quantity: asked });
             if (action === 'buy') { location.href = base + 'checkout.html'; return; }
             say(added === 'capped' ? texts.maxQty || '' : texts.added || '', added !== 'capped', { label: texts.viewCart || '', href: base + 'cart.html' });
         });
@@ -482,6 +589,8 @@
         var texts = window.AFUS_TEXTS || {};
         var sending = false;
         var checks = orderChecks(form, texts);
+        var current = [];
+        var totals = setupTotals(form, function () { return current; });
 
         // One key per order (kept until the thanks page): sent twice, it is still one order
         var keyField = form.querySelector('[data-order-key]');
@@ -494,6 +603,9 @@
             box.textContent = '';
             lines.forEach(function (item) { box.appendChild(lineNode(item, data, false)); });
             fillSum(root, data, lines);
+            current = lines.map(function (i) { return { id: i.product.id, cat: i.product.cat || '', price: i.price, qty: i.line.qty }; });
+            totals.update();
+            if (lines.length) track('begin_checkout', { value: total(lines), quantity: lines.reduce(function (n, i) { return n + i.line.qty; }, 0) });
             root.classList.toggle('is-empty', lines.length === 0);
             if (!lines.length) {
                 box.appendChild(el('p', 'empty', data.texts.cartEmpty));
@@ -515,6 +627,7 @@
                 return;
             }
             sending = true;
+            remember(totals.update().total, current.length === 1 ? current[0].id : '', '', current.reduce(function (n, l) { return n + l.qty; }, 0));
             var button = form.querySelector('[data-confirm]');
             // Sent once (a second press would send a second order)
             if (button) setTimeout(function () { button.disabled = true; }, 0);
@@ -534,6 +647,24 @@
         if (keyField) keyField.value = orderKey();
         function choice() { return add && add.afusChoice ? add.afusChoice() : { ok: true, color: '', size: '', qty: 1, price: null }; }
         function value(name) { var f = form.elements[name]; return f && !f.disabled ? String(f.value || '').trim() : ''; }
+        // The price the customer pays: the cart's (search.json: the sale applied to each colour and size)
+        var pid = form.elements.product_id.value;
+        var listed = null;
+        loadCatalog().then(function (data) { listed = data.products.filter(function (p) { return p.id === pid; })[0] || null; totals.update(); }).catch(function () { /* the page's price */ });
+        function unitPrice(c) {
+            if (listed && listed.variants.length) {
+                var v = listed.variants.filter(function (x) { return (x[0] || '') === (c.color || '') && (x[1] || '') === (c.size || ''); })[0];
+                if (v && v[3] !== null && v[3] !== undefined) return v[3];
+            }
+            return listed ? listed.price : Number(form.getAttribute('data-price')) || 0;
+        }
+        var totals = setupTotals(form, function () {
+            var c = choice();
+            return [{ id: pid, cat: form.getAttribute('data-cat') || '', price: unitPrice(c), qty: c.ok ? c.qty : (c.qty || 1) }];
+        });
+        if (add) add.addEventListener('change', function () { totals.update(); });
+        if (add) add.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('[data-step]')) setTimeout(totals.update, 0); });
+        track('view_item', { id: pid, name: form.elements.product_name.value, value: Number(form.getAttribute('data-price')) || 0, quantity: 1 });
 
         form.addEventListener('submit', function (e) {
             var c = choice();
@@ -549,7 +680,10 @@
                 if (first) first.focus();
                 return;
             }
-            var price = c.price !== null ? c.price : Number(form.getAttribute('data-price'));
+            var price = unitPrice(c);
+            var sum = totals.update();
+            remember(sum.total, pid, form.elements.product_name.value, c.qty);
+            track('begin_checkout', { id: pid, name: form.elements.product_name.value, value: sum.total, quantity: c.qty });
             form.querySelector('[data-items]').value = JSON.stringify([{
                 product_id: form.elements.product_id.value, product_name: form.elements.product_name.value,
                 color: c.color || '', size: c.size || '', quantity: c.qty, unit_price: Number.isFinite(price) ? price : null,
@@ -577,6 +711,25 @@
         });
     }
 
+    /* The order's value, kept until the thanks page (the ads tools are told the order went through) */
+    var LAST = 'afus-last-order-v1';
+    function remember(value, id, name, qty) {
+        try { sessionStorage.setItem(LAST, JSON.stringify({ value: value, id: id, name: name, quantity: qty })); } catch { /* private window */ }
+    }
+    function purchased() {
+        var x = null;
+        try { x = JSON.parse(sessionStorage.getItem(LAST) || 'null'); sessionStorage.removeItem(LAST); } catch { x = null; }
+        if (x) track('purchase', x);
+    }
+
+    /* How many times the page was seen: its name only, to the shop's own API (no person, no cookie) */
+    function countView() {
+        var api = document.body.getAttribute('data-api');
+        var page = document.body.getAttribute('data-page');
+        if (!api || !page || !navigator.sendBeacon) return;
+        try { navigator.sendBeacon(api + '/api/view', page); } catch { /* not counted */ }
+    }
+
     /* The order key of the checkout (idempotency): random, the same until the order is through */
     var ORDER_KEY = 'afus-order-key-v1:' + base;
     function randomKey() {
@@ -598,6 +751,7 @@
     /* After the order: the cart is empty again (only when the cart was sent), a new key next time */
     function afterOrder() {
         if (!document.body.classList.contains('page-thanks')) return;
+        purchased();
         if (new URLSearchParams(location.search).get('cart') === '1') writeCart([]);
         try { sessionStorage.removeItem(ORDER_KEY); } catch { /* nothing kept */ }
     }
@@ -606,6 +760,7 @@
         try { window.AFUS_TEXTS = JSON.parse(document.body.getAttribute('data-texts') || '{}'); } catch { window.AFUS_TEXTS = {}; }
         afterOrder();
         badges();
+        countView();
         document.querySelectorAll('[data-add-form]').forEach(setupAddForm);
         document.querySelectorAll('[data-gallery]').forEach(setupGallery);
         document.querySelectorAll('[data-quick-order]').forEach(setupQuickOrder);

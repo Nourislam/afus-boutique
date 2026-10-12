@@ -29,17 +29,27 @@ function readStore(api) {
     return Object.fromEntries(STORE_KEYS.map(k => [k, config[k]]));
 }
 
-function readProducts(api) {
+/**
+ * "Few left": in stock, and as many pieces as fewAt or fewer. Only the yes /
+ * no leaves SQL (the counts stay in the shop).
+ */
+function readProducts(api, fewAt = 3) {
+    const n = Number.isInteger(fewAt) && fewAt > 0 ? fewAt : 3;
     return api.all(`
         SELECT p.id, p.name, p.description, p.category_id, p.brand, p.gender, p.season, p.collection,
                p.price, p.image_path, p.gallery, p.created_at, COALESCE(p.has_variants, 0) AS has_variants,
-               ${AVAILABLE_PRODUCT} AS available
+               ${AVAILABLE_PRODUCT} AS available,
+               (CASE WHEN COALESCE(p.has_variants, 0) = 1
+                     THEN (SELECT COALESCE(SUM(MAX(COALESCE(v.stock_quantity, 0), 0)), 0) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1)
+                     ELSE MAX(COALESCE(p.stock_quantity, 0), 0) END) BETWEEN 1 AND ${n} AS few
         FROM products p WHERE p.is_active = 1 ORDER BY p.name, p.id`);
 }
 
-function readVariants(api) {
+function readVariants(api, fewAt = 3) {
+    const n = Number.isInteger(fewAt) && fewAt > 0 ? fewAt : 3;
     return api.all(`
-        SELECT v.product_id, v.color, v.color_code, v.size, v.price, (COALESCE(v.stock_quantity, 0) > 0) AS available
+        SELECT v.product_id, v.color, v.color_code, v.size, v.price, (COALESCE(v.stock_quantity, 0) > 0) AS available,
+               (COALESCE(v.stock_quantity, 0) BETWEEN 1 AND ${n}) AS few
         FROM product_variants v JOIN products p ON p.id = v.product_id
         WHERE v.is_active = 1 AND p.is_active = 1 AND COALESCE(p.has_variants, 0) = 1
         ORDER BY v.sort_order, v.rowid`);
@@ -66,11 +76,11 @@ function readRankings(api, { now = Date.now() } = {}) {
     };
 }
 
-function readInternal(api, { now = Date.now() } = {}) {
+function readInternal(api, { now = Date.now(), fewAt = 3 } = {}) {
     return {
         store: readStore(api),
-        products: readProducts(api),
-        variants: readVariants(api),
+        products: readProducts(api, fewAt),
+        variants: readVariants(api, fewAt),
         categories: readCategories(api),
         promotions: readPromotions(api),
         ...readRankings(api, { now }),

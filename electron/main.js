@@ -1,5 +1,5 @@
 console.log('=== MAIN.JS LOADED ===');
-const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme, Menu, safeStorage, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme, Menu, safeStorage, clipboard, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { BRAND, dataDirectory, databasePath } = require('./brand');
@@ -1910,7 +1910,11 @@ const website = createWebsiteService({
 // (first a little after it starts, then when the last sync says it is time)
 function websiteOrdersTick() {
   website.syncIfDue()
-    .then((r) => { if (r?.reason && !['idle', 'later'].includes(r.reason)) logService.write('warn', `website orders sync: ${r.reason}`); })
+    .then((r) => {
+      if (r?.reason && !['idle', 'later'].includes(r.reason)) logService.write('warn', `website orders sync: ${r.reason}`);
+      // New orders from the website: said at once (the owner can turn it off, Website › Settings › Messages)
+      if (r?.received > 0) notifyNewOrders(r.received);
+    })
     .catch(() => logService.write('warn', 'website orders sync failed'))
     .finally(() => {
       // The own domain, when it is time to look again (its records, GitHub's certificate)
@@ -1919,6 +1923,30 @@ function websiteOrdersTick() {
     });
 }
 setTimeout(websiteOrdersTick, 20 * 1000).unref?.();
+function notifyNewOrders(n) {
+  try {
+    if (!website.view().tools?.notify || !Notification.isSupported()) return;
+    const lang = getShopSettingsForPrint().defaultLanguage;
+    const title = lang === 'fr' ? 'Nouvelle commande du site' : lang === 'en' ? 'New website order' : 'طلب جديد من الموقع';
+    const body = lang === 'fr' ? `${n} commande(s) à appeler pour confirmer.` : lang === 'en' ? `${n} order(s) to call and confirm.` : `${n} طلب جديد للاتصال والتأكيد.`;
+    const note = new Notification({ title, body, silent: false });
+    note.on('click', () => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) { win.show(); win.focus(); win.webContents.send('navigate', '/website-orders'); }
+    });
+    note.show();
+  } catch (e) {
+    logService.write('warn', `website notification: ${e?.message || e}`);
+  }
+}
+// What a WhatsApp message or a courier's tracking page opens (https and the known addresses only)
+const openOutside = (url, hosts) => {
+  let u;
+  try { u = new URL(String(url)); } catch { return false; }
+  if (u.protocol !== 'https:' || (hosts && !hosts.includes(u.hostname))) return false;
+  shell.openExternal(u.toString());
+  return true;
+};
 ipcMain.handle('website:getState', () => website.view());
 ipcMain.handle('website:preview', () => website.preview());
 ipcMain.handle('website:previewTheme', (_, args = {}) => website.previewTheme(args));
@@ -1957,6 +1985,21 @@ ipcMain.handle('website:setFeatures', (_, features = {}) => website.setFeatures(
 ipcMain.handle('website:recheck', () => website.recheckSite());
 ipcMain.handle('website:changes', () => website.changes());
 ipcMain.handle('website:orders', (_, args = {}) => website.orders(args || {}));
+ipcMain.handle('website:setSettings', (_, part = {}) => website.setSettings(part || {}));
+ipcMain.handle('website:blockPhone', (_, args = {}) => website.blockPhone(args || {}));
+ipcMain.handle('website:unblockPhone', (_, args = {}) => website.unblockPhone(args || {}));
+ipcMain.handle('website:blockSuggestions', () => website.blockSuggestions());
+ipcMain.handle('website:confirmMessage', (_, args = {}) => {
+  const m = website.confirmMessage(args || {});
+  return { ...m, opened: args?.open ? openOutside(m.url, ['wa.me']) : false };
+});
+ipcMain.handle('website:setTracking', (_, args = {}) => website.setTracking({ id: args?.id, number: args?.number }));
+ipcMain.handle('website:openTracking', (_, url) => openOutside(url));
+ipcMain.handle('website:yalidineLink', (_, args = {}) => website.yalidineLink(args || {}));
+ipcMain.handle('website:yalidineForget', () => website.yalidineForget());
+ipcMain.handle('website:yalidineSend', (_, args = {}) => website.yalidineSend(args || {}));
+ipcMain.handle('website:yalidineRefresh', (_, args = {}) => website.yalidineRefresh(args || {}));
+ipcMain.handle('website:stats', (_, args = {}) => website.stats(args || {}));
 ipcMain.handle('website:customers', (_, args = {}) => website.customers(args || {}));
 ipcMain.handle('website:confirmOrder', (_, args = {}) => website.confirmOrder(args || {}));
 ipcMain.handle('website:updateOrder', (_, args = {}) => website.updateOrder(args || {}));

@@ -145,4 +145,5 @@ export default {
     'titlebar.synced': ['Synced', 'Synchronisé', 'متزامن'],
     'titlebar.offline': ['Offline', 'Hors ligne', 'بدون اتصال'],
     'titlebar.syncError': ['Sync error', 'Erreur de synchro', 'خطأ في المزامنة'],
+    'nav.websiteOrders': ["Website orders", "Commandes du site", "طلبات الموقع"],
 };
