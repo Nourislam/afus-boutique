@@ -53,6 +53,25 @@ function link(value, hosts) {
     return hosts.some(h => host === h || host.endsWith(`.${h}`)) ? url.toString().slice(0, 300) : '';
 }
 
+/**
+ * What the website offers, chosen by the owner (Website screen › Features).
+ *   orderForm       the order form on each article's page (name, phone, wilaya...)
+ *   whatsappOrder   "Order on WhatsApp" under it (needs the shop's phone)
+ *   cart            add to cart, the cart and the checkout (several pieces at once)
+ *   homeDelivery / officeDelivery   the ways of delivery offered
+ *   noteField    a note field for the customer
+ *   trustBar        the strip "pay on delivery, delivery, a call first"
+ * There is always a way to order (the form or the cart) and a way to deliver.
+ */
+const FEATURES = { orderForm: true, whatsappOrder: true, cart: true, homeDelivery: true, officeDelivery: true, noteField: true, trustBar: true };
+function features(value) {
+    const given = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const out = Object.fromEntries(Object.entries(FEATURES).map(([k, def]) => [k, typeof given[k] === 'boolean' ? given[k] : def]));
+    if (!out.orderForm && !out.cart) out.orderForm = true;
+    if (!out.homeDelivery && !out.officeDelivery) out.homeDelivery = true;
+    return out;
+}
+
 /** What the owner wrote for the website (Website screen), cleaned. */
 function publicInfo(info = {}) {
     const hours = (Array.isArray(info.hours) ? info.hours : String(info.hours || '').split('\n'))
@@ -63,6 +82,7 @@ function publicInfo(info = {}) {
         mapUrl: link(info.mapUrl, MAP_HOSTS),
         // The delivery companies the shop works with (ids of storefront/couriers.js)
         couriers: [...new Set((Array.isArray(info.couriers) ? info.couriers : []).filter(id => COURIER_IDS.includes(id)))],
+        features: features(info.features),
     };
 }
 
@@ -83,6 +103,7 @@ function shopOf(store, info, pic) {
         social: extra.social,
         mapUrl: extra.mapUrl,
         couriers: courierNames(extra.couriers),
+        features: extra.features,
     };
 }
 
@@ -159,6 +180,7 @@ const PUBLIC_SHAPE = {
         name: 'string', logo: 'string', description: 'string', phone: 'string', email: 'string', address: 'string', city: 'string', wilaya: 'string',
         currency: 'string', language: 'string', hours: { '*': 'string' }, social: { facebook: 'string', instagram: 'string', tiktok: 'string' }, mapUrl: 'string',
         couriers: { '*': 'string' },
+        features: Object.fromEntries(Object.keys(FEATURES).map(k => [k, 'boolean'])),
     },
     categories: { '*': { id: 'string', name: 'string', count: 'number' } },
     brands: { '*': 'string' },
@@ -175,4 +197,4 @@ const PUBLIC_SHAPE = {
     promotions: { '*': { id: 'string', name: 'string', type: 'string', value: 'number', appliesTo: 'string', ids: { '*': 'string' }, endsAt: 'string|null' } },
 };
 
-module.exports = { toPublic, publicInfo, PUBLIC_SHAPE, VERSION, IMAGE, SOCIAL_HOSTS, MAP_HOSTS };
+module.exports = { toPublic, publicInfo, features, FEATURES, PUBLIC_SHAPE, VERSION, IMAGE, SOCIAL_HOSTS, MAP_HOSTS };

@@ -292,7 +292,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .hdr-search input{border:0;background:none;font:inherit;font-size:.9rem;color:var(--text);width:180px;padding:8px 0;outline:0}
 .hdr-search button{border:0;background:none;color:var(--muted);padding:6px;cursor:pointer;display:flex}
 .hdr-tools .hdr-search+.hdr-icon,.hdr-tools .hdr-icon:first-child{margin-inline-start:0}
-.bottom-bar{position:fixed;inset-inline:0;bottom:0;z-index:20;display:grid;grid-template-columns:repeat(5,1fr);background:var(--bg);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -4px 16px rgba(0,0,0,.05)}
+.bottom-bar{position:fixed;inset-inline:0;bottom:0;z-index:20;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--bg);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -4px 16px rgba(0,0,0,.05)}
 .bottom-bar a{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px 6px;font-size:11px;color:var(--muted)}
 .bottom-bar a.is-current{color:var(--text);font-weight:600}
 .bottom-bar .cart-count{top:2px;inset-inline-end:calc(50% - 22px)}
@@ -352,6 +352,19 @@ body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .stepper button:disabled{cursor:default;opacity:.4}
 .stepper input{width:46px;border:0;text-align:center;font:inherit;font-size:1rem;font-weight:700;background:none;color:var(--text);-moz-appearance:textfield;appearance:textfield;padding:0}
 .stepper input::-webkit-inner-spin-button,.stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+/* The order form of an article's page */
+.quick-order{display:flex;flex-direction:column;gap:12px;border:max(1px,var(--bw)) solid var(--border);border-radius:var(--card-radius);padding:16px;background:var(--bg);scroll-margin-top:80px}
+.qo-head{display:flex;flex-direction:column;gap:2px}
+.qo-title{font-family:var(--font-head);font-size:1.12em;font-weight:700;text-transform:none;letter-spacing:0}
+.qo-sub{margin:0;color:var(--muted);font-size:.86em}
+.quick-order .fields{grid-template-columns:1fr 1fr}
+.quick-order .dchoices{grid-template-columns:1fr 1fr;margin:0}
+.quick-order .dchoice{padding:10px 12px}
+.donly{margin:0;font-size:.88em;color:var(--muted)}
+.donly strong{color:var(--text)}
+.btn-whatsapp{background:#25d366;color:#fff;min-height:48px}
+.btn-whatsapp svg{width:20px;height:20px}
+.quick-order .btn-order{min-height:54px}
 .buy-bar{position:fixed;inset-inline:0;bottom:0;z-index:25;display:flex;align-items:center;gap:12px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--border);box-shadow:0 -6px 20px rgba(0,0,0,.08)}
 .buy-bar[hidden]{display:none}
 .bb-info{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
@@ -534,6 +547,8 @@ body.buybar-on .bottom-bar{display:none}
   .home .section{margin-block:36px}
   .section-title{font-size:calc(var(--h2)*.9)}
   /* Footer: the shop, how to reach it (the menus are already at hand) */
+  .quick-order .dchoice small{display:none}
+  .quick-order{padding:14px}
   .ftr-nav{display:none}
   .site-footer{padding-top:32px}
   .ftr-grid{gap:20px}

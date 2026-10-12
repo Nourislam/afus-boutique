@@ -191,29 +191,61 @@ describe('website themes: every theme draws the same shop data', () => {
         }
     });
 
-    it('pay on delivery: one big "Order now", the cart second, what is true about paying and delivery, the bar for phones', () => {
+    it('the article\'s page: all its photos, Add to cart, then the order form (full name, phone, wilaya, commune, home/office, address), Order now, Order on WhatsApp — no call button', () => {
         for (const theme of registry.list()) {
-            const html = renderPage({ snapshot, theme, page: 'product', id: 'jean', lang: 'ar' });
-            const buttons = [...html.matchAll(/<button class="btn[^"]*" type="submit" name="action" value="(\w+)"/g)].map(m => m[1]);
-            expect(buttons, theme.id).toEqual(['buy', 'add']);
-            expect(html).toContain('الدفع عند الاستلام');
-            // Courier offices offered at checkout (none ticked = all companies): said here too
-            const trust = /<ul class="trust[^"]*">[\s\S]*?<\/ul>/.exec(html)[0];
-            expect(trust).toContain('التوصيل إلى ولايتك');
-            expect(trust).toContain('مكتب شركة التوصيل');
-            expect(html).toContain('data-buy-bar hidden');
-            // WhatsApp is a question, not a second way to order; no call button on the article
-            expect((html.match(/https:\/\/wa\.me\//g) || []).length).toBe(1);
-            expect(html).not.toMatch(/class="btn[^"]*" href="tel:/);
-            // The first photo is asked for first, the others when they come near
+            const html = renderPage({ snapshot, theme, page: 'product', id: 'jean', lang: 'ar', orderUrl: 'https://api.example/api/orders' });
+            // Every photo of the article (main + gallery), the first one asked for first
             expect(html).toMatch(/class="pdp-img" src="[^"]*jean-1\.jpg" alt="[^"]*" fetchpriority="high"/);
             expect(html).toMatch(/class="pdp-img" src="[^"]*jean-2\.jpg" alt="[^"]*" loading="lazy"/);
+            // Add to cart, no "Buy now"
+            const buttons = [...html.matchAll(/name="action" value="(\w+)"/g)].map(m => m[1]);
+            expect(buttons, theme.id).toEqual(['add']);
+            const form = /<form class="quick-order"[\s\S]*?<\/form>/.exec(html)[0];
+            expect(html.indexOf('data-add')).toBeLessThan(html.indexOf('class="quick-order"'));
+            expect(form).toContain('action="https://api.example/api/orders"');
+            const names = [...form.matchAll(/<(?:input|select|textarea)\b[^>]*?\sname="(\w+)"/g)].map(m => m[1]).filter(n => !['source', 'order_key', 'items', 'product_id', 'product_name', 'website'].includes(n));
+            expect(names, theme.id).toEqual(['customer_name', 'phone', 'wilaya', 'commune', 'delivery', 'delivery', 'address', 'note']);
+            expect(form).toMatch(/value="home" checked/);
+            expect(form).toContain('data-when="home"');
+            // Order now, then Order on WhatsApp; nothing to call from here
+            expect(form.indexOf('data-confirm')).toBeLessThan(form.indexOf('btn-whatsapp'));
+            expect(form).toContain('href="https://wa.me/213555123456?text=');
+            // No call button with the article (the shop's number stays in the header and footer)
+            expect(/<main class="container pdp[\s\S]*?<\/main>/.exec(html)[0]).not.toMatch(/href="tel:/);
+            expect(html).toContain('data-buy-bar hidden');
+            const trust = /<ul class="trust[^"]*">[\s\S]*?<\/ul>/.exec(html)[0];
+            expect(trust).toContain('الدفع عند الاستلام');
         }
-        // No courier office at checkout: no promise of one on the article
-        const homeOnly = { ...snapshot, shop: { ...snapshot.shop, couriers: [] } };
-        const page = renderPage({ snapshot: homeOnly, theme: registry.get('sport'), page: 'product', id: 'jean', lang: 'ar' });
-        expect(/<ul class="trust[^"]*">[\s\S]*?<\/ul>/.exec(page)[0]).not.toContain('مكتب شركة التوصيل');
-        expect(renderPage({ snapshot: homeOnly, theme: registry.get('sport'), page: 'page', id: 'checkout', lang: 'ar' })).not.toContain('value="office"');
+    });
+
+    it('the owner\'s features change the pages: no cart, no WhatsApp, home delivery only, no note, no trust strip', () => {
+        const shop = (f) => ({ ...snapshot, shop: { ...snapshot.shop, features: { ...snapshot.shop.features, ...f } } });
+        const theme = registry.get('sport');
+        const product = (f) => renderPage({ snapshot: shop(f), theme, page: 'product', id: 'jean', lang: 'ar', orderUrl: 'https://api.example/api/orders' });
+        const noCart = product({ cart: false });
+        expect(noCart).not.toContain('name="action" value="add"');
+        expect(noCart).not.toContain('href="cart.html"');
+        expect(noCart).toContain('class="quick-order"');
+        expect(product({ whatsappOrder: false })).not.toContain('wa.me');
+        const homeOnly = product({ officeDelivery: false });
+        expect(homeOnly).not.toContain('value="office"');
+        expect(homeOnly).toContain('<input type="hidden" name="delivery" value="home"');
+        expect(renderPage({ snapshot: shop({ officeDelivery: false }), theme, page: 'page', id: 'checkout', lang: 'ar', orderUrl: 'https://api.example/api/orders' })).not.toContain('value="office"');
+        const officeOnly = product({ homeDelivery: false });
+        expect(officeOnly).not.toContain('name="address"');
+        expect(officeOnly).toContain('<input type="hidden" name="delivery" value="office"');
+        expect(product({ noteField: false })).not.toContain('name="note"');
+        expect(product({ trustBar: false })).not.toContain('<ul class="trust');
+        expect(renderPage({ snapshot: shop({ trustBar: false }), theme, page: 'home', lang: 'ar' })).not.toContain('trust-section');
+        expect(renderPage({ snapshot, theme, page: 'home', lang: 'ar' })).toContain('trust-section');
+        // No form: the cart, and WhatsApp alone under it
+        const noForm = product({ orderForm: false });
+        expect(noForm).not.toContain('class="quick-order"');
+        expect(noForm).toContain('btn-whatsapp');
+        expect(noForm).toContain('name="action" value="add"');
+        // Courier offices need a courier company: none at all, no office
+        const none = { ...snapshot, shop: { ...snapshot.shop, couriers: [] } };
+        expect(renderPage({ snapshot: none, theme, page: 'product', id: 'jean', lang: 'ar' })).not.toContain('value="office"');
     });
 
     it('the font comes from the website itself (or inside the preview), never from an outside service', () => {

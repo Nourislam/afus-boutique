@@ -4,7 +4,7 @@ import { createShop } from './helpers/shop';
 
 const require = createRequire(import.meta.url);
 const { readInternal, readPrivateMarkers } = require('../electron/website/publicData/internal');
-const { toPublic, publicInfo, PUBLIC_SHAPE } = require('../electron/website/publicData/public');
+const { toPublic, publicInfo, features, FEATURES, PUBLIC_SHAPE } = require('../electron/website/publicData/public');
 const { checkPublic, checkFiles } = require('../electron/website/publicData/guard');
 const { buildPublicData, checkSiteFiles, summarize } = require('../electron/website/publicData');
 const { buildSite } = require('../electron/website/publish/siteBuilder');
@@ -108,6 +108,7 @@ describe('website public data: SQLite internal -> website public', () => {
             address: '12 rue Didouche', city: 'Alger', wilaya: 'Alger', currency: 'DZD', language: 'fr', hours: [], social: {}, mapUrl: '',
             // No courier ticked on the Website screen: every company is offered
             couriers: ['Yalidine', 'ZR Express', 'Maystro Delivery', 'Noest Express', 'Guepex', 'World Express', 'Procolis', 'EMS Algérie Poste'],
+            features: FEATURES,
         });
     });
 
@@ -206,6 +207,15 @@ describe('website public data: SQLite internal -> website public', () => {
         expect(Object.keys(PUBLIC_SHAPE).sort()).toEqual(['bestSellers', 'brands', 'builtAt', 'categories', 'newProducts', 'products', 'promotions', 'shop', 'version']);
     });
 
+    it('the website\'s features: true/false only, the defaults for the rest, always a way to order and to deliver', () => {
+        expect(features()).toEqual(FEATURES);
+        expect(features({ cart: false, whatsappOrder: 'no', extra: true, noteField: false })).toEqual({ ...FEATURES, cart: false, noteField: false });
+        // Neither the form nor the cart: the form stays; no delivery at all: home delivery stays
+        expect(features({ orderForm: false, cart: false })).toMatchObject({ orderForm: true, cart: false });
+        expect(features({ homeDelivery: false, officeDelivery: false })).toMatchObject({ homeDelivery: true, officeDelivery: false });
+        expect(Object.keys(PUBLIC_SHAPE.shop.features).sort()).toEqual(Object.keys(FEATURES).sort());
+    });
+
     it('hours, social pages and map: written on the Website screen, cleaned, shown on the website; other links refused', async () => {
         expect(publicInfo({
             hours: 'Samedi – jeudi : 9 h – 20 h\n\nVendredi : fermé\u0007',
@@ -218,15 +228,16 @@ describe('website public data: SQLite internal -> website public', () => {
             mapUrl: 'https://maps.app.goo.gl/abc123',
             // Known companies only, each once
             couriers: ['yalidine', 'zr-express'],
+            features: FEATURES,
         });
-        expect(publicInfo({ social: { facebook: 'https://facebook.com.evil.example/x', instagram: 'https://user:pw@instagram.com/x' }, mapUrl: 'https://evil.example/maps' })).toEqual({ hours: [], social: {}, mapUrl: '', couriers: [] });
+        expect(publicInfo({ social: { facebook: 'https://facebook.com.evil.example/x', instagram: 'https://user:pw@instagram.com/x' }, mapUrl: 'https://evil.example/maps' })).toEqual({ hours: [], social: {}, mapUrl: '', couriers: [], features: FEATURES });
 
         const settings = { website: { created: true, name: 'boutique-yasmine', theme: 'classic' } };
         const service = createWebsiteService({ api, getSetting: (k) => settings[k] ?? null, saveSetting: (k, v) => { settings[k] = JSON.parse(JSON.stringify(v)); }, codedError: catalog.codedError });
         const before = api.all('SELECT * FROM settings ORDER BY key');
         const r = service.setPublicInfo({ hours: 'Tous les jours 9h-21h', social: { instagram: 'https://instagram.com/yasmine', tiktok: 'https://evil.example' }, mapUrl: 'https://www.google.com/maps/place/Alger' });
         expect(r.result.refused).toEqual(['tiktok']);
-        expect(r.publicInfo).toEqual({ hours: ['Tous les jours 9h-21h'], social: { instagram: 'https://instagram.com/yasmine' }, mapUrl: 'https://www.google.com/maps/place/Alger', couriers: [] });
+        expect(r.publicInfo).toEqual({ hours: ['Tous les jours 9h-21h'], social: { instagram: 'https://instagram.com/yasmine' }, mapUrl: 'https://www.google.com/maps/place/Alger', couriers: [], features: FEATURES });
         // The shop's own settings are not touched
         expect(api.all('SELECT * FROM settings ORDER BY key')).toEqual(before);
         const html = service.previewTheme({ page: 'home' }).html;
@@ -237,6 +248,28 @@ describe('website public data: SQLite internal -> website public', () => {
         const published = renderPage({ snapshot: buildPublicData(api, { now: NOW, info: settings.website.publicInfo }), theme: registry.get('classic'), page: 'home', lang: 'fr' });
         expect(published).toContain('href="https://instagram.com/yasmine" rel="noopener" target="_blank"');
         expect(published).toContain('https://www.google.com/maps/place/Alger');
+    });
+
+    it('features: one switch at a time, kept when the customers\' information is saved (and the other way round), shown in the preview', () => {
+        const settings = { website: { created: true, name: 'boutique-yasmine', theme: 'classic' } };
+        const service = createWebsiteService({ api, getSetting: (k) => settings[k] ?? null, saveSetting: (k, v) => { settings[k] = JSON.parse(JSON.stringify(v)); }, codedError: catalog.codedError });
+        expect(service.view().publicInfo.features).toEqual(FEATURES);
+        service.setPublicInfo({ hours: 'Tous les jours 9h-21h' });
+        let r = service.setFeatures({ cart: false });
+        expect(r.publicInfo.features).toEqual({ ...FEATURES, cart: false });
+        expect(r.publicInfo.hours).toEqual(['Tous les jours 9h-21h']);
+        r = service.setFeatures({ whatsappOrder: false });
+        expect(r.publicInfo.features).toMatchObject({ cart: false, whatsappOrder: false });
+        // Saving the information card does not turn the switches back on
+        r = service.setPublicInfo({ hours: 'Samedi-jeudi' });
+        expect(r.publicInfo.features).toMatchObject({ cart: false, whatsappOrder: false });
+        // Never without a way to order: the form stays when the cart is already off
+        expect(service.setFeatures({ orderForm: false }).publicInfo.features).toMatchObject({ orderForm: true, cart: false });
+        // A setting that is not a feature changes nothing
+        expect(service.setFeatures({ evil: true, cart: 'yes' }).publicInfo.features).toEqual({ ...FEATURES, cart: false, whatsappOrder: false });
+        const html = service.previewTheme({ page: 'product', id: 'jean' }).html;
+        expect(html).not.toContain('name="action" value="add"');
+        expect(html).toContain('class="quick-order"');
     });
 
     it('the Website screen gets a plain message when the check stops the preview', () => {

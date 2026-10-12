@@ -95,6 +95,39 @@ describe('the order queue, end to end (the real Worker on a fake Cloudflare, AFU
         expect(o.orders[0]).toMatchObject({ customerName: 'Amina Benali', status: 'new', items: [{ productId: 'jean', quantity: 1 }] });
     });
 
+    it('the form on an article\'s page: full name, phone, wilaya, commune, home + address or office; checked again by the API, then in SQLite like any order', async () => {
+        const product = (extra = {}) => ({
+            source: 'product', items, product_id: 'jean', product_name: 'Jean', customer_name: 'Amina Benali Kaci', phone: '0661 22 33 44',
+            wilaya: '16 - Alger', commune: 'Kouba', delivery: 'home', address: 'Rue 5, Kouba', website: '', ...extra,
+        });
+        // Wrong: refused by the API itself (whatever the page did), nothing waits in D1
+        for (const bad of [{ customer_name: 'A' }, { phone: '0861223344' }, { wilaya: 'Alger' }, { commune: '' }, { delivery: '' }, { address: '' }, { website: 'bot' }]) {
+            const r = await post(product({ ...bad, order_key: `k-bad-${Object.keys(bad)[0]}-0000000000` }));
+            expect(r.status).toBe(303);
+            expect(r.headers.get('location'), JSON.stringify(bad)).toMatch(/order-error\.html$/);
+        }
+        expect(waitingInD1()).toBe(0);
+        // Right: home with the address; back to the thanks page without emptying the cart
+        const home = await post(product({ order_key: 'k-product-home-000001' }));
+        expect(home.headers.get('location')).toMatch(/thanks\.html$/);
+        // Courier office: no address asked (the office is settled when the shop calls)
+        const office = await post(product({ order_key: 'k-product-office-0001', customer_name: 'Yacine Haddad', delivery: 'office', address: '' }));
+        expect(office.headers.get('location')).toMatch(/thanks\.html$/);
+        // Sent twice (double press): still one order
+        await post(product({ order_key: 'k-product-office-0001', customer_name: 'Yacine Haddad', delivery: 'office', address: '' }));
+        expect(waitingInD1()).toBe(2);
+        await sync();
+        expect(inSqlite()).toBe(2);
+        const rows = api.all('SELECT customer_name, first_name, last_name, phone, wilaya, commune, delivery, address, office_wilaya, office_commune FROM website_orders ORDER BY customer_name');
+        expect(rows).toEqual([
+            { customer_name: 'Amina Benali Kaci', first_name: 'Amina', last_name: 'Benali Kaci', phone: '0661223344', wilaya: '16 - Alger', commune: 'Kouba', delivery: 'home', address: 'Rue 5, Kouba', office_wilaya: '', office_commune: '' },
+            { customer_name: 'Yacine Haddad', first_name: 'Yacine', last_name: 'Haddad', phone: '0661223344', wilaya: '16 - Alger', commune: 'Kouba', delivery: 'office', address: '', office_wilaya: '16 - Alger', office_commune: 'Kouba' },
+        ]);
+        // The chosen size and colour came with the order
+        const o = await service.orders();
+        expect(o.orders.find(x => x.customerName === 'Amina Benali Kaci').items).toEqual([expect.objectContaining({ productId: 'jean', size: '40', color: 'Noir', quantity: 1 })]);
+    });
+
     it('AFUS offline (closed): orders wait in D1; when it comes back it takes them all, page by page, then D1 is empty', async () => {
         for (let i = 0; i < 3; i++) expect((await post(checkout({ order_key: `k-offline-00000000000${i}`, first_name: `Client${i}` }))).status).toBe(303);
         // Many more waiting (as after days closed): written straight into D1

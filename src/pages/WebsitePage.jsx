@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Globe, Github, Cloud, Copy, RefreshCw, Palette, CheckCircle2, Circle, Sparkles, Package, Tag, Image as ImageIcon, Shirt, PackageCheck, X,
-    XCircle, Clock, Loader2, ShoppingBag, Store, Users, Undo2, Printer, PhoneCall, FileDown,
+    XCircle, Clock, Loader2, ShoppingBag, Store, Users, Undo2, Printer, PhoneCall, FileDown, SlidersHorizontal,
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -500,6 +500,9 @@ function WebsiteDashboard({ site, setSite, preview, busy, run }) {
 
             {/* What the website says about the shop beyond its settings: hours, social pages, map */}
             <PublicInfoCard site={site} busy={busy} run={run} />
+
+            {/* What the website offers: order form, WhatsApp, cart, deliveries, note, trust strip */}
+            <FeaturesCard site={site} busy={busy} run={run} />
 
             {/* Order requests customers sent from the website */}
             {site.hasOrders && <WebsiteOrders />}
@@ -1652,6 +1655,45 @@ function ShippingLabel({ order, onClose }) {
  * (kept with the website, not in the shop's settings). The shop's name,
  * phone, address and logo come from Settings.
  */
+/** The website's features, one switch each, saved at once (on the website at the next update). */
+const FEATURE_KEYS = [
+    ['orderForm', 'website.features.orderForm'], ['whatsappOrder', 'website.features.whatsappOrder'], ['cart', 'website.features.cart'],
+    ['homeDelivery', 'website.features.homeDelivery'], ['officeDelivery', 'website.features.officeDelivery'],
+    ['noteField', 'website.features.noteField'], ['trustBar', 'website.features.trustBar'],
+];
+function FeaturesCard({ site, busy, run }) {
+    const { t } = useT();
+    const f = site.publicInfo?.features || {};
+    const toggle = (key, on) => run(`feature-${key}`, () => window.electronAPI.website.setFeatures({ [key]: on }), (next) => {
+        const now = next?.publicInfo?.features || {};
+        // A switch the program kept on (always a way to order and to deliver)
+        if (now[key] !== on) toast.error(t('website.features.keptOn'), 6000);
+        else toast.success(t('website.info.saved'));
+    });
+    return (
+        <section className="card space-y-3" data-testid="website-features">
+            <h2 className="font-semibold flex items-center gap-2"><SlidersHorizontal className="w-4 h-4 text-indigo-300" /> {t('website.features.title')}</h2>
+            <p className="text-xs text-zinc-500 leading-relaxed">{t('website.features.hint')}</p>
+            <ul className="divide-y divide-white/5">
+                {FEATURE_KEYS.map(([key, label]) => (
+                    <li key={key} className="flex items-start justify-between gap-4 py-2.5">
+                        <span className="min-w-0">
+                            <span className="block text-sm">{t(label)}</span>
+                            <span className="block text-xs text-zinc-500 leading-relaxed">{t(`${label}Hint`)}</span>
+                        </span>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                            <input type="checkbox" className="sr-only peer" checked={f[key] !== false} disabled={busy === `feature-${key}`}
+                                onChange={(e) => toggle(key, e.target.checked)} data-testid={`website-feature-${key}`} aria-label={t(label)} />
+                            <span className="w-10 h-6 rounded-full bg-zinc-700 peer-checked:bg-indigo-500 transition-colors" />
+                            <span className="absolute top-1 start-1 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-4 rtl:peer-checked:-translate-x-4" />
+                        </label>
+                    </li>
+                ))}
+            </ul>
+        </section>
+    );
+}
+
 function PublicInfoCard({ site, busy, run }) {
     const { t } = useT();
     const saved = site.publicInfo || { hours: [], social: {}, mapUrl: '' };

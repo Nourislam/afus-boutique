@@ -31,7 +31,8 @@ const SCRIPT = 'assets/store.js';
 
 /** The few words the website's script writes (cart messages). */
 const SCRIPT_TEXTS = ['added', 'chooseFirst', 'notThisOne', 'viewCart', 'remove', 'cartEmpty', 'maxQty',
-    'errName', 'errPhone', 'errWilaya', 'errCommune', 'errAddress', 'errCourier', 'errOffice', 'errForm'];
+    'errName', 'errPhone', 'errWilaya', 'errCommune', 'errAddress', 'errCourier', 'errOffice', 'errForm',
+    'errFullName', 'fullName', 'yourPhone', 'wilaya', 'commune', 'addressField', 'waColor', 'waSize', 'waQty', 'waDelivery', 'deliveryHome', 'deliveryOffice', 'orderText'];
 const scriptTexts = (t) => Object.fromEntries(SCRIPT_TEXTS.map(k => [k, t(k)]));
 
 /** Where each page lives on the published website (all in one folder). */

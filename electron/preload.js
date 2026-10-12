@@ -132,6 +132,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         publish: () => ipcRenderer.invoke('website:publish'),
         // Opening hours, social pages, map link (shown on the website only)
         setPublicInfo: (info) => ipcRenderer.invoke('website:setPublicInfo', info),
+        setFeatures: (features) => ipcRenderer.invoke('website:setFeatures', features),
         recheck: () => ipcRenderer.invoke('website:recheck'),
         // Changes in the shop the website does not show yet (read only)
         changes: () => ipcRenderer.invoke('website:changes'),

@@ -23,6 +23,7 @@ const state = require('./websiteState');
 const providers = require('./providers');
 const { summarize } = require('./catalogSnapshot');
 const { buildPublicData, checkSiteFiles, publicInfo } = require('./publicData');
+const { FEATURES } = require('./publicData/public');
 const { registry } = require('./themes/registry');
 const { renderPage } = require('./storefront/render');
 const { STORE_PAGES } = require('./storefront/pages');
@@ -561,11 +562,26 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
      */
     function setPublicInfo(info = {}) {
         const s = mustExist(read());
-        const clean = publicInfo(info);
+        // The features have their own card: kept as they are
+        const clean = publicInfo({ features: s.publicInfo?.features, ...info });
         write({ ...s, publicInfo: clean });
         const refused = ['facebook', 'instagram', 'tiktok'].filter(k => String(info.social?.[k] || '').trim() && !clean.social[k]);
         if (String(info.mapUrl || '').trim() && !clean.mapUrl) refused.push('mapUrl');
         return { ...view(), result: { refused } };
+    }
+
+    /**
+     * What the website offers (Website screen › Features): the order form on
+     * the article's page, WhatsApp, the cart, home / courier office delivery,
+     * the note, the trust strip. On the website at the next update.
+     */
+    function setFeatures(features = {}) {
+        const s = mustExist(read());
+        // Only true / false of known switches; anything else leaves the saved value as it is
+        const asked = Object.fromEntries(Object.entries(features || {}).filter(([k, v]) => k in FEATURES && typeof v === 'boolean'));
+        const clean = publicInfo({ ...s.publicInfo, features: { ...s.publicInfo?.features, ...asked } });
+        write({ ...s, publicInfo: clean });
+        return view();
     }
 
     /**
@@ -841,7 +857,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
-        publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, changes,
+        publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, setFeatures, changes,
         domainCheck, domainRetry, domainSearch, domainOpenBuy, domainHostingerLink, domainHostingerForget, domainHostingerSetup, domainCheckIfDue: () => domains.checkIfDue(),
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,

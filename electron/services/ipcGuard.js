@@ -151,6 +151,7 @@ const RULES = {
     'website:connect': 'admin',
     'website:publish': 'admin',
     'website:setPublicInfo': 'admin',
+    'website:setFeatures': 'admin',
     'website:recheck': 'admin',
     'website:changes': 'admin',
     'website:orders': 'admin',

@@ -127,8 +127,9 @@ describe('Create Website on the shop\'s own GitHub and Cloudflare (simulated, th
         expect(all).not.toContain(store.get('website-key'));
         const product = files.get('product-jean.html').toString();
         const orderUrl = `${cloud.base}/w/boutique-yasmine-api/api/orders`;
-        // Orders go through the cart and checkout (no order form on the article page)
-        expect(product).not.toContain(`action="${orderUrl}"`);
+        // The article's own order form goes to the shop's API too (marked as coming from the article)
+        expect(product).toContain(`action="${orderUrl}"`);
+        expect(product).toContain('<input type="hidden" name="source" value="product">');
         expect(product).toContain(`form-action ${cloud.base}`);
         // One script, the website's own file; the cart's checkout sends to the shop's API too
         expect([...product.matchAll(/<script[^>]*>/g)].map(m => m[0])).toEqual(['<script src="assets/store.js" defer>']);

@@ -67,6 +67,7 @@ const SECTION_TYPES = {
     trust: {
         options: { style: e(['strip', 'cards'], 'strip') },
         render(ctx, o) {
+            if (!C.featuresOf(ctx).trustBar) return '';
             return `<section class="trust-section trust-${o.style}"><div class="container">${C.trustList(ctx, 'trust-row')}</div></section>`;
         },
     },

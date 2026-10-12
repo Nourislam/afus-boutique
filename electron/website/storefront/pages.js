@@ -9,7 +9,6 @@
  */
 const { esc, html, phoneDigits, phoneHtml } = require('./html');
 const C = require('./components');
-const { WILAYAS, wilayaLabel } = require('./wilayas');
 
 const byNewest = (list) => [...list].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 
@@ -112,17 +111,8 @@ function cartPage(ctx) {
  */
 function checkoutPage(ctx) {
     const off = ctx.orderUrl ? '' : ' disabled';
-    const shopWilaya = ctx.snap.shop.wilaya || '';
-    const wilayas = (name) => `<select name="${name}" required${off}><option value="">${esc(ctx.t('chooseWilaya'))}</option>${WILAYAS.map(w => {
-        const text = wilayaLabel(w, ctx.lang);
-        const chosen = name === 'wilaya' && shopWilaya && (w[1] === shopWilaya || w[2].toLowerCase() === shopWilaya.toLowerCase());
-        return `<option value="${esc(text)}"${chosen ? ' selected' : ''}>${esc(text)}</option>`;
-    }).join('')}</select>`;
-    const err = (name) => `<small class="ferr" data-err-for="${name}" hidden></small>`;
-    const field = (name, label, input, wide = false) => `<label class="field${wide ? ' field-wide' : ''}" data-field="${name}"><span>${esc(label)}</span>${input}${err(name)}</label>`;
-    const text = (name, { min = 2, max = 60, auto = '', extra = '' } = {}) => `<input name="${name}" required minlength="${min}" maxlength="${max}"${auto ? ` autocomplete="${auto}"` : ''}${extra}${off}>`;
+    const { wilayas, field, text, phone, deliveries, home, office, features } = C.formParts(ctx, off);
     const couriers = ctx.snap.shop.couriers || [];
-    const choice = (value, title, sub, checked) => `<label class="dchoice"><input type="radio" name="delivery" value="${value}"${checked ? ' checked' : ''}${off}><span><strong>${esc(title)}</strong><small>${esc(sub)}</small></span></label>`;
     return html(
         pageHead(ctx, ctx.t('checkout'), ctx.t('codOnly')),
         `<main class="container section checkout" data-checkout>`,
@@ -133,19 +123,14 @@ function checkoutPage(ctx) {
         `<fieldset class="co-block"><legend class="co-title"><b>1</b>${esc(ctx.t('yourDetails'))}</legend><div class="fields">`,
         field('first_name', ctx.t('firstName'), text('first_name', { max: 40, auto: 'given-name' })),
         field('last_name', ctx.t('lastName'), text('last_name', { max: 40, auto: 'family-name' })),
-        field('phone', ctx.t('yourPhone'), `<input name="phone" type="tel" inputmode="tel" required maxlength="20" autocomplete="tel" dir="ltr" placeholder="${esc(ctx.t('phoneHint'))}"${off}>`, true),
+        field('phone', ctx.t('yourPhone'), phone(), true),
         field('wilaya', ctx.t('wilaya'), wilayas('wilaya')),
         field('commune', ctx.t('commune'), text('commune', { auto: 'address-level2' })),
         `</div></fieldset>`,
         `<fieldset class="co-block"><legend class="co-title"><b>2</b>${esc(ctx.t('delivery'))}</legend>`,
-        `<div class="dchoices">`,
-        choice('home', ctx.t('deliveryHome'), ctx.t('deliveryHomeSub'), true),
-        couriers.length ? choice('office', ctx.t('deliveryOffice'), ctx.t('deliveryOfficeSub'), false) : '',
-        `</div>`,
-        `<div class="fields" data-when="home">`,
-        field('address', ctx.t('addressField'), text('address', { min: 3, max: 200, auto: 'street-address' }), true),
-        `</div>`,
-        couriers.length ? html(
+        deliveries,
+        home && `<div class="fields" data-when="home">${field('address', ctx.t('addressField'), text('address', { min: 3, max: 200, auto: 'street-address' }), true)}</div>`,
+        office ? html(
             `<div class="fields" data-when="office">`,
             field('courier_company', ctx.t('courierCompany'), `<select name="courier_company" required${off}><option value="">${esc(ctx.t('chooseCourier'))}</option>${couriers.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>`, true),
             field('office_wilaya', ctx.t('officeWilaya'), wilayas('office_wilaya')),
@@ -154,7 +139,7 @@ function checkoutPage(ctx) {
             `</div>`,
         ) : '',
         `</fieldset>`,
-        `<fieldset class="co-block"><div class="fields">${field('note', ctx.t('note'), `<textarea name="note" rows="2" maxlength="500"${off}></textarea>`, true)}</div></fieldset>`,
+        features.noteField && `<fieldset class="co-block"><div class="fields">${field('note', ctx.t('note'), `<textarea name="note" rows="2" maxlength="500"${off}></textarea>`, true)}</div></fieldset>`,
         `</div>`,
         `<aside class="cart-total summary" data-summary><h2 class="co-title"><b>3</b>${esc(ctx.t('orderSummary'))}</h2><div data-summary-lines></div>`,
         `<p class="sum-row"><span>${esc(ctx.t('subtotal'))}</span><span data-cart-sum></span></p>`,

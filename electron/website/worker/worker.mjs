@@ -173,6 +173,26 @@ function readOrder(fields) {
     }
     order.delivery = DELIVERY.includes(fields.delivery) ? fields.delivery : '';
     if (!order.product_id) return { error: 'product' };
+    // The form on an article's page: the full name in one field, an Algerian
+    // phone, wilaya and commune, home (with the address) or a courier office
+    // (which one is settled when the shop calls to confirm)
+    if (fields.source === 'product') {
+        if (order.customer_name.length < 3) return { error: 'name' };
+        const words = order.customer_name.split(/\s+/);
+        order.first_name = words[0].slice(0, LIMITS.first_name);
+        order.last_name = words.slice(1).join(' ').slice(0, LIMITS.last_name);
+        if (!wilayaCode(order.wilaya) || order.commune.length < 2) return { error: 'place' };
+        if (!['home', 'office'].includes(order.delivery)) return { error: 'delivery' };
+        if (order.delivery === 'home' && order.address.length < 3) return { error: 'address' };
+        if (order.delivery === 'office') { order.office_wilaya = order.wilaya; order.office_commune = order.office_commune || order.commune; order.courier_office = ''; }
+        if (order.delivery !== 'home') order.address = '';
+        if (order.delivery !== 'office') { order.courier_company = ''; order.office_wilaya = ''; order.office_commune = ''; order.courier_office = ''; }
+        const phone = algerianPhone(order.phone);
+        if (!phone) return { error: 'phone' };
+        order.phone = phone;
+        order.source = 'product';
+        return { order };
+    }
     // The checkout: first and last name, an Algerian phone, wilaya and commune,
     // and what the chosen delivery needs (older forms send one name)
     const checkout = !!(order.first_name || order.last_name);
@@ -206,7 +226,8 @@ async function createOrder(request, env) {
     }
     const { order, error } = readOrder(fields || {});
     if (error) return isForm ? backTo(env, 'order-error.html') : json(env, 400, { ok: false, error });
-    const done = (id, status) => (isForm ? backTo(env, order.items.length ? 'thanks.html?cart=1' : 'thanks.html') : json(env, status, { ok: true, id, duplicate: status === 200 }));
+    // Back to the thanks page; "cart=1" empties the cart (only an order of the cart does)
+    const done = (id, status) => (isForm ? backTo(env, order.items.length && order.source !== 'product' ? 'thanks.html?cart=1' : 'thanks.html') : json(env, status, { ok: true, id, duplicate: status === 200 }));
 
     // The same order sent again (double press, retry): the same answer, no second order
     const key = ORDER_KEY.test(String(fields.order_key || '')) ? String(fields.order_key) : null;

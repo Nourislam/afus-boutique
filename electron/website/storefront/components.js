@@ -5,6 +5,38 @@
  * ctx: { snap, theme, lang, t, link(kind, id), img(path), preview }
  */
 const { esc, html, money, moneyHtml, phoneHtml, safeColor, phoneDigits, placeholder } = require('./html');
+const { WILAYAS, wilayaLabel } = require('./wilayas');
+const { features: resolveFeatures } = require('../publicData/public');
+
+/** What the owner turned on for the website (Website screen › Features). */
+const featuresOf = (ctx) => resolveFeatures(ctx.snap.shop.features);
+
+/**
+ * The pieces of an order form, the same for the checkout and the form on an
+ * article's page: the 58 wilayas (the shop's own first), a field with its
+ * message (filled by assets/store.js), a text input.
+ */
+function formParts(ctx, off) {
+    const shopWilaya = ctx.snap.shop.wilaya || '';
+    const wilayas = (name) => `<select name="${name}" required${off}><option value="">${esc(ctx.t('chooseWilaya'))}</option>${WILAYAS.map(w => {
+        const text = wilayaLabel(w, ctx.lang);
+        const chosen = name === 'wilaya' && shopWilaya && (w[1] === shopWilaya || w[2].toLowerCase() === shopWilaya.toLowerCase());
+        return `<option value="${esc(text)}"${chosen ? ' selected' : ''}>${esc(text)}</option>`;
+    }).join('')}</select>`;
+    const err = (name) => `<small class="ferr" data-err-for="${name}" hidden></small>`;
+    const field = (name, label, input, wide = false) => `<label class="field${wide ? ' field-wide' : ''}" data-field="${name}"><span>${esc(label)}</span>${input}${err(name)}</label>`;
+    const text = (name, { min = 2, max = 60, auto = '', extra = '' } = {}) => `<input name="${name}" required minlength="${min}" maxlength="${max}"${auto ? ` autocomplete="${auto}"` : ''}${extra}${off}>`;
+    const phone = () => `<input name="phone" type="tel" inputmode="tel" required maxlength="20" autocomplete="tel" dir="ltr" placeholder="${esc(ctx.t('phoneHint'))}"${off}>`;
+    const choice = (value, title, sub, checked) => `<label class="dchoice"><input type="radio" name="delivery" value="${value}"${checked ? ' checked' : ''}${off}><span><strong>${esc(title)}</strong><small>${esc(sub)}</small></span></label>`;
+    // The ways of delivery the owner offers (a courier office needs a courier company)
+    const f = featuresOf(ctx);
+    const home = f.homeDelivery;
+    const office = f.officeDelivery && (ctx.snap.shop.couriers || []).length > 0;
+    const deliveries = home && office
+        ? `<div class="dchoices">${choice('home', ctx.t('deliveryHome'), ctx.t('deliveryHomeSub'), true)}${choice('office', ctx.t('deliveryOffice'), ctx.t('deliveryOfficeSub'), false)}</div>`
+        : `<input type="hidden" name="delivery" value="${home ? 'home' : 'office'}"${off}><p class="donly"><strong>${esc(ctx.t(home ? 'deliveryHome' : 'deliveryOffice'))}</strong> · ${esc(ctx.t(home ? 'deliveryHomeSub' : 'deliveryOfficeSub'))}</p>`;
+    return { wilayas, err, field, text, phone, deliveries, home, office, features: f };
+}
 
 const priceOf = (ctx, p) => money(p, ctx.lang, ctx.snap.shop.currency);
 const priceHtml = (ctx, p) => moneyHtml(p, ctx.lang, ctx.snap.shop.currency);
@@ -120,9 +152,11 @@ const ICONS = {
  */
 function trustList(ctx, cls = '') {
     const item = (icon, title, sub) => `<li>${ICONS[icon]}<span><b>${esc(ctx.t(title))}</b><small>${esc(ctx.t(sub))}</small></span></li>`;
-    // A courier office only when the shop works with courier companies (as at checkout)
-    const office = (ctx.snap.shop.couriers || []).length > 0;
-    return `<ul class="trust ${cls}">${item('cash', 'trustCod', 'trustCodSub')}${item('truck', 'trustDelivery', office ? 'trustDeliverySub' : 'deliveryHomeSub')}${item('check', 'trustCall', 'trustCallSub')}</ul>`;
+    // The ways of delivery really offered (the same as the order forms)
+    const f = featuresOf(ctx);
+    const office = f.officeDelivery && (ctx.snap.shop.couriers || []).length > 0;
+    const sub = f.homeDelivery && office ? 'trustDeliverySub' : f.homeDelivery ? 'deliveryHomeSub' : 'deliveryOfficeSub';
+    return `<ul class="trust ${cls}">${item('cash', 'trustCod', 'trustCodSub')}${item('truck', 'trustDelivery', sub)}${item('check', 'trustCall', 'trustCallSub')}</ul>`;
 }
 
 /** The cart link with its count (filled in by the website's script). */
@@ -136,7 +170,7 @@ function bottomBar(ctx) {
         item(ctx.link('home'), ICONS.home, ctx.t('home'), 'home'),
         item(ctx.link('page', 'categories'), ICONS.grid, ctx.t('categories'), 'page:categories'),
         item(ctx.link('page', 'search'), ICONS.search, ctx.t('search'), 'page:search'),
-        item(ctx.link('page', 'cart'), ICONS.cart, ctx.t('cart'), 'page:cart', '<span class="cart-count" data-cart-count hidden>0</span>'),
+        featuresOf(ctx).cart && item(ctx.link('page', 'cart'), ICONS.cart, ctx.t('cart'), 'page:cart', '<span class="cart-count" data-cart-count hidden>0</span>'),
         item(ctx.link('page', 'contact'), ICONS.phone, ctx.t('contact'), 'page:contact'),
         `</nav>`,
     );
@@ -166,7 +200,7 @@ function header(ctx) {
         h.search && `<form class="hdr-search" action="${esc(ctx.link('page', 'search'))}" method="get" role="search"><input type="search" name="q" placeholder="${esc(ctx.t('searchPlaceholder'))}" aria-label="${esc(ctx.t('search'))}"><button type="submit" aria-label="${esc(ctx.t('search'))}">${ICONS.search}</button></form>`,
         !h.search && `<a class="hdr-icon" href="${esc(ctx.link('page', 'search'))}" aria-label="${esc(ctx.t('search'))}">${ICONS.search}</a>`,
         phone && `<a class="hdr-phone" href="${esc(ctx.preview ? '#' : `tel:+${phone}`)}">${phoneHtml(shop.phone)}</a>`,
-        cartLink(ctx),
+        featuresOf(ctx).cart && cartLink(ctx),
         `</div></div>`,
         h.nav === 'tabs' && `<nav class="nav-tabs container" aria-label="${esc(ctx.t('categories'))}">${links}</nav>`,
         `</header>`,
@@ -198,20 +232,55 @@ function footer(ctx) {
         `<footer class="site-footer ftr-${ctx.theme.footer.style}"><div class="container ftr-grid">`,
         `<div><strong class="ftr-name">${esc(shop.name)}</strong>${shop.description ? `<p>${esc(shop.description)}</p>` : ''}</div>`,
         cats && `<div class="ftr-nav"><strong>${esc(ctx.t('categories'))}</strong><div class="ftr-links">${cats}</div></div>`,
-        `<div class="ftr-nav"><strong>${esc(ctx.t('products'))}</strong><div class="ftr-links">${[...navItems(ctx).filter(i => i.page !== 'home'), { href: ctx.link('page', 'location'), label: ctx.t('location') }, { href: ctx.link('page', 'cart'), label: ctx.t('cart') }].map(i => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('')}</div></div>`,
+        `<div class="ftr-nav"><strong>${esc(ctx.t('products'))}</strong><div class="ftr-links">${[...navItems(ctx).filter(i => i.page !== 'home'), { href: ctx.link('page', 'location'), label: ctx.t('location') }, ...(featuresOf(ctx).cart ? [{ href: ctx.link('page', 'cart'), label: ctx.t('cart') }] : [])].map(i => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('')}</div></div>`,
         (shop.phone || where || shop.email || shop.mapUrl) && `<div><strong>${esc(ctx.t('contact'))}</strong>${shop.phone ? `<p>${phoneHtml(shop.phone)}</p>` : ''}${shop.email ? `<p>${esc(shop.email)}</p>` : ''}${where ? `<p>${esc(where)}</p>` : ''}${extras.map ? `<p>${extras.map}</p>` : ''}</div>`,
         (extras.hours || extras.social) && `<div>${extras.hours}${extras.social}</div>`,
         `</div><div class="container ftr-bottom">© ${year} ${esc(shop.name)} · ${esc(ctx.t('rights'))}</div></footer>`,
     );
 }
 
-/** A question before ordering: one quiet WhatsApp link (the order itself is the button above). */
-function askLink(ctx, p) {
+/** "Order on WhatsApp": the shop's chat, the article written in (the script adds the choice and the details). */
+function whatsappOrder(ctx, p) {
     const phone = phoneDigits(ctx.snap.shop.phone);
-    if (!phone) return '';
+    if (!phone || !featuresOf(ctx).whatsappOrder) return '';
     const text = `${ctx.t('orderText')} ${p.name} (${priceOf(ctx, onSale(p) ? p.salePrice : p.price)})`;
     const wa = ctx.preview ? '#' : `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-    return `<a class="ask-link" href="${esc(wa)}"${ctx.preview ? '' : ' rel="noopener" target="_blank"'}>${ICONS.chat}<span>${esc(ctx.t('askWhatsapp'))}</span></a>`;
+    return `<a class="btn btn-whatsapp btn-block" href="${esc(wa)}" data-wa="${esc(phone)}"${ctx.preview ? '' : ' rel="noopener" target="_blank"'}>${ICONS.chat}<span>${esc(ctx.t('orderWhatsapp'))}</span></a>`;
+}
+
+/**
+ * Order this article from its page (pay on delivery): full name, phone,
+ * wilaya, commune, home (then the address) or a courier office; "Order now",
+ * then "Order on WhatsApp". Sent to the shop's own API like the checkout
+ * (same checks there); the colour, size and quantity come from the choice
+ * above (assets/store.js). Nothing is paid and no stock moves here.
+ */
+function orderForm(ctx, p) {
+    const f = featuresOf(ctx);
+    if (!f.orderForm) return whatsappOrder(ctx, p);
+    const off = ctx.orderUrl ? '' : ' disabled';
+    const { wilayas, field, text, phone, deliveries, home } = formParts(ctx, off);
+    return html(
+        `<form class="quick-order" id="order" method="post" novalidate${ctx.orderUrl ? ` action="${esc(ctx.orderUrl)}"` : ''} accept-charset="utf-8" data-quick-order data-price="${onSale(p) ? p.salePrice : p.price}">`,
+        `<input type="hidden" name="source" value="product"><input type="hidden" name="order_key" data-order-key value="">`,
+        `<input type="hidden" name="items" data-items value="[]"><input type="hidden" name="product_id" value="${esc(p.id)}"><input type="hidden" name="product_name" value="${esc(p.name)}">`,
+        `<label class="hp" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>`,
+        `<div class="qo-head"><h2 class="qo-title">${esc(ctx.t('orderFormTitle'))}</h2><p class="qo-sub">${esc(ctx.t('orderFormSub'))}</p></div>`,
+        `<div class="fields">`,
+        field('customer_name', ctx.t('fullName'), text('customer_name', { min: 3, max: 80, auto: 'name' }), true),
+        field('phone', ctx.t('yourPhone'), phone(), true),
+        field('wilaya', ctx.t('wilaya'), wilayas('wilaya')),
+        field('commune', ctx.t('commune'), text('commune', { auto: 'address-level2' })),
+        `</div>`,
+        deliveries,
+        home && `<div class="fields" data-when="home">${field('address', ctx.t('addressField'), text('address', { min: 3, max: 200, auto: 'street-address' }), true)}</div>`,
+        f.noteField && `<div class="fields">${field('note', ctx.t('noteOptional'), `<textarea name="note" rows="2" maxlength="500"${off}></textarea>`, true)}</div>`,
+        `<p class="form-msg is-bad" data-form-msg role="alert" hidden></p>`,
+        `<button class="btn btn-primary btn-block btn-order" type="submit" data-confirm${off}><span>${esc(ctx.t('orderNow'))}</span><small>${esc(ctx.t('trustCod'))}</small></button>`,
+        whatsappOrder(ctx, p),
+        `<noscript><p class="hint">${esc(ctx.t('noScriptOrder'))}</p></noscript>`,
+        `</form>`,
+    );
 }
 
 /** After an order request: thanks, or why it was not sent. */
@@ -221,7 +290,7 @@ function messagePage(ctx, kind) {
 }
 
 /**
- * Choose the colour and the size, then Add to cart / Buy now. Plain radio
+ * Choose the colour and the size, then Add to cart (or the order form under it). Plain radio
  * buttons (they work without script); the website's script keeps the cart
  * and greys the sizes not available in the chosen colour (data-variants).
  */
@@ -239,8 +308,6 @@ function addToCart(ctx, p, colors, sizes) {
         sizes.map(s => `<label class="pick pick-size${s.available ? '' : ' is-out'}"><input type="radio" name="size" value="${esc(s.name)}"${s.available ? '' : ' disabled'}${sizes.filter(x => x.available).length === 1 && s.available ? ' checked' : ''}><span class="size">${esc(s.name)}</span></label>`),
         `</div></fieldset>`,
     );
-    // Pay on delivery: "Order now" is the one big button (straight to the short
-    // order form); the cart is there for buyers who take several pieces
     return html(
         `<form class="add-form" data-add-form data-id="${esc(p.id)}" data-variants="${esc(JSON.stringify(variants))}" data-has-colors="${colors.length ? 1 : 0}" data-has-sizes="${sizes.length ? 1 : 0}">`,
         colorChoice, sizeChoice,
@@ -248,9 +315,8 @@ function addToCart(ctx, p, colors, sizes) {
         `<button type="button" data-step="-1" aria-label="-"${off}>−</button>`,
         `<input type="number" name="qty" min="1" max="20" value="1" inputmode="numeric" aria-label="${esc(ctx.t('quantityShort'))}"${off}>`,
         `<button type="button" data-step="1" aria-label="+"${off}>+</button></div></div>`,
-        `<div class="add-row">`,
-        `<button class="btn btn-primary btn-order" type="submit" name="action" value="buy" data-buy${off}><span>${esc(ctx.t('orderNow'))}</span><small>${esc(ctx.t('trustCod'))}</small></button>`,
-        `<button class="btn btn-ghost" type="submit" name="action" value="add"${off}>${esc(ctx.t('addToCart'))}</button></div>`,
+        // The cart for several pieces; one piece is ordered with the form under it
+        featuresOf(ctx).cart && `<div class="add-row"><button class="btn btn-ghost" type="submit" name="action" value="add" data-add${off}>${esc(ctx.t('addToCart'))}</button></div>`,
         `<p class="form-msg" data-form-msg role="status" aria-live="polite"></p>`,
         `<noscript><p class="hint">${esc(ctx.t('needScript'))}</p></noscript>`,
         `</form>`,
@@ -294,12 +360,12 @@ function productPage(ctx, p) {
         `<div class="pdp-price">${priceTag(ctx, p)}${onSale(p) ? ` <span class="badge badge-pill badge-sale">-${percentOff(p)}%</span>` : ''}</div>`,
         `<p class="stock ${p.available ? 'is-in' : 'is-out'}">${esc(p.available ? ctx.t('inStock') : ctx.t('soldOut'))}</p>`,
         p.available ? addToCart(ctx, p, colors, sizes) : html(colorBlock, sizeBlock),
-        p.available && trustList(ctx),
-        p.available && askLink(ctx, p),
+        p.available && orderForm(ctx, p),
+        p.available && featuresOf(ctx).trustBar && trustList(ctx),
         p.description && `<div class="pdp-desc">${esc(p.description).replace(/\n/g, '<br>')}</div>`,
         `</div></main>`,
         // Phones: once the button is out of sight, the price and "Order now" stay at the bottom
-        p.available && !ctx.preview && `<div class="buy-bar" data-buy-bar hidden><span class="bb-info"><span class="bb-name">${esc(p.name)}</span>${priceTag(ctx, p)}</span><button type="button" class="btn btn-primary" data-buy-now>${esc(ctx.t('orderNow'))}</button></div>`,
+        p.available && !ctx.preview && `<div class="buy-bar" data-buy-bar hidden><span class="bb-info"><span class="bb-name">${esc(p.name)}</span>${priceTag(ctx, p)}</span><button type="button" class="btn btn-primary" data-buy-now>${esc(ctx.t(featuresOf(ctx).orderForm ? 'orderNow' : 'addToCart'))}</button></div>`,
         related.length && `<section class="container section"><h2 class="section-title">${esc(ctx.t('related'))}</h2>${productGrid(ctx, related, { columns: Math.min(4, ctx.theme.categoryPage.desktopColumns) })}</section>`,
     );
 }
@@ -322,4 +388,4 @@ function categoryPage(ctx, id) {
     );
 }
 
-module.exports = { trustList, bottomBar, cartLink, ICONS, categoryName, shopExtras, messagePage, productCard, productGrid, header, footer, productPage, categoryPage, bestPromotion, onSale, optionsOf, navItems, priceOf };
+module.exports = { featuresOf, formParts, trustList, bottomBar, cartLink, ICONS, categoryName, shopExtras, messagePage, productCard, productGrid, header, footer, productPage, categoryPage, bestPromotion, onSale, optionsOf, navItems, priceOf };

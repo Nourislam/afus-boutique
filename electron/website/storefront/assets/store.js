@@ -147,6 +147,20 @@
             if (action === 'buy') { location.href = base + 'checkout.html'; return; }
             say(added === 'capped' ? texts.maxQty || '' : texts.added || '', added !== 'capped', { label: texts.viewCart || '', href: base + 'cart.html' });
         });
+        // The choice, for the order form under it: { ok, color, size, qty, price } or { ok: false, msg }
+        form.afusChoice = function () {
+            var texts = window.AFUS_TEXTS || {};
+            var color = chosen('color');
+            var size = chosen('size');
+            if ((hasColors && !color) || (hasSizes && !size)) return { ok: false, msg: texts.chooseFirst || '' };
+            if (variants.length && !available(color, size)) return { ok: false, msg: texts.notThisOne || '' };
+            var qtyInput = form.querySelector('input[name="qty"]');
+            var asked = parseInt(qtyInput && qtyInput.value, 10);
+            if (!(asked >= 1 && asked <= MAX_QTY)) return { ok: false, msg: texts.maxQty || '' };
+            var v = variants.filter(function (x) { return (x[0] || '') === color && (x[1] || '') === size; })[0];
+            return { ok: true, color: color, size: size, qty: asked, price: v && v[3] !== null && v[3] !== undefined ? v[3] : null };
+        };
+        form.afusSay = say;
         // Quantity: - and + around the number (the number can still be typed)
         form.querySelectorAll('[data-step]').forEach(function (b) {
             b.addEventListener('click', function () {
@@ -162,7 +176,8 @@
     /* Phones: once "Order now" is scrolled away, a bar at the bottom keeps the price and the button */
     function setupBuyBar(form) {
         var bar = document.querySelector('[data-buy-bar]');
-        var buy = form.querySelector('[data-buy]');
+        var order = document.querySelector('[data-quick-order]');
+        var buy = order || form.querySelector('[data-add]');
         if (!bar || !buy) return;
         // Only once the button is above the screen (the buyer read on), never before it.
         // Read on scroll, once per frame (a fast flick can jump over the button)
@@ -179,6 +194,13 @@
         }, { passive: true });
         place();
         bar.querySelector('[data-buy-now]').addEventListener('click', function () {
+            // The order form: back to it, the first field ready; no form: Add to cart
+            if (order) {
+                form.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                var first = order.querySelector('input:not([type=hidden]):not([tabindex="-1"])');
+                if (first) setTimeout(function () { first.focus({ preventScroll: true }); }, 400);
+                return;
+            }
             buy.scrollIntoView({ block: 'center', behavior: 'smooth' });
             if (form.requestSubmit) form.requestSubmit(buy); else buy.click();
         });
@@ -382,6 +404,7 @@
         return /^0[5-7]\d{8}$/.test(d) || /^0[1-49]\d{7}$/.test(d) ? d : '';
     }
     var CHECKS = {
+        customer_name: ['errFullName', function (v) { return v.length >= 3; }],
         first_name: ['errName', function (v) { return v.length >= 2; }],
         last_name: ['errName', function (v) { return v.length >= 2; }],
         phone: ['errPhone', function (v) { return !!algerianPhone(v); }],
@@ -394,16 +417,16 @@
         courier_office: ['errOffice', function (v) { return v.length >= 2; }],
     };
 
-    function setupCheckout(root) {
-        var form = root.querySelector('[data-checkout-form]');
-        if (!form) return;
-        var texts = window.AFUS_TEXTS || {};
-        var sending = false;
-        var tried = false;
+    /**
+     * The checks of an order form (the checkout, the form on an article's page):
+     * each field says what is wrong next to it; the fields of the delivery not
+     * chosen are off (not checked, not sent).
+     */
+    function orderChecks(form, texts) {
         var msg = form.querySelector('[data-form-msg]');
-
-        // Home delivery: the address; courier office: company, wilaya, commune, office
-        function delivery() { var c = form.querySelector('input[name="delivery"]:checked'); return c ? c.value : 'home'; }
+        var tried = false;
+        // Home delivery: the address; courier office: what the form asks for it
+        function delivery() { var d = form.elements.delivery; return (d && d.value) || 'home'; }
         var live = !(form.querySelector('[data-confirm]') || {}).disabled;
         function showDelivery() {
             if (!live) return;
@@ -431,6 +454,8 @@
             Object.keys(CHECKS).forEach(function (name) { if (!check(name) && !first) first = form.elements[name]; });
             return first;
         }
+        // After a first try: the message under the button goes once all is right
+        function recheck() { if (!checkAll() && msg) msg.hidden = true; }
         form.addEventListener('change', function (e) {
             if (e.target.name === 'delivery') showDelivery();
             // The office is usually in the customer's wilaya
@@ -438,9 +463,23 @@
             if (tried) recheck(); else if (e.target.name) check(e.target.name);
         });
         form.addEventListener('input', function (e) { if (tried && e.target.name) { check(e.target.name); recheck(); } });
-        // After a first try: the message under the button goes once all is right
-        function recheck() { if (!checkAll() && msg) msg.hidden = true; }
         showDelivery();
+        /** On sending: the first wrong field (and the message under the button), or null. */
+        function verify() {
+            tried = true;
+            var first = checkAll();
+            if (msg) { msg.textContent = first ? texts.errForm || '' : ''; msg.hidden = !first; }
+            return first;
+        }
+        return { verify: verify, delivery: delivery };
+    }
+
+    function setupCheckout(root) {
+        var form = root.querySelector('[data-checkout-form]');
+        if (!form) return;
+        var texts = window.AFUS_TEXTS || {};
+        var sending = false;
+        var checks = orderChecks(form, texts);
 
         // One key per order (kept until the thanks page): sent twice, it is still one order
         var keyField = form.querySelector('[data-order-key]');
@@ -467,19 +506,72 @@
         }).catch(function () { root.classList.add('is-empty'); });
 
         form.addEventListener('submit', function (e) {
-            tried = true;
-            var first = checkAll();
+            var first = checks.verify();
             if (sending || !ready || first) {
                 e.preventDefault();
-                if (first && msg) { msg.textContent = texts.errForm || ''; msg.hidden = false; }
                 if (first) first.focus();
                 return;
             }
-            if (msg) msg.hidden = true;
             sending = true;
             var button = form.querySelector('[data-confirm]');
             // Sent once (a second press would send a second order)
             if (button) setTimeout(function () { button.disabled = true; }, 0);
+        });
+    }
+
+    /*
+     * The order form on an article's page: the colour, size and quantity chosen
+     * above go with it (one line); "Order on WhatsApp" writes the same in the chat.
+     */
+    function setupQuickOrder(form) {
+        var texts = window.AFUS_TEXTS || {};
+        var add = document.querySelector('[data-add-form]');
+        var checks = orderChecks(form, texts);
+        var sending = false;
+        var keyField = form.querySelector('[data-order-key]');
+        if (keyField) keyField.value = orderKey();
+        function choice() { return add && add.afusChoice ? add.afusChoice() : { ok: true, color: '', size: '', qty: 1, price: null }; }
+        function value(name) { var f = form.elements[name]; return f && !f.disabled ? String(f.value || '').trim() : ''; }
+
+        form.addEventListener('submit', function (e) {
+            var c = choice();
+            if (!c.ok) {
+                e.preventDefault();
+                if (add && add.afusSay) add.afusSay(c.msg, false);
+                if (add) add.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                return;
+            }
+            var first = checks.verify();
+            if (sending || first) {
+                e.preventDefault();
+                if (first) first.focus();
+                return;
+            }
+            var price = c.price !== null ? c.price : Number(form.getAttribute('data-price'));
+            form.querySelector('[data-items]').value = JSON.stringify([{
+                product_id: form.elements.product_id.value, product_name: form.elements.product_name.value,
+                color: c.color || '', size: c.size || '', quantity: c.qty, unit_price: Number.isFinite(price) ? price : null,
+            }]);
+            sending = true;
+            var button = form.querySelector('[data-confirm]');
+            if (button) setTimeout(function () { button.disabled = true; }, 0);
+        });
+
+        // WhatsApp: the article, the choice and what is already filled in, in the message
+        var wa = form.querySelector('[data-wa]');
+        if (wa) wa.addEventListener('click', function () {
+            var c = choice();
+            var lines = [(texts.orderText || '') + ' ' + form.elements.product_name.value];
+            if (c.color) lines.push((texts.waColor || '') + ': ' + c.color);
+            if (c.size) lines.push((texts.waSize || '') + ': ' + c.size);
+            if (c.qty) lines.push((texts.waQty || '') + ': ' + c.qty);
+            [['customer_name', 'fullName'], ['phone', 'yourPhone'], ['wilaya', 'wilaya'], ['commune', 'commune'], ['address', 'addressField']].forEach(function (f) {
+                var v = value(f[0]);
+                if (v) lines.push((texts[f[1]] || f[1]) + ': ' + v);
+            });
+            var d = checks.delivery();
+            lines.push((texts.waDelivery || '') + ': ' + (texts[d === 'office' ? 'deliveryOffice' : 'deliveryHome'] || d));
+            wa.href = 'https://wa.me/' + wa.getAttribute('data-wa') + '?text=' + encodeURIComponent(lines.join('\n'));
         });
     }
 
@@ -503,10 +595,9 @@
 
     /* After the order: the cart is empty again (only when the cart was sent), a new key next time */
     function afterOrder() {
-        if (document.body.classList.contains('page-thanks') && new URLSearchParams(location.search).get('cart') === '1') {
-            writeCart([]);
-            try { sessionStorage.removeItem(ORDER_KEY); } catch { /* nothing kept */ }
-        }
+        if (!document.body.classList.contains('page-thanks')) return;
+        if (new URLSearchParams(location.search).get('cart') === '1') writeCart([]);
+        try { sessionStorage.removeItem(ORDER_KEY); } catch { /* nothing kept */ }
     }
 
     function start() {
@@ -515,6 +606,7 @@
         badges();
         document.querySelectorAll('[data-add-form]').forEach(setupAddForm);
         document.querySelectorAll('[data-gallery]').forEach(setupGallery);
+        document.querySelectorAll('[data-quick-order]').forEach(setupQuickOrder);
         document.querySelectorAll('[data-listing]').forEach(setupListing);
         document.querySelectorAll('[data-cart-page]').forEach(setupCart);
         document.querySelectorAll('[data-checkout]').forEach(setupCheckout);
