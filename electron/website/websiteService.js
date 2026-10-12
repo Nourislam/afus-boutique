@@ -455,6 +455,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             line: i.line, productId: i.product_id, productName: i.product_name, size: i.size, color: i.color,
             quantity: i.quantity, unitPrice: i.unit_price === null || i.unit_price === undefined ? null : Number(i.unit_price),
             reserved: Number(i.reserved_qty) || 0,
+            returnedSellable: Number(i.returned_sellable) || 0, returnedDamaged: Number(i.returned_damaged) || 0,
         }));
         const first = items[0] || {};
         // The price of a line the website sent without one: the article's own, now
@@ -464,6 +465,8 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             id: o.id, number: o.number || '', createdAt: o.received_at, status: o.status, statusAt: o.status_at || null, phoneKey: o.phone_key || '',
             total: Math.round(total * 100) / 100, reserved: !!o.reserved, labelPrintedAt: o.label_printed_at || null,
             editable: orderBook.EDITABLE.includes(o.status) && !o.sale_id,
+            // The steps it can take now; a returned parcel is checked before anything else
+            next: orderBook.nextStatuses(o), returnPending: o.status === 'returned' && !!o.reserved, returnCheckedAt: o.return_checked_at || null,
             moneyReceivedAt: o.money_received_at || null, receipt: o.receipt_number || null,
             productId: first.productId || '', productName: first.productName || '', size: first.size || '', color: first.color || '',
             quantity: items.reduce((n, i) => n + i.quantity, 0),
@@ -643,6 +646,14 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
         return orderView(one(id));
     }
 
+    /** The returned parcel is in the shop: its pieces checked (sellable back in stock, damaged kept out). */
+    function checkReturn({ id, lines } = {}) {
+        mustExist(read());
+        if (blockedMode()) throw codedError('WEBSITE_ACCOUNTS_BLOCKED');
+        one(id);
+        return { order: orderView(orderBook.checkReturn(api, { id, lines, employeeId: currentEmployee()?.id || null, codedError })) };
+    }
+
     /** The website's customers (one per phone), most recent first; search by name or phone. AFUS only. */
     function customers({ search = '' } = {}) {
         mustExist(read());
@@ -688,7 +699,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     return {
         view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
-        publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, setPublicInfo,
+        publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo,
         publishPending: () => deployer.pending(),
         cloudflareStart, cloudflareCancel, cloudflareChoose, cloudflareDisconnect, cloudflareCheck, cloudflareAccess,
         cloudflareFlowPage: () => cf.flowUrl(),

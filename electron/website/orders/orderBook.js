@@ -3,8 +3,13 @@
  * Cash on delivery: an order is not a sale while it is on its way.
  *
  *   new -> contacted -> confirmed -> preparing -> shipped -> delivered -> money_received
- *   cancelled (before it left) / returned (the parcel came back): never a sale;
- *   set back to New to take them again
+ *
+ * Only the steps of NEXT can be taken (a step can be skipped forward, a
+ * click by mistake set one step back); the money is received only once the
+ * parcel left (shipped or delivered); the parcel cannot be cancelled once
+ * it left (it is Returned when it comes back). Cancelled and Returned are
+ * never a sale; they are set back to New to take the order again (a
+ * returned parcel only once it was checked).
  *
  * The customer is recognised by the phone number (phone.js): every order of
  * one phone makes their history (customerStats / customerHistory). AFUS
@@ -14,7 +19,11 @@
  *   confirmed, preparing, shipped, delivered: the pieces are PUT ASIDE (out
  *     of the stock that can be sold, inventory log "website_reserve"), not
  *     sold: no sale, no figure counts them;
- *   back to new / contacted, cancelled, returned: they come back in stock;
+ *   back to new / contacted, cancelled: they come back in stock;
+ *   returned: the parcel is on its way back: the pieces stay out until the
+ *     shop has them in hand and checks them (checkReturn): the sellable ones
+ *     go back in stock ("website_return"), the damaged ones stay out, as a
+ *     damaged piece brought back at the till (returnService.js);
  *   money received: they are released and the sale takes them out (the
  *     same pieces, once: the stock does not move at that moment).
  * Before it is confirmed nothing moves (an order alone never touches stock).
@@ -22,15 +31,19 @@
  * Only "money_received" is a completed sale: at that moment AFUS records
  * the order as ONE ordinary sale (lines, stock out, payment "cod"), in the
  * same transaction as the status. From then on the order counts in the
- * shop's figures (best sellers, reports) through that sale only, so it can
- * never be counted twice: the order itself is never counted, an order has
- * one sale at most (unique index), and money_received cannot be set again.
- * To undo it later, the sale is returned at the till like any sale.
+ * shop's figures (revenue, reports, dashboard, best sellers, the
+ * customer's purchases) through that sale only, so it can never be counted
+ * twice: the order itself is never counted, an order has one sale at most
+ * (unique index), and money_received cannot be set again (a second click
+ * changes nothing). To undo it later, the sale is returned at the till like
+ * any sale.
  *
  *   importOrders(api, remote)      new orders from the website API (never
  *                                  changes an order already kept)
  *   listOrders(api, { limit })     newest first, with their lines
  *   setStatus(api, { id, status, employeeId, now })
+ *   nextStatuses(order)            the steps it can take now
+ *   checkReturn(api, { id, lines })  the returned parcel in hand, piece by piece
  *   updateDetails(api, { id, details, ... })   what the customer confirmed on
  *                                              the phone (lines, place, delivery)
  *   customerStats(api, { phones?, search?, limit? })   per phone
@@ -48,7 +61,23 @@ const STOPPED = ['cancelled', 'returned'];
 const RESERVING = ['confirmed', 'preparing', 'shipped', 'delivered'];
 // What the customer confirmed can still change (not on its way yet)
 const EDITABLE = ['new', 'contacted', 'confirmed', 'preparing'];
-const RELEASE_TYPE = { cancelled: 'website_cancel', returned: 'website_return', money_received: 'website_release' };
+const RELEASE_TYPE = { cancelled: 'website_cancel', money_received: 'website_release' };
+// The steps an order can take from each status: forward (a step may be
+// skipped), one back after a click by mistake; paid only once it left
+const NEXT = {
+    new: ['contacted', 'confirmed', 'preparing', 'shipped', 'delivered', 'cancelled'],
+    contacted: ['new', 'confirmed', 'preparing', 'shipped', 'delivered', 'cancelled'],
+    confirmed: ['new', 'contacted', 'preparing', 'shipped', 'delivered', 'cancelled'],
+    preparing: ['new', 'contacted', 'confirmed', 'shipped', 'delivered', 'cancelled'],
+    // On its way: paid, or the parcel comes back (never cancelled: the pieces are out of the shop)
+    shipped: ['preparing', 'delivered', 'money_received', 'returned'],
+    delivered: ['shipped', 'money_received', 'returned'],
+    money_received: [],
+    returned: ['new'],
+    cancelled: ['new'],
+};
+// A status kept by an older AFUS and no longer known: back to New or cancelled
+const NEXT_UNKNOWN = ['new', 'cancelled'];
 const DELIVERY = ['home', 'office', 'pickup'];
 const MAX_LINES = 30;
 
@@ -158,6 +187,8 @@ function saleLine(api, item, codedError) {
 
 /** The order becomes one completed AFUS sale (inside the caller's transaction). */
 function recordSale(api, order, { employeeId, now, codedError }) {
+    // Never a second sale for one order (whatever the order row says)
+    if (api.get('SELECT 1 AS x FROM sales WHERE notes = ? LIMIT 1', [`website:${order.id}`])) throw codedError('WEBSITE_ORDER_FINAL', {});
     const lines = api.all('SELECT * FROM website_order_items WHERE order_id = ? ORDER BY line', [order.id]).map(i => saleLine(api, i, codedError));
     if (!lines.length) throw codedError('WEBSITE_ORDER_EMPTY', {});
     const saleId = api.uuid();
@@ -315,9 +346,19 @@ function confirmOrder(api, { id, details, employeeId = null, now = new Date(), c
     return result;
 }
 
+/** The parcel came back and its pieces are not checked yet (still out of stock). */
+const returnPending = (order) => order.status === 'returned' && !!order.reserved;
+
+/** The steps the order can take now (none once paid; a returned parcel is checked first). */
+function nextStatuses(order) {
+    if (!order || order.status === COMPLETED || order.sale_id || returnPending(order)) return [];
+    return NEXT[order.status] || NEXT_UNKNOWN;
+}
+
 /**
- * Change an order's status. "money_received" records its sale (once);
- * after it nothing changes. Returns the order as listOrders shows it.
+ * Change an order's status (one of nextStatuses). "money_received" records
+ * its sale (once); after it nothing changes. Returns the order as
+ * listOrders shows it, and the sale when one was recorded.
  */
 function setStatus(api, { id, status, employeeId = null, now = new Date(), codedError }) {
     if (!STATUSES.includes(status)) throw codedError('WEBSITE_ORDER_STATUS', {});
@@ -325,26 +366,82 @@ function setStatus(api, { id, status, employeeId = null, now = new Date(), coded
     api.transaction(() => {
         const order = api.get('SELECT * FROM website_orders WHERE id = ?', [String(id || '')]);
         if (!order) throw codedError('WEBSITE_ORDER_NOT_FOUND', {});
+        // Sent twice (a double click, two windows): the first one stands, nothing is done again
+        if (status === order.status) return;
         // Money received is final: the sale exists (undo = a return at the till)
         if (order.status === COMPLETED || order.sale_id) throw codedError('WEBSITE_ORDER_FINAL', {});
-        if (status === order.status) return;
+        if (status === COMPLETED && STOPPED.includes(order.status)) throw codedError('WEBSITE_ORDER_CANCELLED', {});
+        if (returnPending(order)) throw codedError('WEBSITE_RETURN_PENDING', {});
+        if (!nextStatuses(order).includes(status)) throw codedError('WEBSITE_ORDER_STEP', { from: order.status, to: status });
         if (status === COMPLETED) {
-            if (STOPPED.includes(order.status)) throw codedError('WEBSITE_ORDER_CANCELLED', {});
             // The pieces put aside are released; the sale takes the same pieces out
             if (order.reserved) release(api, order, RELEASE_TYPE.money_received, employeeId);
             sale = recordSale(api, order, { employeeId, now, codedError });
             api.run('UPDATE website_orders SET status = ?, status_at = ?, sale_id = ?, money_received_at = ?, employee_id = ? WHERE id = ? AND sale_id IS NULL',
                 [COMPLETED, sqlTime(now), sale.saleId, sqlTime(now), employeeId, order.id]);
         } else {
-            // Confirmed (or further): put aside; back before it, cancelled or returned: back in stock
-            // Only when it enters these steps (an older order already on its way is not put aside after the fact)
+            // Confirmed (or further): put aside, only when it enters these steps (an
+            // older order already on its way is not put aside after the fact)
             if (RESERVING.includes(status) && !order.reserved && !RESERVING.includes(order.status)) reserve(api, order, { employeeId, codedError });
-            if (!RESERVING.includes(status) && order.reserved) release(api, order, RELEASE_TYPE[status] || 'website_unreserve', employeeId);
+            // Back before it or cancelled: back in stock. Returned: the pieces stay out until checked
+            if (!RESERVING.includes(status) && status !== 'returned' && order.reserved) release(api, order, RELEASE_TYPE[status] || 'website_unreserve', employeeId);
+            if (status === 'returned') {
+                api.run('UPDATE website_orders SET return_checked_at = NULL WHERE id = ?', [order.id]);
+                api.run('UPDATE website_order_items SET returned_sellable = 0, returned_damaged = 0 WHERE order_id = ?', [order.id]);
+            }
             api.run('UPDATE website_orders SET status = ?, status_at = ?, employee_id = ? WHERE id = ?', [status, sqlTime(now), employeeId, order.id]);
         }
         api.run('INSERT INTO website_order_events (order_id, status, at, employee_id) VALUES (?, ?, ?, ?)', [order.id, status, sqlTime(now), employeeId]);
     });
     return { order: listOrders(api, { id: String(id) })[0], sale };
+}
+
+/**
+ * The returned parcel is in the shop: each piece put aside is checked.
+ * lines: [{ line, sellable, damaged }], for every line with pieces out;
+ * sellable + damaged = the pieces of the line. The sellable ones go back in
+ * the stock that can be sold (the exact colour / size), the damaged ones
+ * stay out (as at the till). Once only: then the order can be set back to New.
+ */
+function checkReturn(api, { id, lines = [], employeeId = null, now = new Date(), codedError }) {
+    api.transaction(() => {
+        const order = api.get('SELECT * FROM website_orders WHERE id = ?', [String(id || '')]);
+        if (!order) throw codedError('WEBSITE_ORDER_NOT_FOUND', {});
+        if (!returnPending(order)) throw codedError('WEBSITE_RETURN_NONE', {});
+        const items = api.all('SELECT * FROM website_order_items WHERE order_id = ? AND reserved_qty > 0 ORDER BY line', [order.id]);
+        const given = Array.isArray(lines) ? lines : [];
+        for (const g of given) {
+            if (!items.some(i => i.line === Number(g?.line))) throw codedError('WEBSITE_ORDER_DETAILS', { field: 'line' });
+        }
+        // Everything is checked before anything moves
+        const counted = items.map(item => {
+            const g = given.find(x => Number(x?.line) === item.line) || {};
+            const sellable = num(g.sellable ?? 0);
+            const damaged = num(g.damaged ?? 0);
+            const product = [item.product_name || item.product_id, item.color, item.size].filter(Boolean).join(' ');
+            if (!Number.isInteger(sellable) || !Number.isInteger(damaged) || sellable < 0 || damaged < 0 || sellable + damaged !== item.reserved_qty) {
+                throw codedError('WEBSITE_RETURN_CHECK', { product, pieces: item.reserved_qty });
+            }
+            return { item, sellable, damaged };
+        });
+        for (const { item, sellable, damaged } of counted) {
+            const still = item.variant_id
+                ? api.get('SELECT id FROM product_variants WHERE id = ?', [item.variant_id])
+                : api.get('SELECT id FROM products WHERE id = ?', [item.product_id]);
+            // An article removed from the database meanwhile: nothing to put back
+            if (sellable > 0 && still) {
+                catalog.adjustStock(api, {
+                    productId: item.product_id, variantId: item.variant_id || null, delta: sellable,
+                    type: 'website_return', reason: `Website order ${order.number || order.id}`, employeeId: employeeId || null,
+                });
+            }
+            api.run('UPDATE website_order_items SET reserved_qty = 0, returned_sellable = ?, returned_damaged = ? WHERE order_id = ? AND line = ?',
+                [sellable, damaged, order.id, item.line]);
+        }
+        api.run('UPDATE website_orders SET reserved = 0, return_checked_at = ? WHERE id = ?', [sqlTime(now), order.id]);
+        api.run("INSERT INTO website_order_events (order_id, status, at, employee_id) VALUES (?, 'return_checked', ?, ?)", [order.id, sqlTime(now), employeeId]);
+    });
+    return listOrders(api, { id: String(id) })[0];
 }
 
 /**
@@ -407,4 +504,4 @@ function statusCounts(api) {
     return Object.fromEntries(api.all('SELECT status, COUNT(*) AS n FROM website_orders GROUP BY status').map(r => [r.status, r.n]));
 }
 
-module.exports = { markLabelPrinted, pricedLines, EDITABLE, statusCounts, STATUSES, COMPLETED, STOPPED, RESERVING, importOrders, knownIds, listOrders, setStatus, updateDetails, confirmOrder, nextOrderNumber, customerStats, customerHistory, sqlTime };
+module.exports = { NEXT, nextStatuses, checkReturn, markLabelPrinted, pricedLines, EDITABLE, statusCounts, STATUSES, COMPLETED, STOPPED, RESERVING, importOrders, knownIds, listOrders, setStatus, updateDetails, confirmOrder, nextOrderNumber, customerStats, customerHistory, sqlTime };

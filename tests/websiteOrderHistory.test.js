@@ -39,13 +39,16 @@ describe('website order management in AFUS', () => {
         for (const st of ['contacted', 'confirmed', 'preparing', 'shipped', 'returned']) set(api, 'o1', st);
         expect(codeOf(() => set(api, 'o1', 'money_received'))).toBe('WEBSITE_ORDER_CANCELLED');
         expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(0);
+        // The parcel is checked before the order is taken again
+        expect(codeOf(() => set(api, 'o1', 'new'))).toBe('WEBSITE_RETURN_PENDING');
+        orderBook.checkReturn(api, { id: 'o1', lines: [{ line: 0, sellable: 1, damaged: 0 }], codedError });
         set(api, 'o1', 'new');
         set(api, 'o1', 'delivered');
         set(api, 'o1', 'money_received');
         expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(1);
         expect(codeOf(() => set(api, 'o1', 'returned'))).toBe('WEBSITE_ORDER_FINAL');
         const h = orderBook.customerHistory(api, '0661223344');
-        expect(h.list[0].events.map(e => e.status)).toEqual(['new', 'contacted', 'confirmed', 'preparing', 'shipped', 'returned', 'new', 'delivered', 'money_received']);
+        expect(h.list[0].events.map(e => e.status)).toEqual(['new', 'contacted', 'confirmed', 'preparing', 'shipped', 'returned', 'return_checked', 'new', 'delivered', 'money_received']);
     });
 
     it('the figures per customer: orders, delivered, returned, cancelled, successful purchases and their total (less till refunds)', () => {
@@ -53,9 +56,11 @@ describe('website order management in AFUS', () => {
             order('0661 22 33 44', { qty: 2 }), order('+213661223344'), order('00213661223344'), order('0661223344'), order('0661223344'), order('0661223344'),
             order('0770112233', { name: 'Sofiane K.' }),
         ]);
+        for (const id of ['o1', 'o2']) set(api, id, 'delivered');
         set(api, 'o1', 'money_received'); // 1 600
         set(api, 'o2', 'money_received'); // 800, then 300 refunded at the till
         set(api, 'o3', 'delivered');
+        set(api, 'o4', 'shipped');
         set(api, 'o4', 'returned');
         set(api, 'o5', 'cancelled');
         const sale2 = api.get("SELECT sale_id FROM website_orders WHERE id = 'o2'").sale_id;

@@ -504,6 +504,16 @@ const MIGRATIONS = [
             db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_website_orders_number ON website_orders(number) WHERE number <> ''");
         },
     },
+    {
+        version: '2026_10_website_order_returns',
+        description: 'Website orders: a returned parcel is checked piece by piece (sellable back in stock, damaged kept out)',
+        up(db) {
+            if (!tableExists(db, 'website_orders')) return;
+            addColumnIfMissing(db, 'website_orders', 'return_checked_at', 'DATETIME');
+            addColumnIfMissing(db, 'website_order_items', 'returned_sellable', 'INTEGER NOT NULL DEFAULT 0');
+            addColumnIfMissing(db, 'website_order_items', 'returned_damaged', 'INTEGER NOT NULL DEFAULT 0');
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

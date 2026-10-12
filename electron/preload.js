@@ -137,6 +137,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         customerHistory: (args) => ipcRenderer.invoke('website:customerHistory', args),
         // An order's delivery status (money received: it becomes one sale)
         setOrderStatus: (args) => ipcRenderer.invoke('website:setOrderStatus', args),
+        // A returned parcel checked piece by piece (sellable back in stock)
+        checkReturn: (args) => ipcRenderer.invoke('website:checkReturn', args),
         openSite: () => ipcRenderer.invoke('website:openSite'),
         // The shop's Cloudflare account (its keys never come to the window)
         cloudflareStart: () => ipcRenderer.invoke('website:cloudflareStart'),

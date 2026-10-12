@@ -71,7 +71,7 @@ describe('COD confirmation and the stock', () => {
         expect(api.get('SELECT SUM(reserved_qty) AS n FROM website_order_items').n).toBe(0);
     });
 
-    it('cancelled, returned, or back to New / Contacted: every piece put aside comes back; confirmed again: aside again', () => {
+    it('cancelled, returned and checked sellable, or back to New / Contacted: every piece put aside comes back; confirmed again: aside again', () => {
         orderBook.importOrders(api, [remote([jean('38', 'Noir', 2)]), remote([jean('38', 'Noir', 1)]), remote([jean('38', 'Noir', 1)])]);
         const start = snapshot();
         confirm('o1'); confirm('o2'); confirm('o3');
@@ -79,6 +79,9 @@ describe('COD confirmation and the stock', () => {
         set('o1', 'cancelled');
         expect(stockOf('J-N-38')).toBe(2);
         set('o2', 'shipped'); set('o2', 'returned');
+        // On its way back: still out until the shop has it in hand and checks it
+        expect(stockOf('J-N-38')).toBe(2);
+        orderBook.checkReturn(api, { id: 'o2', lines: [{ line: 0, sellable: 1, damaged: 0 }], codedError });
         expect(stockOf('J-N-38')).toBe(3);
         set('o3', 'contacted');
         expect(snapshot()).toBe(start);
@@ -157,8 +160,10 @@ describe('COD confirmation and the stock', () => {
         expect(events).toEqual(['new', 'edited', 'confirmed', 'edited', 'shipped', 'money_received']);
     });
 
-    it('older orders (before this version): paid straight from New, or confirmed without pieces aside — taken out once, at the sale', () => {
+    it('older orders (before this version): delivered or confirmed without pieces aside — taken out once, at the sale', () => {
         orderBook.importOrders(api, [remote([jean('38', 'Noir', 1)]), remote([jean('38', 'Noir', 1)])]);
+        // Delivered under the previous version: nothing was put aside
+        api.run("UPDATE website_orders SET status = 'delivered', reserved = 0 WHERE id = 'o1'");
         set('o1', 'money_received');
         expect(stockOf('J-N-38')).toBe(3);
         // As a confirmed order of the previous version: no pieces aside
@@ -171,14 +176,18 @@ describe('COD confirmation and the stock', () => {
         expect(sales()).toBe(2);
     });
 
-    it('an article removed after the order was confirmed: the sale is refused (nothing changes); cancelling still works', () => {
-        orderBook.importOrders(api, [remote([belt(2)])]);
-        confirm('o1');
+    it('an article removed after the order was confirmed: the sale is refused (nothing changes); cancelling or the return still work', () => {
+        orderBook.importOrders(api, [remote([belt(2)]), remote([belt(1)])]);
+        confirm('o1'); confirm('o2');
+        set('o1', 'shipped');
         api.run("DELETE FROM products WHERE id = 'belt'");
         expect(codeOf(() => set('o1', 'money_received'))).toBe('WEBSITE_ORDER_ITEM_GONE');
-        expect(api.get("SELECT status, reserved FROM website_orders WHERE id = 'o1'")).toEqual({ status: 'confirmed', reserved: 1 });
-        set('o1', 'cancelled');
+        expect(api.get("SELECT status, reserved FROM website_orders WHERE id = 'o1'")).toEqual({ status: 'shipped', reserved: 1 });
+        set('o1', 'returned');
+        orderBook.checkReturn(api, { id: 'o1', lines: [{ line: 0, sellable: 2, damaged: 0 }], codedError });
         expect(api.get("SELECT reserved FROM website_orders WHERE id = 'o1'").reserved).toBe(0);
+        set('o2', 'cancelled');
+        expect(api.get("SELECT reserved FROM website_orders WHERE id = 'o2'").reserved).toBe(0);
     });
 });
 

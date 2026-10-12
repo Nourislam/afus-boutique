@@ -1007,6 +1007,7 @@ const ORDER_STATUSES = ['new', 'contacted', 'confirmed', 'preparing', 'shipped',
 function OrderStatus({ order, onChanged, onConfirm, onLabel }) {
     const { t } = useT();
     const [asking, setAsking] = useState(false);
+    const [inspecting, setInspecting] = useState(false);
     const [busy, setBusy] = useState(false);
     const final = order.status === 'money_received';
     const change = (status) => {
@@ -1027,6 +1028,11 @@ function OrderStatus({ order, onChanged, onConfirm, onLabel }) {
         );
     }
     const canConfirm = ['new', 'contacted'].includes(order.status);
+    // Only the steps the order can take now (the order book says which)
+    const choices = ORDER_STATUSES.filter(st => st === order.status || (order.next || []).includes(st));
+    const checked = order.status === 'returned' && order.returnCheckedAt;
+    const back = (order.items || []).reduce((n, i) => n + i.returnedSellable, 0);
+    const damaged = (order.items || []).reduce((n, i) => n + i.returnedDamaged, 0);
     return (
         <span className="space-y-1 block min-w-[9rem]" data-testid="website-order-status" data-status={order.status}>
             <select className="input py-1 text-xs" value={asking ? 'money_received' : order.status} disabled={busy}
@@ -1039,14 +1045,19 @@ function OrderStatus({ order, onChanged, onConfirm, onLabel }) {
                     if (next === 'confirmed' && canConfirm) return onConfirm(order);
                     return change(next);
                 }}>
-                {ORDER_STATUSES.filter(st => !(['cancelled', 'returned'].includes(order.status) && st === 'money_received')).map(st => <option key={st} value={st}>{t(`website.orders.status.${st}`)}</option>)}
+                {choices.map(st => <option key={st} value={st}>{t(`website.orders.status.${st}`)}</option>)}
             </select>
-            {order.reserved && <span className="block text-xs text-sky-300" data-testid="website-order-reserved">{t('website.orders.reservedHint')}</span>}
+            {order.returnPending && <span className="block text-xs text-amber-300" data-testid="website-order-return-pending">{t('website.returns.pendingHint')}</span>}
+            {order.reserved && !order.returnPending && <span className="block text-xs text-sky-300" data-testid="website-order-reserved">{t('website.orders.reservedHint')}</span>}
+            {['shipped', 'delivered'].includes(order.status) && <span className="block text-xs text-zinc-500" data-testid="website-order-not-sale">{t('website.orders.notSaleYet')}</span>}
+            {checked && <span className="block text-xs text-zinc-400" data-testid="website-order-return-checked">{t('website.returns.checkedHint', { back, damaged })}</span>}
             {order.number && <span className="block text-xs text-zinc-500"><bdi dir="ltr">{order.number}</bdi></span>}
             <span className="flex flex-wrap gap-1">
                 {canConfirm && <Button size="sm" variant="secondary" onClick={() => onConfirm(order)} data-testid="website-order-confirm"><PhoneCall className="w-4 h-4" /> {t('website.confirm.open')}</Button>}
+                {order.returnPending && <Button size="sm" variant="secondary" onClick={() => setInspecting(true)} data-testid="website-order-check-return"><PackageCheck className="w-4 h-4" /> {t('website.returns.open')}</Button>}
                 {!canConfirm && !['cancelled', 'returned'].includes(order.status) && <Button size="sm" variant="ghost" onClick={() => onLabel(order)} data-testid="website-order-label"><Printer className="w-4 h-4" /> {t('website.label.print')}</Button>}
             </span>
+            {inspecting && <CheckReturn order={order} onClose={() => setInspecting(false)} onDone={(o) => { setInspecting(false); onChanged(o); }} />}
             {asking && (
                 <span className="block space-y-1 rounded-lg bg-dark-tertiary/60 p-2">
                     <span className="block text-xs text-zinc-400">{t('website.orders.confirmMoney')}</span>
@@ -1057,6 +1068,62 @@ function OrderStatus({ order, onChanged, onConfirm, onLabel }) {
                 </span>
             )}
         </span>
+    );
+}
+
+/**
+ * The returned parcel is in the shop: each piece is checked. The sellable
+ * ones go back in stock (the same colour / size), the damaged ones stay out.
+ * No sale, no refund: the order was never paid.
+ */
+function CheckReturn({ order, onClose, onDone }) {
+    const { t } = useT();
+    const lines = order.items.filter(i => i.reserved > 0);
+    const [counts, setCounts] = useState(() => Object.fromEntries(lines.map(i => [i.line, { sellable: String(i.reserved), damaged: '0' }])));
+    const [busy, setBusy] = useState(false);
+    const set = (line, key, value) => setCounts(c => {
+        const pieces = lines.find(i => i.line === line).reserved;
+        const n = Math.max(0, Math.min(pieces, parseInt(value, 10) || 0));
+        // The two always add up to the pieces of the line
+        return { ...c, [line]: key === 'sellable' ? { sellable: String(n), damaged: String(pieces - n) } : { sellable: String(pieces - n), damaged: String(n) } };
+    });
+    const save = () => {
+        setBusy(true);
+        window.electronAPI.website.checkReturn({ id: order.id, lines: lines.map(i => ({ line: i.line, sellable: Number(counts[i.line].sellable), damaged: Number(counts[i.line].damaged) })) })
+            .then((r) => { setBusy(false); toast.success(t('website.returns.done')); onDone(r.order); }, (e) => { setBusy(false); toast.error(translateError(e)); });
+    };
+    return (
+        <Modal isOpen onClose={onClose} title={t('website.returns.title', { number: order.number || '' })} size="md">
+            <div className="space-y-3" data-testid="website-check-return">
+                <p className="text-sm text-zinc-400">{t('website.returns.intro')}</p>
+                <table className="w-full text-sm">
+                    <thead className="text-xs text-zinc-500">
+                        <tr>
+                            <th className="text-start font-medium py-1">{t('website.returns.article')}</th>
+                            <th className="text-start font-medium py-1">{t('website.returns.sellable')}</th>
+                            <th className="text-start font-medium py-1">{t('website.returns.damaged')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {lines.map(i => (
+                            <tr key={i.line} className="border-t border-dark-border" data-testid="website-check-return-line">
+                                <td className="py-2 pe-2">
+                                    <bdi>{i.productName || i.productId}</bdi>
+                                    <span className="block text-xs text-zinc-400">{[i.size, i.color].filter(Boolean).join(' · ')} × {i.reserved}</span>
+                                </td>
+                                <td className="py-2 pe-2"><input type="number" min="0" max={i.reserved} className="input w-20 py-1" value={counts[i.line].sellable} onChange={(e) => set(i.line, 'sellable', e.target.value)} data-testid="website-check-return-sellable" /></td>
+                                <td className="py-2"><input type="number" min="0" max={i.reserved} className="input w-20 py-1" value={counts[i.line].damaged} onChange={(e) => set(i.line, 'damaged', e.target.value)} data-testid="website-check-return-damaged" /></td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                <p className="text-xs text-zinc-500">{t('website.returns.hint')}</p>
+                <div className="flex justify-end gap-2">
+                    <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
+                    <Button onClick={save} loading={busy} data-testid="website-check-return-save"><PackageCheck className="w-4 h-4" /> {t('website.returns.save')}</Button>
+                </div>
+            </div>
+        </Modal>
     );
 }
 

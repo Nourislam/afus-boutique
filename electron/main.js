@@ -1991,6 +1991,7 @@ ipcMain.handle('website:saveLabelPdf', async (_, args = {}) => {
 });
 ipcMain.handle('website:customerHistory', (_, args = {}) => website.customerHistory(args || {}));
 ipcMain.handle('website:setOrderStatus', (_, args = {}) => website.setOrderStatus(args));
+ipcMain.handle('website:checkReturn', (_, args = {}) => website.checkReturn(args || {}));
 // The shop's own published website, in the browser (its address comes from GitHub Pages)
 ipcMain.handle('website:openSite', async () => {
   const url = website.view().site.url;

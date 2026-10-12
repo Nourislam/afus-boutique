@@ -147,6 +147,7 @@ const RULES = {
     'website:recheck': 'admin',
     'website:orders': 'admin',
     'website:setOrderStatus': 'admin',
+    'website:checkReturn': 'admin',
     'website:customers': 'admin',
     'website:confirmOrder': 'admin',
     'website:updateOrder': 'admin',

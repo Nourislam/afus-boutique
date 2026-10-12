@@ -111,6 +111,8 @@ describe('Best sellers: completed sales of the whole shop, last 7 days', () => {
 describe('Website orders, cash on delivery: a sale only when the money is received', () => {
     let api, v;
     const set = (id, status, now = new Date(NOW)) => orderBook.setStatus(api, { id, status, employeeId: 'owner', now, codedError });
+    // Delivered, then the courier hands the money over
+    const pay = (id, now = new Date(NOW)) => { set(id, 'delivered', now); return set(id, 'money_received', now); };
     beforeEach(async () => { ({ api, v } = await createShop()); });
 
     it('New, Confirmed, Preparing, Shipped, Delivered: no sale, nothing counted; from Confirmed the pieces are only put aside', () => {
@@ -123,9 +125,11 @@ describe('Website orders, cash on delivery: a sale only when the money is receiv
             expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(0);
             expect(bestSellers(api, { now: NOW })).toEqual([]);
         }
-        // Put aside (2 pieces), not sold; cancelled: back in stock
+        // Put aside (2 pieces), not sold; returned and checked sellable: back in stock
         expect(api.get('SELECT stock_quantity AS n FROM product_variants WHERE id = ?', [v['J-N-40']]).n).toBe(stock - 2);
-        set('o1', 'cancelled');
+        set('o1', 'returned');
+        expect(api.get('SELECT stock_quantity AS n FROM product_variants WHERE id = ?', [v['J-N-40']]).n).toBe(stock - 2);
+        orderBook.checkReturn(api, { id: 'o1', lines: [{ line: 0, sellable: 2, damaged: 0 }, { line: 1, sellable: 1, damaged: 0 }], codedError });
         expect(api.get('SELECT stock_quantity AS n FROM product_variants WHERE id = ?', [v['J-N-40']]).n).toBe(stock);
         expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(0);
     });
@@ -151,8 +155,8 @@ describe('Website orders, cash on delivery: a sale only when the money is receiv
         expect(api.get("SELECT stock_quantity AS n FROM products WHERE id = 'belt'").n).toBe(belt - 1);
         expect(soldOf(api)).toEqual({ jean: 2, belt: 1 });
 
-        // Never twice: money received again, any other status, a new import of the same order
-        expect(codeOf(() => set('o1', 'money_received'))).toBe('WEBSITE_ORDER_FINAL');
+        // Never twice: money received again (changes nothing), any other status, a new import of the same order
+        expect(set('o1', 'money_received').sale).toBeNull();
         expect(codeOf(() => set('o1', 'delivered'))).toBe('WEBSITE_ORDER_FINAL');
         expect(codeOf(() => set('o1', 'cancelled'))).toBe('WEBSITE_ORDER_FINAL');
         expect(orderBook.importOrders(api, [remote('o1'), remote('o1')])).toBe(0);
@@ -166,17 +170,18 @@ describe('Website orders, cash on delivery: a sale only when the money is receiv
     it('with the till: a till sale and a website order of the same article add up, each once', () => {
         at(api, sell(api, 't1', [{ product: 'jean', variant: v['J-N-38'], qty: 1, price: 3000 }]).id, 1);
         orderBook.importOrders(api, [remote('o1'), remote('o2', { items: JSON.stringify([{ product_id: 'jean', product_name: 'Jean', color: 'Noir', size: '38', quantity: 2, unit_price: 3000 }]) })]);
-        set('o1', 'money_received');
+        pay('o1');
         set('o2', 'shipped'); // on its way: put aside, not a sale
         expect(soldOf(api)).toEqual({ jean: 1 + 2, belt: 1 });
     });
 
     it('the 7 days count from the money received, not from the order', () => {
         orderBook.importOrders(api, [remote('o1', { created_at: new Date(NOW - 20 * DAY).toISOString() })]);
-        set('o1', 'money_received', new Date(NOW - DAY));
+        pay('o1', new Date(NOW - DAY));
         expect(soldOf(api)).toEqual({ jean: 2, belt: 1 });
-        orderBook.importOrders(api, [remote('o2', { created_at: new Date(NOW - DAY).toISOString() })]);
-        set('o2', 'money_received', new Date(NOW - 9 * DAY));
+        // Another size (the 40 left are all sold)
+        orderBook.importOrders(api, [remote('o2', { created_at: new Date(NOW - DAY).toISOString(), items: JSON.stringify([{ product_id: 'jean', product_name: 'Jean', color: 'Noir', size: '38', quantity: 2, unit_price: 3000 }, { product_id: 'belt', product_name: 'Ceinture', quantity: 1, unit_price: 800 }]) })]);
+        pay('o2', new Date(NOW - 9 * DAY));
         expect(soldOf(api)).toEqual({ jean: 2, belt: 1 });
     });
 
@@ -186,7 +191,7 @@ describe('Website orders, cash on delivery: a sale only when the money is receiv
         expect(codeOf(() => set('o1', 'money_received'))).toBe('WEBSITE_ORDER_CANCELLED');
         expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(0);
         set('o1', 'new');
-        const r = set('o1', 'money_received');
+        const r = pay('o1');
         const jeanLine = api.get("SELECT id FROM sale_items WHERE sale_id = ? AND product_id = 'jean'", [r.sale.saleId]).id;
         api.run('INSERT INTO returns (id, sale_id, return_number, total_refund) VALUES (?, ?, ?, 0)', ['r1', r.sale.saleId, 'RET-1']);
         api.run('INSERT INTO return_items (id, return_id, sale_item_id, quantity, refund_amount) VALUES (?, ?, ?, 2, 0)', ['r1i', 'r1', jeanLine]);
@@ -196,7 +201,7 @@ describe('Website orders, cash on delivery: a sale only when the money is receiv
     it('an article no longer in the catalogue: the sale is not recorded, nothing changes', () => {
         orderBook.importOrders(api, [remote('o1', { items: JSON.stringify([{ product_id: 'jean', color: 'Vert', size: '40', quantity: 1, unit_price: 3000 }]) })]);
         const before = api.get('SELECT COUNT(*) AS n FROM inventory_logs').n;
-        expect(codeOf(() => set('o1', 'money_received'))).toBe('WEBSITE_ORDER_ITEM_GONE');
+        expect(codeOf(() => pay('o1'))).toBe('WEBSITE_ORDER_ITEM_GONE');
         expect(orderBook.listOrders(api)[0]).toMatchObject({ status: 'new', sale_id: null });
         expect(api.get('SELECT COUNT(*) AS n FROM sales').n).toBe(0);
         expect(api.get('SELECT COUNT(*) AS n FROM inventory_logs').n).toBe(before);
@@ -207,7 +212,7 @@ describe('Website orders, cash on delivery: a sale only when the money is receiv
     it('an order of one article (the article page form) is kept with its one line', () => {
         orderBook.importOrders(api, [remote('o1', { items: '[]', size: '38', color: 'Noir', quantity: 3 })]);
         expect(orderBook.listOrders(api)[0].items).toMatchObject([{ product_id: 'jean', size: '38', color: 'Noir', quantity: 3, unit_price: null }]);
-        const r = set('o1', 'money_received');
+        const r = pay('o1');
         // No price sent: the article's own price
         expect(r.sale.total).toBe(3 * 3000);
     });
