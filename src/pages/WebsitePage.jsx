@@ -1981,7 +1981,7 @@ function DeliveryPricesCard({ site, busy, run }) {
                         <th className="text-start font-medium p-2">{t('website.delivery.office')}</th><th className="text-start font-medium p-2">{t('website.delivery.off')}</th>
                     </tr></thead>
                     <tbody>
-                        {WILAYAS.map(([code, fr, ar]) => {
+                        {WILAYAS.map(({ code, fr, ar }) => {
                             const n = Number(code);
                             const r = form.rows[n] || { home: '', office: '', off: false };
                             return (

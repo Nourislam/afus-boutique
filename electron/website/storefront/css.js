@@ -432,6 +432,7 @@ body.buybar-on .bottom-bar{display:none}
 .field.is-bad input,.field.is-bad select,.field.is-bad textarea{border-color:var(--sale);background:color-mix(in srgb,var(--sale) 5%,var(--bg))}
 .field.is-bad>span{color:var(--sale)}
 .sum-row{display:flex;justify-content:space-between;gap:12px;margin:0}
+.sum-row[hidden],.few-left[hidden]{display:none}
 .sum-row span:last-child{text-align:end;color:var(--muted)}
 .sum-total{border-top:1px solid var(--border);padding-top:10px;font-size:1.1em}
 .summary .form-msg[hidden]{display:none}
