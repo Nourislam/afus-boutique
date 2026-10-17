@@ -5,15 +5,18 @@ import { createContext, useContext } from 'react';
 export const EmbeddedPageContext = createContext(false);
 
 /**
- * Header used by every screen: icon, title, subtitle and actions on one row,
- * optional tabs or toolbar underneath. Keeps spacing identical everywhere.
+ * The row at the top of every screen: the page's tabs or tools on one side,
+ * its buttons on the other, on one line. The page's name is the highlighted
+ * item of the sidebar, so it is not written again (kept for screen readers).
+ * `hero` (the dashboard only): the full header with icon, title and subtitle.
  */
-export function PageHeader({ icon: Icon, title, subtitle, actions, children }) {
+export function PageHeader({ icon: Icon, title, subtitle, actions, children, hero = false }) {
     const embedded = useContext(EmbeddedPageContext);
-    if (embedded) {
-        if (!actions && !children) return null;
+    if (embedded || !hero) {
+        if (!actions && !children) return title && !embedded ? <h1 className="sr-only">{title}</h1> : null;
         return (
-            <div className="flex-none flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-b border-dark-border">
+            <div className="flex-none flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-6 py-3 border-b border-dark-border bg-dark-primary" data-testid="page-toolbar">
+                {title && !embedded && <h1 className="sr-only">{title}</h1>}
                 <div className="flex-1 min-w-[240px]">{children}</div>
                 {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
             </div>

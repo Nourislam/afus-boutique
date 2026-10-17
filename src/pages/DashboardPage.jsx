@@ -69,7 +69,7 @@ export default function DashboardPage() {
     const now = new Date();
     return (
         <div className="page">
-            <PageHeader
+            <PageHeader hero
                 icon={LayoutDashboard}
                 title={t(greetingKey(now.getHours()), { name: user?.name || '' })}
                 subtitle={formatDate(now, 'long', { lang })}
