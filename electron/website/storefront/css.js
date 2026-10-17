@@ -265,7 +265,9 @@ h1,h2,h3,.logo-text,.hero-title,.section-title,.pdp-name,.promo-title{font-famil
 
 /* Footer */
 .site-footer{margin-top:var(--section-gap);border-top:1px solid var(--border);padding-top:48px;font-size:.92em}
-.ftr-grid{display:grid;grid-template-columns:2fr repeat(auto-fit,minmax(160px,1fr));gap:32px}
+.ftr-grid{display:flex;flex-wrap:wrap;gap:32px}
+.ftr-grid>div{flex:1 1 160px;min-width:0}
+.ftr-grid>div:first-child{flex:2 1 260px}
 .ftr-grid p{color:var(--muted);margin:6px 0 0}
 .ftr-name{font-family:var(--font-head);font-size:1.3em}
 .ftr-links{display:flex;flex-direction:column;gap:6px;margin-top:8px;color:var(--muted)}
@@ -274,10 +276,19 @@ h1,h2,h3,.logo-text,.hero-title,.section-title,.pdp-name,.promo-title{font-famil
 .social-links{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:6px}
 .social-links a,.map-link{border-bottom:1px solid currentColor}
 .contact .hours{margin-top:10px}
-.ftr-bottom{color:var(--muted);font-size:.85em;padding-block:24px;margin-top:32px;border-top:1px solid var(--border)}
-.ftr-simple .ftr-grid{grid-template-columns:1fr;text-align:center}
+.ftr-bottom{color:var(--muted);font-size:.85em;padding-block:24px;margin-top:20px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px}
+.ftr-made{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.afus-mark{flex:none;border-radius:4px}
+.ftr-legal{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:28px;font-size:.88em}
+.ftr-legal a{color:inherit;opacity:.8;text-decoration:none}
+.ftr-legal a:hover{opacity:1;text-decoration:underline}
+.legal section{margin-bottom:22px}
+.legal h2{font-size:1.15em;margin-bottom:8px}
+.legal p{line-height:1.8;margin:0 0 8px;color:var(--text)}
+.ftr-simple .ftr-grid{flex-direction:column;text-align:center}
 .ftr-simple .ftr-grid>div:not(:first-child){display:none}
-.ftr-simple .ftr-bottom{text-align:center;border:0;margin-top:0}
+.ftr-simple .ftr-bottom{text-align:center;justify-content:center;border:0;margin-top:0}
+.ftr-simple .ftr-legal{justify-content:center}
 .ftr-dark{background:var(--primary);color:var(--on-primary);border:0}
 .ftr-dark p,.ftr-dark .ftr-links,.ftr-dark .ftr-bottom{color:var(--on-primary);opacity:.75}
 .ftr-dark .ftr-bottom{border-color:rgba(255,255,255,.15)}
@@ -512,7 +523,8 @@ body.buybar-on .bottom-bar{display:none}
   .pdp{grid-template-columns:1fr;gap:24px;margin-block:20px}
   .fields{grid-template-columns:1fr}
   .pdp-info.is-sticky{position:static}
-  .ftr-grid,.about-split .container-narrow{grid-template-columns:1fr}
+  .ftr-grid{flex-direction:column}
+  .about-split .container-narrow{grid-template-columns:1fr}
   .nav-inline{display:none}
   .nav-burger{display:flex}
   .hdr-centered .hdr-row{justify-content:space-between}
@@ -527,6 +539,18 @@ body.buybar-on .bottom-bar{display:none}
 .hero-ctas{display:flex;flex-wrap:wrap;gap:10px}
 .btn-outline{border:max(1px,var(--bw)) solid currentColor;color:inherit;background:transparent}
 .hero-full .btn-primary{background:#fff;color:#111}
+/* Centered: the picture behind the text (Dawn's "image banner") */
+.hero-centered{color:#fff;background:#111;min-height:460px;display:flex;align-items:center;justify-content:center}
+.hero-centered .hero-media{position:absolute;inset:0}
+.hero-centered .hero-media::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.42)}
+.hero-centered .hero-text{position:relative;width:100%}
+.hero-centered .hero-sub{color:rgba(255,255,255,.88)}
+.hero-centered .btn-primary{background:#fff;color:#111}
+.hero-title{text-wrap:balance}
+/* The sale banner over a photo */
+.promo{position:relative;overflow:hidden}
+.promo-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.22;mix-blend-mode:luminosity}
+.promo-row{position:relative}
 
 /* Trust: pay on delivery, delivery, a call first */
 .trust-section{border-block:1px solid var(--border);background:var(--bg)}

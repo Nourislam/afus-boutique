@@ -8,6 +8,7 @@
  */
 const { esc, html, phoneDigits, phoneHtml } = require('./html');
 const C = require('./components');
+const { heroPhoto, categoryPhoto } = require('./photos');
 
 const e = (values, def) => ({ kind: 'enum', values, default: def });
 const int = (min, max, def) => ({ kind: 'int', min, max, default: def });
@@ -40,8 +41,11 @@ const SECTION_TYPES = {
         options: { variant: e(['split', 'full', 'centered', 'editorial', 'playful'], 'split'), cta: e(['all', 'sale', 'new'], 'all') },
         render(ctx, o) {
             const shop = ctx.snap.shop;
+            const hero = shop.hero || {};
+            // The picture: the shop's own, else its newest article photo, else a built-in photo
             const withPic = byNewest(ctx.snap.products.filter(p => p.images.length));
-            const pic = withPic[0];
+            const src = hero.image ? ctx.img(hero.image) : withPic[0] ? ctx.img(withPic[0].images[0]) : ctx.photo(heroPhoto(ctx.theme.id));
+            const alt = hero.image || !withPic[0] ? shop.name : withPic[0].name;
             const sale = ctx.snap.products.some(C.onSale);
             const target = o.cta === 'sale' && sale ? 'sale' : 'all';
             // A small line over the title, only when it is true (new pieces this week, a sale on)
@@ -50,12 +54,12 @@ const SECTION_TYPES = {
             const second = sale && target !== 'sale' ? ['category', 'sale', ctx.t('offers')]
                 : ctx.snap.categories.length ? ['page', 'categories', ctx.t('categories')] : null;
             return html(
-                `<section class="hero hero-${o.variant}${pic ? '' : ' no-image'}">`,
-                pic && o.variant !== 'centered' && `<div class="hero-media"><img src="${esc(ctx.img(pic.images[0]))}" alt="${esc(pic.name)}" fetchpriority="high" decoding="async"></div>`,
+                `<section class="hero hero-${o.variant}">`,
+                src && `<div class="hero-media"><img src="${esc(src)}" alt="${esc(alt)}" fetchpriority="high" decoding="async"></div>`,
                 `<div class="hero-text container-narrow">`,
                 eyebrow && `<span class="hero-eyebrow">${esc(eyebrow)}</span>`,
-                `<h1 class="hero-title">${esc(shop.name)}</h1>`,
-                shop.description && `<p class="hero-sub">${esc(shop.description)}</p>`,
+                `<h1 class="hero-title">${esc(hero.title || shop.name)}</h1>`,
+                (hero.subtitle || shop.description) && `<p class="hero-sub">${esc(hero.subtitle || shop.description)}</p>`,
                 `<div class="hero-ctas"><a class="btn btn-primary" href="${esc(ctx.link('category', target))}">${esc(ctx.t('shopNow'))}</a>`,
                 second && `<a class="btn btn-outline" href="${esc(ctx.link(second[0], second[1]))}">${esc(second[2])}</a>`,
                 `</div></div></section>`,
@@ -77,9 +81,11 @@ const SECTION_TYPES = {
         render(ctx, o) {
             const cats = ctx.snap.categories.slice(0, o.limit);
             if (!cats.length) return '';
-            const items = cats.map(c => {
+            const items = cats.map((c, i) => {
+                // An article photo of the category, else a built-in photo matching its name
                 const p = ctx.snap.products.find(x => x.categoryId === c.id && x.images.length);
-                const media = (o.style === 'tiles' || o.style === 'circles') && p ? `<img src="${esc(ctx.img(p.images[0]))}" alt="">` : '';
+                const src = p ? ctx.img(p.images[0]) : ctx.photo(categoryPhoto(c.name, i));
+                const media = (o.style === 'tiles' || o.style === 'circles') ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : '';
                 return `<a class="cat cat-${o.style}" href="${esc(ctx.link('category', c.id))}">${media ? `<span class="cat-media">${media}</span>` : ''}<span class="cat-name">${esc(c.name)}</span></a>`;
             }).join('');
             return `<section class="container section">${o.title ? sectionHead(ctx, ctx.t('categories')) : ''}<div class="cats cats-${o.style}">${items}</div></section>`;
@@ -106,7 +112,9 @@ const SECTION_TYPES = {
             const count = ctx.snap.products.filter(C.onSale).length;
             if (!promo || !count) return '';
             return html(
-                `<section class="promo promo-${o.style}"><div class="container promo-row">`,
+                `<section class="promo promo-${o.style}">`,
+                o.style === 'banner' && `<img class="promo-bg" src="${esc(ctx.photo('sale.webp'))}" alt="" loading="lazy" decoding="async">`,
+                `<div class="container promo-row">`,
                 `<div><span class="promo-pct">-${esc(promo.value)}%</span><h2 class="promo-title">${esc(promo.name)}</h2><p>${count} ${esc(ctx.t('articles'))}</p></div>`,
                 `<a class="btn btn-light" href="${esc(ctx.link('category', 'sale'))}">${esc(ctx.t('shopNow'))}</a>`,
                 `</div></section>`,

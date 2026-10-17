@@ -134,6 +134,23 @@ function wilayaCode(text) {
     return n >= 1 && n <= 58 ? n : 0;
 }
 
+// The 1541 communes per wilaya ({ "16": [[latin, arabic], ...] }), written in by Afus
+// when it sends the Worker (electron/shared/communes.json); empty: not checked
+const COMMUNES = /*@COMMUNES@*/{};
+const plain = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, '');
+const inList = (list, name) => (list || []).some(([latin, arabic]) => plain(latin) === name || plain(arabic) === name);
+/**
+ * The commune belongs to the wilaya. A name of the list of another wilaya
+ * only is refused; another text (typed where the list did not load) is kept:
+ * the shop calls the customer to confirm anyway.
+ */
+function communeOk(wilaya, commune) {
+    if (!COMMUNES[String(wilaya)]) return true;
+    const name = plain(commune);
+    if (inList(COMMUNES[String(wilaya)], name)) return true;
+    return !Object.keys(COMMUNES).some(w => w !== String(wilaya) && inList(COMMUNES[w], name));
+}
+
 /** An Algerian number: mobile 05/06/07 + 8 digits, or fixed 0 + 8 digits; +213 / 00213 accepted. */
 function algerianPhone(text) {
     let d = String(text || '').replace(/[\s.-]/g, '');
@@ -187,7 +204,7 @@ function readOrder(fields) {
         const words = order.customer_name.split(/\s+/);
         order.first_name = words[0].slice(0, LIMITS.first_name);
         order.last_name = words.slice(1).join(' ').slice(0, LIMITS.last_name);
-        if (!wilayaCode(order.wilaya) || order.commune.length < 2) return { error: 'place' };
+        if (!wilayaCode(order.wilaya) || order.commune.length < 2 || !communeOk(wilayaCode(order.wilaya), order.commune)) return { error: 'place' };
         if (!['home', 'office'].includes(order.delivery)) return { error: 'delivery' };
         if (order.delivery === 'home' && order.address.length < 3) return { error: 'address' };
         if (order.delivery === 'office') { order.office_wilaya = order.wilaya; order.office_commune = order.office_commune || order.commune; order.courier_office = ''; }
@@ -205,9 +222,10 @@ function readOrder(fields) {
     if (checkout) {
         if (order.first_name.length < 2 || order.last_name.length < 2) return { error: 'name' };
         order.customer_name = `${order.first_name} ${order.last_name}`.slice(0, LIMITS.customer_name);
-        if (!wilayaCode(order.wilaya) || order.commune.length < 2) return { error: 'place' };
+        if (!wilayaCode(order.wilaya) || order.commune.length < 2 || !communeOk(wilayaCode(order.wilaya), order.commune)) return { error: 'place' };
         if (order.delivery === 'home' && order.address.length < 3) return { error: 'address' };
         if (order.delivery === 'office' && (order.courier_company.length < 2 || !wilayaCode(order.office_wilaya) || order.office_commune.length < 2 || order.courier_office.length < 2)) return { error: 'office' };
+        if (order.delivery === 'office' && !communeOk(wilayaCode(order.office_wilaya), order.office_commune)) return { error: 'office' };
         if (!['home', 'office'].includes(order.delivery)) return { error: 'delivery' };
     } else if (order.customer_name.length < 2) return { error: 'name' };
     if (order.delivery !== 'office') { order.courier_company = ''; order.office_wilaya = ''; order.office_commune = ''; order.courier_office = ''; }

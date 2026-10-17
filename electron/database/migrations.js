@@ -540,6 +540,14 @@ const MIGRATIONS = [
             `);
         },
     },
+    {
+        version: '2026_10_product_on_website',
+        description: 'Articles: shown on the shop website or not (all shown until the shop unticks one)',
+        up(db) {
+            if (!tableExists(db, 'products')) return;
+            addColumnIfMissing(db, 'products', 'show_on_website', 'INTEGER NOT NULL DEFAULT 1');
+        },
+    },
 ];
 
 function ensureMigrationsTable(db) {

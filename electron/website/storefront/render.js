@@ -11,6 +11,7 @@
  *     preview: inside the program: links go nowhere, the style is in the
  *              page, no script (the frame runs none)
  *     assetUrl(path): the address of one of the shop's pictures
+ *     photoUrl(file): the address of one of the built-in photos (storefront/photos.js)
  *   pagesOf(snapshot): every page of the website, for publishing
  *
  * The published pages load one style sheet and one script of the website
@@ -22,6 +23,7 @@ const { textsFor } = require('./texts');
 const C = require('./components');
 const { SECTION_TYPES } = require('./sections');
 const { STORE_PAGES, listingPage } = require('./pages');
+const { legalPage } = require('./legal');
 const { css, bodyClasses } = require('./css');
 
 const LANGS = ['ar', 'fr', 'en'];
@@ -53,7 +55,7 @@ function trackerHosts(track) {
 
 /** The few words the website's script writes (cart messages). */
 const SCRIPT_TEXTS = ['added', 'chooseFirst', 'notThisOne', 'viewCart', 'remove', 'cartEmpty', 'maxQty',
-    'errName', 'errPhone', 'errWilaya', 'errCommune', 'errAddress', 'errCourier', 'errOffice', 'errForm',
+    'errName', 'errPhone', 'errWilaya', 'errCommune', 'chooseCommune', 'chooseWilayaFirst', 'errAddress', 'errCourier', 'errOffice', 'errForm',
     'errFullName', 'fullName', 'yourPhone', 'wilaya', 'commune', 'addressField', 'waColor', 'waSize', 'waQty', 'waDelivery', 'deliveryHome', 'deliveryOffice', 'orderText',
     'deliveryChoose', 'deliveryByPhone', 'notDelivered', 'deliveryFree', 'couponOk', 'couponBad', 'couponDown'];
 const scriptTexts = (t) => Object.fromEntries(SCRIPT_TEXTS.map(k => [k, t(k)]));
@@ -72,12 +74,13 @@ function linkFor(kind, id) {
     return 'index.html';
 }
 
-function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', preview = false, assetUrl = (p) => p, orderUrl = null }) {
+function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', preview = false, assetUrl = (p) => p, photoUrl = (f) => `photos/${f}`, orderUrl = null }) {
     const language = LANGS.includes(lang) ? lang : 'ar';
     const ctx = {
         snap: snapshot, theme, lang: language, t: textsFor(language), preview,
         link: preview ? () => '#' : linkFor,
         img: (path) => assetUrl(path),
+        photo: (file) => photoUrl(file),
         current: page === 'home' ? 'home' : `${page}:${id}`,
         orderUrl: !preview && orderUrl && /^https?:\/\//.test(orderUrl) ? orderUrl : null,
     };
@@ -93,7 +96,8 @@ function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', pr
         main = C.messagePage(ctx, page);
     } else if (page === 'page' && STORE_PAGES[id]) {
         main = STORE_PAGES[id](ctx);
-        title = `${ctx.t({ new: 'newIn', search: 'searchTitle', about: 'aboutTitle', contact: 'contactTitle', offers: 'offersTitle', categories: 'categoriesTitle' }[id] || id)} · ${title}`;
+        const legal = legalPage(id, language, snapshot.shop);
+        title = `${legal ? legal.title : ctx.t({ new: 'newIn', search: 'searchTitle', about: 'aboutTitle', contact: 'contactTitle', offers: 'offersTitle', categories: 'categoriesTitle' }[id] || id)} · ${title}`;
     } else if (page === 'category') {
         const cat = snapshot.categories.find(c => c.id === id);
         if (id === 'sale') main = STORE_PAGES.offers(ctx);

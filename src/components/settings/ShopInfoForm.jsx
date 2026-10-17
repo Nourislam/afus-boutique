@@ -8,7 +8,22 @@ import { toast } from '../ui/Toast';
 import { ShopLogo } from '../shop/ShopLogo';
 import { useT } from '../../i18n';
 import { WILAYAS } from '../../data/wilayas';
+import COMMUNES from '../../../electron/shared/communes.json';
 import { resizeImageDataUrl } from '../../lib/imageResize';
+
+// A link the website accepts: https, to the expected site (the others are left out of the website)
+const LINK_HOSTS = {
+    shopFacebook: ['facebook.com', 'fb.com'], shopInstagram: ['instagram.com'], shopTiktok: ['tiktok.com'],
+    shopMapUrl: ['google.com', 'goo.gl', 'openstreetmap.org'],
+};
+export function linkProblem(key, value) {
+    const v = String(value || '').trim();
+    if (!v) return false;
+    let url;
+    try { url = new URL(v); } catch { return true; }
+    const host = url.hostname.toLowerCase();
+    return url.protocol !== 'https:' || !LINK_HOSTS[key].some(h => host === h || host.endsWith(`.${h}`));
+}
 
 function Section({ title, children }) {
     return (
@@ -30,6 +45,8 @@ export function ShopInfoForm({ value, onChange }) {
     const { t, lang } = useT();
     const hasMore = !!(value.businessRc || value.businessTaxId || value.businessNis || value.businessAi || value.shopDescription);
     const [showMore, setShowMore] = useState(hasMore);
+    const hasSocial = !!(value.shopHours || value.shopFacebook || value.shopInstagram || value.shopTiktok || value.shopMapUrl);
+    const [showSocial, setShowSocial] = useState(hasSocial);
 
     const set = (key, v) => onChange({ ...value, [key]: v });
 
@@ -39,6 +56,13 @@ export function ShopInfoForm({ value, onChange }) {
         label: `${w.code} - ${lang === 'ar' ? w.ar : w.fr}`,
         hint: lang === 'ar' ? w.fr : w.ar,
     })), [lang]);
+
+    // The communes of the chosen wilaya ("16 - الجزائر" -> 16), the other language's name as a hint
+    const wilayaNumber = parseInt(value.businessWilaya, 10) || 0;
+    const communes = useMemo(() => (COMMUNES[String(wilayaNumber)] || []).map(([latin, arabic]) => {
+        const name = lang === 'ar' ? arabic : latin;
+        return { value: name, label: name, hint: lang === 'ar' ? latin : arabic };
+    }), [wilayaNumber, lang]);
 
     useEffect(() => {
         let cancelled = false;
@@ -146,16 +170,29 @@ export function ShopInfoForm({ value, onChange }) {
                         <Combobox
                             label={t('shop.wilaya')}
                             value={value.businessWilaya || ''}
-                            onChange={(v) => set('businessWilaya', v)}
+                            onChange={(v) => onChange({ ...value, businessWilaya: v, ...(parseInt(v, 10) !== wilayaNumber ? { businessCity: '' } : {}) })}
                             options={wilayas}
                             placeholder={t('shop.wilayaPlaceholder')}
                             emptyText={t('shop.wilayaNone')}
                         />
-                        <Input
-                            label={t('shop.city')}
-                            value={value.businessCity || ''}
-                            onChange={(e) => set('businessCity', e.target.value)}
-                        />
+                        {communes.length ? (
+                            <Combobox
+                                label={t('shop.commune')}
+                                value={value.businessCity || ''}
+                                onChange={(v) => set('businessCity', v)}
+                                options={value.businessCity && !communes.some(c => c.value === value.businessCity)
+                                    ? [{ value: value.businessCity, label: value.businessCity }, ...communes] : communes}
+                                placeholder={t('shop.communePlaceholder')}
+                                emptyText={t('shop.wilayaNone')}
+                            />
+                        ) : (
+                            <Input
+                                label={t('shop.commune')}
+                                value={value.businessCity || ''}
+                                onChange={(e) => set('businessCity', e.target.value)}
+                                placeholder={t('shop.communeFirst')}
+                            />
+                        )}
                         <Input
                             label={t('shop.address')}
                             value={value.businessAddress || ''}
@@ -163,6 +200,40 @@ export function ShopInfoForm({ value, onChange }) {
                         />
                     </div>
                 </Section>
+
+                {/* Social pages, map and opening hours (shown on the shop's website) */}
+                <div className="rounded-xl border border-dark-border" data-testid="shop-social">
+                    <button
+                        type="button"
+                        onClick={() => setShowSocial(v => !v)}
+                        className="w-full flex items-center gap-2 px-4 py-3 text-start text-sm font-medium text-zinc-300 hover:text-white"
+                        aria-expanded={showSocial}
+                        data-testid="shop-social-toggle"
+                    >
+                        <ChevronDown className={`w-4 h-4 flex-none transition-transform ${showSocial ? 'rotate-180' : ''}`} />
+                        <span className="flex-1">{t('shop.groupSocial')}</span>
+                        <span className="text-xs text-zinc-500 hidden xl:inline">{t('shop.socialHint')}</span>
+                    </button>
+                    {showSocial && (
+                        <div className="px-4 pb-4 space-y-3">
+                            <div className="grid gap-x-4 gap-y-3 fit-grid-sm">
+                                <Input label="Facebook" value={value.shopFacebook || ''} onChange={(e) => set('shopFacebook', e.target.value)} error={linkProblem('shopFacebook', value.shopFacebook) ? t('shop.linkBad') : undefined} placeholder="https://facebook.com/…" className="ltr" maxLength={300} data-testid="shop-facebook" />
+                                <Input label="Instagram" value={value.shopInstagram || ''} onChange={(e) => set('shopInstagram', e.target.value)} error={linkProblem('shopInstagram', value.shopInstagram) ? t('shop.linkBad') : undefined} placeholder="https://instagram.com/…" className="ltr" maxLength={300} data-testid="shop-instagram" />
+                                <Input label="TikTok" value={value.shopTiktok || ''} onChange={(e) => set('shopTiktok', e.target.value)} error={linkProblem('shopTiktok', value.shopTiktok) ? t('shop.linkBad') : undefined} placeholder="https://tiktok.com/@…" className="ltr" maxLength={300} data-testid="shop-tiktok" />
+                                <Input label={t('shop.mapUrl')} value={value.shopMapUrl || ''} onChange={(e) => set('shopMapUrl', e.target.value)} error={linkProblem('shopMapUrl', value.shopMapUrl) ? t('shop.linkBad') : undefined} placeholder="https://maps.app.goo.gl/…" className="ltr" maxLength={300} data-testid="shop-map" />
+                            </div>
+                            <TextArea
+                                label={t('shop.hours')}
+                                value={value.shopHours || ''}
+                                onChange={(e) => set('shopHours', e.target.value)}
+                                placeholder={t('shop.hoursPlaceholder')}
+                                className="min-h-[60px]"
+                                maxLength={800}
+                                data-testid="shop-hours"
+                            />
+                        </div>
+                    )}
+                </div>
 
                 {/* Legal numbers and description: only for the shops that need them */}
                 <div className="rounded-xl border border-dark-border">

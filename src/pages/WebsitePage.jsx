@@ -15,6 +15,7 @@ import { toast } from '../components/ui/Toast';
 import { translateError } from '../i18n/errors';
 import { formatDate, formatMoney, formatNumber } from '../i18n/format';
 import { useT } from '../i18n';
+import { resizeImageDataUrl } from '../lib/imageResize';
 
 const STATUS_STYLE = {
     none: 'bg-zinc-500/20 text-zinc-300',
@@ -269,7 +270,8 @@ function ThemeStudio({ site, busy, run }) {
         setFailed(false);
         api.previewTheme({ theme: picked, page }).then((r) => { if (alive) setPreview(r); }, () => { if (alive) setFailed(true); });
         return () => { alive = false; };
-    }, [picked, page]);
+    // The home picture changed: drawn again
+    }, [picked, page, JSON.stringify(site.publicInfo?.hero || null)]);
     const chosen = site.themes.find(x => x.id === picked);
     const online = !!site.publishedAt;
     // Online already: the website's pages are made again with the new look (the shop's data is only read)
@@ -552,6 +554,7 @@ function WebsiteDashboard({ site, setSite, preview, busy, run }) {
             )}
 
             {/* Theme: pick, see the shop's own website in it, keep */}
+            {tab === 'design' && <HeroCard site={site} busy={busy} run={run} />}
             {tab === 'design' && <ThemeStudio site={site} busy={busy} run={run} />}
 
             {tab === 'settings' && <WebsiteSettings site={site} busy={busy} run={run} />}
@@ -576,19 +579,19 @@ function WebsiteDashboard({ site, setSite, preview, busy, run }) {
 }
 
 /** The website's settings, one subject per tab (saved each on its own). */
-const SETTINGS_TABS = ['info', 'features', 'delivery', 'messages', 'tracking', 'blocked', 'sizes', 'couriers'];
+const SETTINGS_TABS = ['features', 'delivery', 'messages', 'tracking', 'blocked', 'sizes', 'couriers'];
 function WebsiteSettings({ site, busy, run }) {
     const { t } = useT();
     const [params, setParams] = useSearchParams();
-    const tab = SETTINGS_TABS.includes(params.get('s')) ? params.get('s') : 'info';
+    const tab = SETTINGS_TABS.includes(params.get('s')) ? params.get('s') : 'features';
     const setTab = (id) => setParams((p) => { const next = new URLSearchParams(p); next.set('s', id); return next; }, { replace: true });
     return (
         <div className="space-y-4" data-testid="website-settings">
             <Tabs tabs={SETTINGS_TABS.map(id => ({ id, label: t(`website.settingsTab.${id}`) }))} value={tab} onChange={setTab} testId="website-settings-tab" />
             <div className="max-w-4xl">
-                {tab === 'info' && <PublicInfoCard site={site} busy={busy} run={run} />}
                 {tab === 'features' && <FeaturesCard site={site} busy={busy} run={run} />}
                 {tab === 'delivery' && <DeliveryPricesCard site={site} busy={busy} run={run} />}
+                {tab === 'delivery' && <CouriersCard site={site} busy={busy} run={run} />}
                 {tab === 'messages' && <MessagesCard site={site} busy={busy} run={run} />}
                 {tab === 'tracking' && <TrackingCard site={site} busy={busy} run={run} />}
                 {tab === 'blocked' && <BlockedPhonesCard site={site} busy={busy} run={run} />}
@@ -1848,55 +1851,28 @@ function FeaturesCard({ site, busy, run }) {
     );
 }
 
-function PublicInfoCard({ site, busy, run }) {
+function CouriersCard({ site, busy, run }) {
     const { t } = useT();
-    const saved = site.publicInfo || { hours: [], social: {}, mapUrl: '' };
-    const fromSaved = () => ({ hours: (saved.hours || []).join('\n'), facebook: saved.social?.facebook || '', instagram: saved.social?.instagram || '', tiktok: saved.social?.tiktok || '', mapUrl: saved.mapUrl || '', couriers: saved.couriers || [] });
-    const [form, setForm] = useState(fromSaved);
-    useEffect(() => { setForm(fromSaved()); }, [JSON.stringify(saved)]);
-    const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }));
-    const save = () => run('info', () => window.electronAPI.website.setPublicInfo({
-        hours: form.hours, social: { facebook: form.facebook, instagram: form.instagram, tiktok: form.tiktok }, mapUrl: form.mapUrl, couriers: form.couriers,
-    }), (next) => {
-        const refused = next?.result?.refused || [];
-        if (refused.length) toast.error(t('website.info.refused', { list: refused.map(k => t(`website.info.${k}`)).join('، ') }), 7000);
-        else toast.success(t('website.info.saved'));
-    });
-    const field = (key, label, placeholder) => (
-        <label className="block space-y-1">
-            <span className="text-xs text-zinc-400">{label}</span>
-            <input className="input w-full" dir="ltr" value={form[key]} onChange={set(key)} placeholder={placeholder} maxLength={300} data-testid={`website-info-${key}`} />
-        </label>
-    );
+    const saved = site.publicInfo?.couriers || [];
+    const [couriers, setCouriers] = useState(saved);
+    useEffect(() => { setCouriers(saved); }, [JSON.stringify(saved)]);
+    // The opening hours, social pages and map are in Settings › Shop; only the companies are saved here
+    const save = () => run('info', () => window.electronAPI.website.setPublicInfo({ ...site.publicInfo, couriers }), () => toast.success(t('website.info.saved')));
     return (
-        <section className="card space-y-3" data-testid="website-info">
-            <h2 className="font-semibold flex items-center gap-2"><Store className="w-4 h-4 text-indigo-300" /> {t('website.info.title')}</h2>
-            <p className="text-xs text-zinc-500 leading-relaxed">{t('website.info.hint')}</p>
-            <label className="block space-y-1">
-                <span className="text-xs text-zinc-400">{t('website.info.hours')}</span>
-                <textarea className="input w-full" rows={3} value={form.hours} onChange={set('hours')} placeholder={t('website.info.hoursPlaceholder')} maxLength={800} data-testid="website-info-hours" />
-            </label>
-            {field('facebook', t('website.info.facebook'), 'https://facebook.com/…')}
-            {field('instagram', t('website.info.instagram'), 'https://instagram.com/…')}
-            {field('tiktok', t('website.info.tiktok'), 'https://tiktok.com/@…')}
-            {field('mapUrl', t('website.info.mapUrl'), 'https://maps.app.goo.gl/…')}
-            <fieldset className="space-y-2" data-testid="website-info-couriers">
-                <legend className="text-xs text-zinc-400">{t('website.info.couriers')}</legend>
-                <div className="flex flex-wrap gap-2">
-                    {(site.couriersList || []).map(c => (
-                        <label key={c.id} className="flex items-center gap-2 rounded-lg bg-dark-tertiary/60 px-2 py-1 text-sm cursor-pointer">
-                            <input type="checkbox" checked={form.couriers.includes(c.id)} data-testid={`website-courier-${c.id}`}
-                                onChange={(e) => setForm(f => ({ ...f, couriers: e.target.checked ? [...f.couriers, c.id] : f.couriers.filter(x => x !== c.id) }))} />
-                            <span dir="ltr">{c.name}</span>
-                        </label>
-                    ))}
-                </div>
-                <p className="text-xs text-zinc-500">{t('website.info.couriersHint')}</p>
-            </fieldset>
-            <div className="flex justify-end">
-                <Button size="sm" onClick={save} loading={busy === 'info'} data-testid="website-info-save">{t('common.save')}</Button>
+        <SettingsCard testId="website-info-couriers" icon={Store} title={t('website.info.couriers')} hint={t('website.info.couriersHint')} onSave={save} saving={busy === 'info'}>
+            <div className="flex flex-wrap gap-2">
+                {(site.couriersList || []).map(c => (
+                    <label key={c.id} className="flex items-center gap-2 rounded-lg bg-dark-tertiary/60 px-2 py-1 text-sm cursor-pointer">
+                        <input type="checkbox" checked={couriers.includes(c.id)} data-testid={`website-courier-${c.id}`}
+                            onChange={(e) => setCouriers(list => (e.target.checked ? [...list, c.id] : list.filter(x => x !== c.id)))} />
+                        <span dir="ltr">{c.name}</span>
+                    </label>
+                ))}
             </div>
-        </section>
+            <p className="text-xs text-zinc-500">
+                {t('website.info.movedToShop')} <Link className="text-indigo-300 hover:text-indigo-200 underline" to="/settings?tab=business" data-testid="website-info-shop-link">{t('website.info.openShop')}</Link>
+            </p>
+        </SettingsCard>
     );
 }
 
@@ -2013,6 +1989,77 @@ function SettingsCard({ testId, icon: Icon = Settings2, title, hint, children, o
             {children}
             {onSave && <div className="flex justify-end"><Button size="sm" onClick={onSave} loading={saving} data-testid={`${testId}-save`}>{t('common.save')}</Button></div>}
         </section>
+    );
+}
+
+/**
+ * The home page's big picture: the shop's own photo (else its newest article
+ * photo, else a built-in photo) and two optional short texts over it.
+ */
+function HeroCard({ site, busy, run }) {
+    const { t } = useT();
+    const saved = site.publicInfo?.hero || { image: '', title: '', subtitle: '' };
+    const [form, setForm] = useState(saved);
+    const [src, setSrc] = useState(null);
+    const [saving, setSaving] = useState(false);
+    useEffect(() => { setForm(saved); }, [JSON.stringify(saved)]);
+    useEffect(() => {
+        let alive = true;
+        if (!form.image) { setSrc(null); return undefined; }
+        window.electronAPI.images.get(form.image).then((data) => { if (alive) setSrc(data || null); }).catch(() => { });
+        return () => { alive = false; };
+    }, [form.image]);
+    const pick = (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        if (file.size > 15 * 1024 * 1024) { toast.error(t('products.imageTooBig')); return; }
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            setSaving(true);
+            try {
+                // Wide and sharp enough for a computer screen, light enough for a phone
+                const base64Data = await resizeImageDataUrl(event.target.result, { maxSize: 1800, type: 'image/jpeg', quality: 0.82 });
+                const result = await window.electronAPI.images.save({ base64Data, originalName: file.name });
+                if (!result?.success) throw new Error(t('products.imageSaveFailed'));
+                setForm(f => ({ ...f, image: result.fileName }));
+            } catch (error) {
+                toast.error(translateError(error));
+            } finally {
+                setSaving(false);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+    const save = () => run('hero', () => window.electronAPI.website.setSettings({ hero: form }), () => toast.success(t('website.info.saved')));
+    return (
+        <SettingsCard testId="website-hero" icon={ImageIcon} title={t('website.hero.title')} hint={t('website.hero.hint')} onSave={save} saving={busy === 'hero'}>
+            <div className="grid gap-4 md:grid-cols-[minmax(0,280px)_1fr] items-start">
+                <div className="space-y-2">
+                    <div className="aspect-[16/9] rounded-xl overflow-hidden border border-dark-border bg-dark-tertiary flex items-center justify-center">
+                        {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : <span className="text-xs text-zinc-500 px-3 text-center">{t('website.hero.none')}</span>}
+                    </div>
+                    <div className="flex gap-2">
+                        <label className={`btn btn-secondary px-3 py-2 text-sm flex-1 justify-center cursor-pointer ${saving ? 'opacity-60 pointer-events-none' : ''}`}>
+                            <ImageIcon className="w-4 h-4" />
+                            <span className="truncate">{saving ? t('common.saving') : t(form.image ? 'website.hero.change' : 'website.hero.choose')}</span>
+                            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={pick} data-testid="website-hero-file" />
+                        </label>
+                        {form.image && <Button size="sm" variant="ghost" onClick={() => setForm(f => ({ ...f, image: '' }))} aria-label={t('common.delete')}><X className="w-4 h-4" /></Button>}
+                    </div>
+                </div>
+                <div className="space-y-3 min-w-0">
+                    <label className="block space-y-1">
+                        <span className="text-xs text-zinc-400">{t('website.hero.heading')}</span>
+                        <input className="input w-full" value={form.title} maxLength={80} placeholder={site.suggestedName || ''} onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))} data-testid="website-hero-heading" />
+                    </label>
+                    <label className="block space-y-1">
+                        <span className="text-xs text-zinc-400">{t('website.hero.subtitle')}</span>
+                        <input className="input w-full" value={form.subtitle} maxLength={160} onChange={(e) => setForm(f => ({ ...f, subtitle: e.target.value }))} data-testid="website-hero-subtitle" />
+                    </label>
+                </div>
+            </div>
+        </SettingsCard>
     );
 }
 

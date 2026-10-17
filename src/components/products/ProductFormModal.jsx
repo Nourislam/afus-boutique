@@ -37,6 +37,7 @@ const EMPTY_PRODUCT = {
     min_stock_level: '5',
     tax_rate: '0',
     is_active: true,
+    show_on_website: true,
     image_path: '',
     gallery: [],
 };
@@ -86,6 +87,7 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
     const hasVariants = colorsOn || sizesOn;
     const [suppliers, setSuppliers] = useState([]);
     const suppliersOn = useSettingsStore(state => state.settings.features?.suppliers !== false);
+    const websiteOn = useSettingsStore(state => state.settings.features?.website !== false);
     const taxOn = useTaxEnabled();
     const [brands, setBrands] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -132,6 +134,8 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 min_stock_level: (product.min_stock_level ?? 5).toString(),
                 tax_rate: (product.tax_rate ?? 0).toString(),
                 is_active: product.is_active ?? true,
+                // Articles saved before the switch are on the website
+                show_on_website: product.show_on_website === undefined || product.show_on_website === null ? true : !!product.show_on_website,
                 image_path: product.image_path || '',
                 gallery: parseGallery(product),
             });
@@ -310,7 +314,16 @@ export function ProductFormModal({ isOpen, onClose, product, categories, onSave,
                 <ModalBody className="space-y-4">
                     {/* 1. The essentials: photos, name, prices */}
                     <section className="grid gap-5 sm:grid-cols-[150px_1fr] items-start">
-                        <ProductImages images={images} onChange={setImages} />
+                        <div className="space-y-3">
+                            <ProductImages images={images} onChange={setImages} />
+                            {/* Unticked: the article stays in the shop but is not on the website */}
+                            {websiteOn && (
+                                <label className="flex items-start gap-2 cursor-pointer select-none rounded-lg border border-dark-border px-2.5 py-2 hover:border-zinc-600" data-testid="product-on-website">
+                                    <input type="checkbox" checked={!!formData.show_on_website} onChange={(e) => set('show_on_website', e.target.checked)} className="mt-0.5 w-4 h-4 rounded flex-none" />
+                                    <span className="text-sm leading-snug">{t('products.onWebsite')}</span>
+                                </label>
+                            )}
+                        </div>
                         <div className="min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                             <Input label={t('products.name')} value={formData.name} onChange={(e) => set('name', e.target.value)}
                                 placeholder={t('products.namePlaceholder')} containerClassName="sm:col-span-2" autoFocus={!product} />

@@ -9,6 +9,7 @@
  */
 const { esc, html, phoneDigits, phoneHtml } = require('./html');
 const C = require('./components');
+const { LEGAL_PAGES, legalPage } = require('./legal');
 
 const byNewest = (list) => [...list].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 
@@ -205,9 +206,23 @@ function locationPage(ctx) {
 }
 
 /** page id -> builder (all at <id>.html). */
+/** Returns, terms, privacy, delivery: the same words for every shop, its name and contact in them. */
+function legal(id) {
+    return (ctx) => {
+        const page = legalPage(id, ctx.lang, ctx.snap.shop);
+        return html(
+            pageHead(ctx, page.title),
+            `<main class="container-narrow section legal">`,
+            ...page.sections.map(sec => `<section><h2>${esc(sec.h)}</h2>${sec.p.map(t => `<p>${esc(t)}</p>`).join('')}</section>`),
+            `</main>`,
+        );
+    };
+}
+
 const STORE_PAGES = {
     products: allProducts, search: searchPage, new: newPage, best: bestPage, offers: offersPage,
     categories: categoriesPage, cart: cartPage, checkout: checkoutPage, contact: contactPage, about: aboutPage, location: locationPage,
+    ...Object.fromEntries(LEGAL_PAGES.map(id => [id, legal(id)])),
 };
 
 module.exports = { STORE_PAGES, listingPage, filterBar, contactBlock };

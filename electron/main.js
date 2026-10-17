@@ -235,6 +235,8 @@ if (!gotTheLock) {
     // Install date, training / demo shop windows (an expired demo is only closed, its data kept)
     refreshTrial();
     setInterval(refreshTrial, 60 * 60 * 1000);
+    // Website info typed by an older version: copied once to Settings › Shop
+    website.moveContactToShop();
 
     // Daily backup copy (on unless turned off in Settings › Backup)
     runDailyBackup();
@@ -604,6 +606,7 @@ ipcMain.handle('backup:restore', async (_, name) => {
       throw error;
     }
     refreshTrial();
+    website.moveContactToShop();
     // The pictures of the restored articles come back too (none removed)
     try { backupService.restoreImages(dir, shopImagesDir()); } catch (error) { console.error('Pictures not restored:', error); }
     // The employees may differ in the restored data: log in again

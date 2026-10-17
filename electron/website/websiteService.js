@@ -24,6 +24,7 @@ const { isPromotionLive, parseIds } = require('../shared/promotions.mjs');
 const providers = require('./providers');
 const { summarize } = require('./catalogSnapshot');
 const { buildPublicData, checkSiteFiles, publicInfo } = require('./publicData');
+const { photoDataUrl } = require('./storefront/photos');
 const { FEATURES } = require('./publicData/public');
 const { createYalidineClient, parcelOf } = require('./couriers/yalidine');
 const { phoneKey } = require('./orders/phone');
@@ -49,7 +50,9 @@ const fs = require('fs');
 const path = require('path');
 
 // The shop's website API and the tables of its database, uploaded to its own Cloudflare account
-const WORKER_SOURCE = () => fs.readFileSync(path.join(__dirname, 'worker', 'worker.mjs'), 'utf8');
+// The Worker with the communes of each wilaya written in (it checks the order's commune)
+const WORKER_SOURCE = () => fs.readFileSync(path.join(__dirname, 'worker', 'worker.mjs'), 'utf8')
+    .replace('/*@COMMUNES@*/{}', () => fs.readFileSync(path.join(__dirname, '..', 'shared', 'communes.json'), 'utf8'));
 const SCHEMA_SQL = () => fs.readFileSync(path.join(__dirname, 'worker', 'schema.sql'), 'utf8');
 
 // Without a GitHub setup (tests of the website alone): nothing can be linked
@@ -66,6 +69,25 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     const write = (next) => { saveSetting(KEY, next); return next; };
     const shopName = () => (getSetting('store_config') || {}).businessName || '';
     const mustExist = (s) => { if (!s.created) throw codedError('WEBSITE_NOT_CREATED'); return s; };
+
+    // Opening hours, social pages and map moved to Settings › Shop: the values typed
+    // on the Website screen by an older version are copied there once (nothing lost)
+    function moveContactToShop() {
+        try {
+            if (blockedMode()) return;
+            const saved = getSetting(KEY);
+            const info = saved?.publicInfo;
+            if (!info) return;
+            const store = getSetting('store_config') || {};
+            if (['shopHours', 'shopFacebook', 'shopInstagram', 'shopTiktok', 'shopMapUrl'].some(k => k in store)) return;
+            const hours = (Array.isArray(info.hours) ? info.hours : []).join('\n');
+            const moved = {
+                shopHours: hours, shopFacebook: info.social?.facebook || '', shopInstagram: info.social?.instagram || '',
+                shopTiktok: info.social?.tiktok || '', shopMapUrl: info.mapUrl || '',
+            };
+            if (Object.values(moved).some(Boolean)) saveSetting('store_config', { ...store, ...moved });
+        } catch { /* kept on the Website screen's values, read the same way */ }
+    }
 
     // The shop's GitHub account. Its state is saved in the website value;
     // nothing is written while the demo shop or training is open (their
@@ -327,6 +349,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             snapshot, theme: t, page: kind, id: kind === 'category' ? category : kind === 'page' ? asked : productId,
             lang: snapshot.shop.language, preview: true,
             assetUrl: (path) => `app://${encodeURIComponent(path)}`,
+            photoUrl: photoDataUrl,
         });
         return {
             theme: t.id, page: asked, html, products: snapshot.products.length,
@@ -639,7 +662,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     function setSettings(part = {}) {
         const s = mustExist(read());
         const pub = {};
-        for (const k of ['delivery', 'tracking', 'sizeGuides', 'fewLeftAt']) if (k in part) pub[k] = part[k];
+        for (const k of ['delivery', 'tracking', 'sizeGuides', 'fewLeftAt', 'hero']) if (k in part) pub[k] = part[k];
         const tools = { ...s.tools };
         if ('confirmMessage' in part) tools.confirmMessage = String(part.confirmMessage || '');
         if ('trackingLinks' in part) tools.trackingLinks = part.trackingLinks;
@@ -1107,7 +1130,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     }
 
     return {
-        view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
+        view, moveContactToShop, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubConnectToken, cloudflareConnectToken, tokenPage, signupPage, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
         publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, setFeatures, setSettings, blockPhone, unblockPhone, blockSuggestions, confirmMessage, setTracking,
         yalidineLink, yalidineForget, yalidineSend, yalidineRefresh, stats, apiConfig, changes,

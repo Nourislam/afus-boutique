@@ -150,13 +150,37 @@ function publicInfo(info = {}) {
         delivery: deliveryPrices(info.delivery),
         tracking: trackers(info.tracking),
         sizeGuides: sizeGuides(info.sizeGuides),
+        // The home page's big picture (Website › Design): a picture of the images folder, two short texts
+        hero: {
+            image: typeof info.hero?.image === 'string' && PREVIEW_IMAGE.test(info.hero.image) ? info.hero.image : '',
+            title: text(info.hero?.title, 80),
+            subtitle: text(info.hero?.subtitle, 160),
+        },
         // "Few left" from this many pieces down (the counts themselves never leave SQLite)
         fewLeftAt: Number.isInteger(info.fewLeftAt) && info.fewLeftAt >= 1 && info.fewLeftAt <= 20 ? info.fewLeftAt : 3,
     };
 }
 
+/**
+ * Opening hours, social pages and map: typed in Settings › Shop (store_config);
+ * the values an older version kept on the Website screen are used while the
+ * settings have none.
+ */
+const STORE_SOCIAL = { facebook: 'shopFacebook', instagram: 'shopInstagram', tiktok: 'shopTiktok' };
+function contactInfo(store = {}, info = {}) {
+    const has = (v) => String(v ?? '').trim() !== '';
+    const fromStore = has(store.shopHours) || has(store.shopMapUrl) || Object.values(STORE_SOCIAL).some(k => has(store[k]));
+    if (!fromStore) return info;
+    return {
+        ...info,
+        hours: String(store.shopHours || ''),
+        social: Object.fromEntries(Object.entries(STORE_SOCIAL).map(([k, key]) => [k, store[key] || ''])),
+        mapUrl: store.shopMapUrl || '',
+    };
+}
+
 function shopOf(store, info, pic) {
-    const extra = publicInfo(info);
+    const extra = publicInfo(contactInfo(store, info));
     return {
         name: text(store.businessName, 120),
         logo: pic(store.shopLogo) || '',
@@ -176,6 +200,7 @@ function shopOf(store, info, pic) {
         delivery: extra.delivery,
         tracking: extra.tracking,
         sizeGuides: extra.sizeGuides,
+        hero: { image: pic(extra.hero.image) || '', title: extra.hero.title, subtitle: extra.hero.subtitle },
     };
 }
 
@@ -258,6 +283,7 @@ const PUBLIC_SHAPE = {
         delivery: { home: 'number|null', office: 'number|null', freeOver: 'number|null', wilayas: { '*': { code: 'number', home: 'number|null', office: 'number|null', off: 'boolean' } } },
         tracking: Object.fromEntries(Object.keys(TRACKERS).map(k => [k, 'string'])),
         sizeGuides: { '*': { categoryId: 'string', text: 'string' } },
+        hero: { image: 'string', title: 'string', subtitle: 'string' },
     },
     categories: { '*': { id: 'string', name: 'string', count: 'number' } },
     brands: { '*': 'string' },
@@ -274,4 +300,4 @@ const PUBLIC_SHAPE = {
     promotions: { '*': { id: 'string', name: 'string', type: 'string', value: 'number', appliesTo: 'string', ids: { '*': 'string' }, endsAt: 'string|null' } },
 };
 
-module.exports = { toPublic, publicInfo, features, FEATURES, deliveryPrices, deliveryFee, trackers, TRACKERS, sizeGuides, PUBLIC_SHAPE, VERSION, IMAGE, SOCIAL_HOSTS, MAP_HOSTS };
+module.exports = { toPublic, publicInfo, contactInfo, STORE_SOCIAL, features, FEATURES, deliveryPrices, deliveryFee, trackers, TRACKERS, sizeGuides, PUBLIC_SHAPE, VERSION, IMAGE, SOCIAL_HOSTS, MAP_HOSTS };
