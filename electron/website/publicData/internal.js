@@ -20,7 +20,9 @@ const ON_WEBSITE = 'COALESCE(p.show_on_website, 1) = 1';
 // The keys of the shop's settings (store_config) a website may show; the
 // others (tax numbers RC / NIF / NIS / AI, owner, printers, receipts...) are
 // never taken out of the settings.
-const STORE_KEYS = ['businessName', 'shopLogo', 'shopDescription', 'businessPhone', 'businessEmail', 'businessAddress', 'businessCity', 'businessWilaya', 'currency', 'defaultLanguage'];
+const STORE_KEYS = ['businessName', 'shopLogo', 'shopDescription', 'businessPhone', 'businessEmail', 'businessAddress', 'businessCity', 'businessWilaya', 'currency', 'defaultLanguage',
+    // Settings › Shop › "Social pages and address": opening hours, Facebook / Instagram / TikTok, map link
+    'shopHours', 'shopFacebook', 'shopInstagram', 'shopTiktok', 'shopMapUrl'];
 
 function readJson(text, fallback) {
     if (text === null || text === undefined) return fallback;

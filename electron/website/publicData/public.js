@@ -161,8 +161,26 @@ function publicInfo(info = {}) {
     };
 }
 
+/**
+ * Opening hours, social pages and map: typed in Settings › Shop (store_config);
+ * the values an older version kept on the Website screen are used while the
+ * settings have none.
+ */
+const STORE_SOCIAL = { facebook: 'shopFacebook', instagram: 'shopInstagram', tiktok: 'shopTiktok' };
+function contactInfo(store = {}, info = {}) {
+    const has = (v) => String(v ?? '').trim() !== '';
+    const fromStore = has(store.shopHours) || has(store.shopMapUrl) || Object.values(STORE_SOCIAL).some(k => has(store[k]));
+    if (!fromStore) return info;
+    return {
+        ...info,
+        hours: String(store.shopHours || ''),
+        social: Object.fromEntries(Object.entries(STORE_SOCIAL).map(([k, key]) => [k, store[key] || ''])),
+        mapUrl: store.shopMapUrl || '',
+    };
+}
+
 function shopOf(store, info, pic) {
-    const extra = publicInfo(info);
+    const extra = publicInfo(contactInfo(store, info));
     return {
         name: text(store.businessName, 120),
         logo: pic(store.shopLogo) || '',
@@ -282,4 +300,4 @@ const PUBLIC_SHAPE = {
     promotions: { '*': { id: 'string', name: 'string', type: 'string', value: 'number', appliesTo: 'string', ids: { '*': 'string' }, endsAt: 'string|null' } },
 };
 
-module.exports = { toPublic, publicInfo, features, FEATURES, deliveryPrices, deliveryFee, trackers, TRACKERS, sizeGuides, PUBLIC_SHAPE, VERSION, IMAGE, SOCIAL_HOSTS, MAP_HOSTS };
+module.exports = { toPublic, publicInfo, contactInfo, STORE_SOCIAL, features, FEATURES, deliveryPrices, deliveryFee, trackers, TRACKERS, sizeGuides, PUBLIC_SHAPE, VERSION, IMAGE, SOCIAL_HOSTS, MAP_HOSTS };

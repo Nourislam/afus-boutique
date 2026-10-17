@@ -187,6 +187,8 @@ export default {
     'website.hero.change': ["Change the picture", "Changer l'image", "غيّر الصورة"],
     'website.hero.heading': ["Title (optional)", "Titre (facultatif)", "العنوان (اختياري)"],
     'website.hero.subtitle': ["Short sentence (optional)", "Phrase courte (facultatif)", "جملة قصيرة (اختياري)"],
+    'website.info.movedToShop': ["Opening hours, social pages and map are in the shop settings.", "Horaires, réseaux sociaux et carte sont dans les réglages de la boutique.", "أوقات العمل ومواقع التواصل والخريطة في إعدادات المحل."],
+    'website.info.openShop': ["Open", "Ouvrir", "افتح"],
     'website.info.title': ["Information for customers", "Informations pour les clients", "معلومات للزبائن"],
     'website.info.hint': ["Shown on your website only. The name, phone, address and logo come from Settings.", "Affichées seulement sur votre site. Le nom, le téléphone, l'adresse et le logo viennent des Réglages.", "تظهر في موقعك فقط. الاسم والهاتف والعنوان والشعار تؤخذ من الإعدادات."],
     'website.info.hours': ["Opening hours (one line each)", "Horaires (une ligne chacun)", "أوقات العمل (سطر لكل فترة)"],

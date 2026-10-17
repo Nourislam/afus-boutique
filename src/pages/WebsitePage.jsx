@@ -579,19 +579,19 @@ function WebsiteDashboard({ site, setSite, preview, busy, run }) {
 }
 
 /** The website's settings, one subject per tab (saved each on its own). */
-const SETTINGS_TABS = ['info', 'features', 'delivery', 'messages', 'tracking', 'blocked', 'sizes', 'couriers'];
+const SETTINGS_TABS = ['features', 'delivery', 'messages', 'tracking', 'blocked', 'sizes', 'couriers'];
 function WebsiteSettings({ site, busy, run }) {
     const { t } = useT();
     const [params, setParams] = useSearchParams();
-    const tab = SETTINGS_TABS.includes(params.get('s')) ? params.get('s') : 'info';
+    const tab = SETTINGS_TABS.includes(params.get('s')) ? params.get('s') : 'features';
     const setTab = (id) => setParams((p) => { const next = new URLSearchParams(p); next.set('s', id); return next; }, { replace: true });
     return (
         <div className="space-y-4" data-testid="website-settings">
             <Tabs tabs={SETTINGS_TABS.map(id => ({ id, label: t(`website.settingsTab.${id}`) }))} value={tab} onChange={setTab} testId="website-settings-tab" />
             <div className="max-w-4xl">
-                {tab === 'info' && <PublicInfoCard site={site} busy={busy} run={run} />}
                 {tab === 'features' && <FeaturesCard site={site} busy={busy} run={run} />}
                 {tab === 'delivery' && <DeliveryPricesCard site={site} busy={busy} run={run} />}
+                {tab === 'delivery' && <CouriersCard site={site} busy={busy} run={run} />}
                 {tab === 'messages' && <MessagesCard site={site} busy={busy} run={run} />}
                 {tab === 'tracking' && <TrackingCard site={site} busy={busy} run={run} />}
                 {tab === 'blocked' && <BlockedPhonesCard site={site} busy={busy} run={run} />}
@@ -1851,55 +1851,28 @@ function FeaturesCard({ site, busy, run }) {
     );
 }
 
-function PublicInfoCard({ site, busy, run }) {
+function CouriersCard({ site, busy, run }) {
     const { t } = useT();
-    const saved = site.publicInfo || { hours: [], social: {}, mapUrl: '' };
-    const fromSaved = () => ({ hours: (saved.hours || []).join('\n'), facebook: saved.social?.facebook || '', instagram: saved.social?.instagram || '', tiktok: saved.social?.tiktok || '', mapUrl: saved.mapUrl || '', couriers: saved.couriers || [] });
-    const [form, setForm] = useState(fromSaved);
-    useEffect(() => { setForm(fromSaved()); }, [JSON.stringify(saved)]);
-    const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }));
-    const save = () => run('info', () => window.electronAPI.website.setPublicInfo({
-        hours: form.hours, social: { facebook: form.facebook, instagram: form.instagram, tiktok: form.tiktok }, mapUrl: form.mapUrl, couriers: form.couriers,
-    }), (next) => {
-        const refused = next?.result?.refused || [];
-        if (refused.length) toast.error(t('website.info.refused', { list: refused.map(k => t(`website.info.${k}`)).join('، ') }), 7000);
-        else toast.success(t('website.info.saved'));
-    });
-    const field = (key, label, placeholder) => (
-        <label className="block space-y-1">
-            <span className="text-xs text-zinc-400">{label}</span>
-            <input className="input w-full" dir="ltr" value={form[key]} onChange={set(key)} placeholder={placeholder} maxLength={300} data-testid={`website-info-${key}`} />
-        </label>
-    );
+    const saved = site.publicInfo?.couriers || [];
+    const [couriers, setCouriers] = useState(saved);
+    useEffect(() => { setCouriers(saved); }, [JSON.stringify(saved)]);
+    // The opening hours, social pages and map are in Settings › Shop; only the companies are saved here
+    const save = () => run('info', () => window.electronAPI.website.setPublicInfo({ ...site.publicInfo, couriers }), () => toast.success(t('website.info.saved')));
     return (
-        <section className="card space-y-3" data-testid="website-info">
-            <h2 className="font-semibold flex items-center gap-2"><Store className="w-4 h-4 text-indigo-300" /> {t('website.info.title')}</h2>
-            <p className="text-xs text-zinc-500 leading-relaxed">{t('website.info.hint')}</p>
-            <label className="block space-y-1">
-                <span className="text-xs text-zinc-400">{t('website.info.hours')}</span>
-                <textarea className="input w-full" rows={3} value={form.hours} onChange={set('hours')} placeholder={t('website.info.hoursPlaceholder')} maxLength={800} data-testid="website-info-hours" />
-            </label>
-            {field('facebook', t('website.info.facebook'), 'https://facebook.com/…')}
-            {field('instagram', t('website.info.instagram'), 'https://instagram.com/…')}
-            {field('tiktok', t('website.info.tiktok'), 'https://tiktok.com/@…')}
-            {field('mapUrl', t('website.info.mapUrl'), 'https://maps.app.goo.gl/…')}
-            <fieldset className="space-y-2" data-testid="website-info-couriers">
-                <legend className="text-xs text-zinc-400">{t('website.info.couriers')}</legend>
-                <div className="flex flex-wrap gap-2">
-                    {(site.couriersList || []).map(c => (
-                        <label key={c.id} className="flex items-center gap-2 rounded-lg bg-dark-tertiary/60 px-2 py-1 text-sm cursor-pointer">
-                            <input type="checkbox" checked={form.couriers.includes(c.id)} data-testid={`website-courier-${c.id}`}
-                                onChange={(e) => setForm(f => ({ ...f, couriers: e.target.checked ? [...f.couriers, c.id] : f.couriers.filter(x => x !== c.id) }))} />
-                            <span dir="ltr">{c.name}</span>
-                        </label>
-                    ))}
-                </div>
-                <p className="text-xs text-zinc-500">{t('website.info.couriersHint')}</p>
-            </fieldset>
-            <div className="flex justify-end">
-                <Button size="sm" onClick={save} loading={busy === 'info'} data-testid="website-info-save">{t('common.save')}</Button>
+        <SettingsCard testId="website-info-couriers" icon={Store} title={t('website.info.couriers')} hint={t('website.info.couriersHint')} onSave={save} saving={busy === 'info'}>
+            <div className="flex flex-wrap gap-2">
+                {(site.couriersList || []).map(c => (
+                    <label key={c.id} className="flex items-center gap-2 rounded-lg bg-dark-tertiary/60 px-2 py-1 text-sm cursor-pointer">
+                        <input type="checkbox" checked={couriers.includes(c.id)} data-testid={`website-courier-${c.id}`}
+                            onChange={(e) => setCouriers(list => (e.target.checked ? [...list, c.id] : list.filter(x => x !== c.id)))} />
+                        <span dir="ltr">{c.name}</span>
+                    </label>
+                ))}
             </div>
-        </section>
+            <p className="text-xs text-zinc-500">
+                {t('website.info.movedToShop')} <Link className="text-indigo-300 hover:text-indigo-200 underline" to="/settings?tab=business" data-testid="website-info-shop-link">{t('website.info.openShop')}</Link>
+            </p>
+        </SettingsCard>
     );
 }
 

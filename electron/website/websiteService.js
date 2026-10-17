@@ -68,6 +68,25 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     const shopName = () => (getSetting('store_config') || {}).businessName || '';
     const mustExist = (s) => { if (!s.created) throw codedError('WEBSITE_NOT_CREATED'); return s; };
 
+    // Opening hours, social pages and map moved to Settings › Shop: the values typed
+    // on the Website screen by an older version are copied there once (nothing lost)
+    function moveContactToShop() {
+        try {
+            if (blockedMode()) return;
+            const saved = getSetting(KEY);
+            const info = saved?.publicInfo;
+            if (!info) return;
+            const store = getSetting('store_config') || {};
+            if (['shopHours', 'shopFacebook', 'shopInstagram', 'shopTiktok', 'shopMapUrl'].some(k => k in store)) return;
+            const hours = (Array.isArray(info.hours) ? info.hours : []).join('\n');
+            const moved = {
+                shopHours: hours, shopFacebook: info.social?.facebook || '', shopInstagram: info.social?.instagram || '',
+                shopTiktok: info.social?.tiktok || '', shopMapUrl: info.mapUrl || '',
+            };
+            if (Object.values(moved).some(Boolean)) saveSetting('store_config', { ...store, ...moved });
+        } catch { /* kept on the Website screen's values, read the same way */ }
+    }
+
     // The shop's GitHub account. Its state is saved in the website value;
     // nothing is written while the demo shop or training is open (their
     // database is not the shop's)
@@ -1109,7 +1128,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     }
 
     return {
-        view, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
+        view, moveContactToShop, create, setTheme, setName, setDomain, removeDomain, update, connect, preview, previewTheme,
         githubStart, githubConnectToken, cloudflareConnectToken, tokenPage, signupPage, githubCancel, githubDisconnect, githubCheck, githubFlowPage, ensureRepository,
         publishSite, recheckSite, orders, customers, customerHistory, confirmOrder, updateOrder, orderChoices, labelData, labelPrinted, syncOrders, syncIfDue, setOrderStatus, checkReturn, setPublicInfo, setFeatures, setSettings, blockPhone, unblockPhone, blockSuggestions, confirmMessage, setTracking,
         yalidineLink, yalidineForget, yalidineSend, yalidineRefresh, stats, apiConfig, changes,
