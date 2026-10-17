@@ -5,9 +5,15 @@
   "supportWebsite": "",
   "updateUrl": "",
   "licensePublicKey": "",
-  "githubClientId": "",
-  "cloudflareClientId": "",
-  "cloudflareScopes": [],
+  "githubClientId": "Ov23liQp12mnCqLWaXeY",
+  "cloudflareClientId": "d5fbdf86179dd5b6d27fb408333257f3",
+  "cloudflareScopes": [
+    "d1.write",
+    "workers-scripts.edit",
+    "workers-scripts.metadata_read",
+    "account-settings.read",
+    "offline_access"
+  ],
   "cloudflareRedirectPorts": [
     47651,
     47652,
