@@ -19,6 +19,7 @@ const { css } = require('../storefront/css');
 const { fontFiles } = require('../storefront/fonts');
 const { textsFor } = require('../storefront/texts');
 const { money, placeholder } = require('../storefront/html');
+const { readPhoto } = require('../storefront/photos');
 
 const STORE_SCRIPT = path.join(__dirname, '..', 'storefront', 'assets', 'store.js');
 const TRACK_SCRIPT = path.join(__dirname, '..', 'storefront', 'assets', 'track.js');
@@ -78,15 +79,21 @@ function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, l
     };
     const snap = {
         ...snapshot,
-        shop: { ...snapshot.shop, logo: keep(snapshot.shop.logo) ? snapshot.shop.logo : '' },
+        shop: {
+            ...snapshot.shop, logo: keep(snapshot.shop.logo) ? snapshot.shop.logo : '',
+            ...(snapshot.shop.hero ? { hero: { ...snapshot.shop.hero, image: keep(snapshot.shop.hero.image) ? snapshot.shop.hero.image : '' } } : {}),
+        },
         products: snapshot.products.map(p => ({ ...p, images: p.images.filter(keep) })),
     };
     const language = lang || snap.shop.language || 'ar';
     const asset = (name) => `images/${name}`;
+    // The built-in photos the pages show (where the shop has no picture yet): only those are published
+    const photos = new Set();
+    const photoUrl = (file) => { if (readPhoto(file)) { photos.add(file); return `photos/${file}`; } return ''; };
 
     const files = [];
     for (const page of pagesOf(snap)) {
-        files.push({ path: page.path, content: renderPage({ snapshot: snap, theme, page: page.page, id: page.id, lang: language, assetUrl: asset, orderUrl }) });
+        files.push({ path: page.path, content: renderPage({ snapshot: snap, theme, page: page.page, id: page.id, lang: language, assetUrl: asset, photoUrl, orderUrl }) });
     }
     // The website's own style sheet and script (no inline script: Content-Security-Policy)
     files.push({ path: STYLE, content: css(theme) });
@@ -95,8 +102,9 @@ function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, l
     // The ads / visit tools, only when the shop turned one on
     if (Object.values(snap.shop.tracking || {}).some(Boolean)) files.push({ path: TRACK, content: fs.readFileSync(TRACK_SCRIPT, 'utf8') });
     files.push({ path: 'search.json', content: JSON.stringify(searchCatalog(snap, theme, language, asset)) });
-    files.push({ path: '404.html', content: renderPage({ snapshot: snap, theme, page: 'home', lang: language, assetUrl: asset, orderUrl }) });
+    files.push({ path: '404.html', content: renderPage({ snapshot: snap, theme, page: 'home', lang: language, assetUrl: asset, photoUrl, orderUrl }) });
     for (const [name, data] of images) if (data) files.push({ path: asset(name), content: data });
+    for (const file of photos) files.push({ path: `photos/${file}`, content: readPhoto(file) });
     // The public catalogue: what the pages show, for other uses of the website
     files.push({ path: 'catalog.json', content: JSON.stringify({ builtAt: snap.builtAt, theme: theme.id, shop: snap.shop, categories: snap.categories, products: snap.products }, null, 1) });
     files.push({ path: '.nojekyll', content: '' });

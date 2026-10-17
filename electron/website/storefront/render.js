@@ -11,6 +11,7 @@
  *     preview: inside the program: links go nowhere, the style is in the
  *              page, no script (the frame runs none)
  *     assetUrl(path): the address of one of the shop's pictures
+ *     photoUrl(file): the address of one of the built-in photos (storefront/photos.js)
  *   pagesOf(snapshot): every page of the website, for publishing
  *
  * The published pages load one style sheet and one script of the website
@@ -72,12 +73,13 @@ function linkFor(kind, id) {
     return 'index.html';
 }
 
-function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', preview = false, assetUrl = (p) => p, orderUrl = null }) {
+function renderPage({ snapshot, theme, page = 'home', id = null, lang = 'ar', preview = false, assetUrl = (p) => p, photoUrl = (f) => `photos/${f}`, orderUrl = null }) {
     const language = LANGS.includes(lang) ? lang : 'ar';
     const ctx = {
         snap: snapshot, theme, lang: language, t: textsFor(language), preview,
         link: preview ? () => '#' : linkFor,
         img: (path) => assetUrl(path),
+        photo: (file) => photoUrl(file),
         current: page === 'home' ? 'home' : `${page}:${id}`,
         orderUrl: !preview && orderUrl && /^https?:\/\//.test(orderUrl) ? orderUrl : null,
     };

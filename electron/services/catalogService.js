@@ -629,6 +629,11 @@ function saveProduct(api, product, variants = [], { employeeId = null, isNew = f
             const wholesale = Number(product.wholesale_price);
             api.run('UPDATE products SET wholesale_price = ? WHERE id = ?', [wholesale > 0 ? wholesale : null, product.id]);
         }
+        // On the shop's website or not, when the form sends it (a new article is shown)
+        if (product.show_on_website !== undefined) {
+            const shown = !(product.show_on_website === false || product.show_on_website === 0);
+            api.run('UPDATE products SET show_on_website = ? WHERE id = ?', [shown ? 1 : 0, product.id]);
+        }
 
         // Simple product: stock is kept on the product itself
         if (!hasVariants) {

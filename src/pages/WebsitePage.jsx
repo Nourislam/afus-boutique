@@ -15,6 +15,7 @@ import { toast } from '../components/ui/Toast';
 import { translateError } from '../i18n/errors';
 import { formatDate, formatMoney, formatNumber } from '../i18n/format';
 import { useT } from '../i18n';
+import { resizeImageDataUrl } from '../lib/imageResize';
 
 const STATUS_STYLE = {
     none: 'bg-zinc-500/20 text-zinc-300',
@@ -269,7 +270,8 @@ function ThemeStudio({ site, busy, run }) {
         setFailed(false);
         api.previewTheme({ theme: picked, page }).then((r) => { if (alive) setPreview(r); }, () => { if (alive) setFailed(true); });
         return () => { alive = false; };
-    }, [picked, page]);
+    // The home picture changed: drawn again
+    }, [picked, page, JSON.stringify(site.publicInfo?.hero || null)]);
     const chosen = site.themes.find(x => x.id === picked);
     const online = !!site.publishedAt;
     // Online already: the website's pages are made again with the new look (the shop's data is only read)
@@ -552,6 +554,7 @@ function WebsiteDashboard({ site, setSite, preview, busy, run }) {
             )}
 
             {/* Theme: pick, see the shop's own website in it, keep */}
+            {tab === 'design' && <HeroCard site={site} busy={busy} run={run} />}
             {tab === 'design' && <ThemeStudio site={site} busy={busy} run={run} />}
 
             {tab === 'settings' && <WebsiteSettings site={site} busy={busy} run={run} />}
@@ -2013,6 +2016,77 @@ function SettingsCard({ testId, icon: Icon = Settings2, title, hint, children, o
             {children}
             {onSave && <div className="flex justify-end"><Button size="sm" onClick={onSave} loading={saving} data-testid={`${testId}-save`}>{t('common.save')}</Button></div>}
         </section>
+    );
+}
+
+/**
+ * The home page's big picture: the shop's own photo (else its newest article
+ * photo, else a built-in photo) and two optional short texts over it.
+ */
+function HeroCard({ site, busy, run }) {
+    const { t } = useT();
+    const saved = site.publicInfo?.hero || { image: '', title: '', subtitle: '' };
+    const [form, setForm] = useState(saved);
+    const [src, setSrc] = useState(null);
+    const [saving, setSaving] = useState(false);
+    useEffect(() => { setForm(saved); }, [JSON.stringify(saved)]);
+    useEffect(() => {
+        let alive = true;
+        if (!form.image) { setSrc(null); return undefined; }
+        window.electronAPI.images.get(form.image).then((data) => { if (alive) setSrc(data || null); }).catch(() => { });
+        return () => { alive = false; };
+    }, [form.image]);
+    const pick = (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        if (file.size > 15 * 1024 * 1024) { toast.error(t('products.imageTooBig')); return; }
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            setSaving(true);
+            try {
+                // Wide and sharp enough for a computer screen, light enough for a phone
+                const base64Data = await resizeImageDataUrl(event.target.result, { maxSize: 1800, type: 'image/jpeg', quality: 0.82 });
+                const result = await window.electronAPI.images.save({ base64Data, originalName: file.name });
+                if (!result?.success) throw new Error(t('products.imageSaveFailed'));
+                setForm(f => ({ ...f, image: result.fileName }));
+            } catch (error) {
+                toast.error(translateError(error));
+            } finally {
+                setSaving(false);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+    const save = () => run('hero', () => window.electronAPI.website.setSettings({ hero: form }), () => toast.success(t('website.info.saved')));
+    return (
+        <SettingsCard testId="website-hero" icon={ImageIcon} title={t('website.hero.title')} hint={t('website.hero.hint')} onSave={save} saving={busy === 'hero'}>
+            <div className="grid gap-4 md:grid-cols-[minmax(0,280px)_1fr] items-start">
+                <div className="space-y-2">
+                    <div className="aspect-[16/9] rounded-xl overflow-hidden border border-dark-border bg-dark-tertiary flex items-center justify-center">
+                        {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : <span className="text-xs text-zinc-500 px-3 text-center">{t('website.hero.none')}</span>}
+                    </div>
+                    <div className="flex gap-2">
+                        <label className={`btn btn-secondary px-3 py-2 text-sm flex-1 justify-center cursor-pointer ${saving ? 'opacity-60 pointer-events-none' : ''}`}>
+                            <ImageIcon className="w-4 h-4" />
+                            <span className="truncate">{saving ? t('common.saving') : t(form.image ? 'website.hero.change' : 'website.hero.choose')}</span>
+                            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={pick} data-testid="website-hero-file" />
+                        </label>
+                        {form.image && <Button size="sm" variant="ghost" onClick={() => setForm(f => ({ ...f, image: '' }))} aria-label={t('common.delete')}><X className="w-4 h-4" /></Button>}
+                    </div>
+                </div>
+                <div className="space-y-3 min-w-0">
+                    <label className="block space-y-1">
+                        <span className="text-xs text-zinc-400">{t('website.hero.heading')}</span>
+                        <input className="input w-full" value={form.title} maxLength={80} placeholder={site.suggestedName || ''} onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))} data-testid="website-hero-heading" />
+                    </label>
+                    <label className="block space-y-1">
+                        <span className="text-xs text-zinc-400">{t('website.hero.subtitle')}</span>
+                        <input className="input w-full" value={form.subtitle} maxLength={160} onChange={(e) => setForm(f => ({ ...f, subtitle: e.target.value }))} data-testid="website-hero-subtitle" />
+                    </label>
+                </div>
+            </div>
+        </SettingsCard>
     );
 }
 

@@ -14,6 +14,9 @@ const AVAILABLE_PRODUCT = `CASE WHEN COALESCE(p.has_variants, 0) = 1
     THEN (SELECT COALESCE(SUM(CASE WHEN v.stock_quantity > 0 THEN 1 ELSE 0 END), 0) > 0 FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1)
     ELSE COALESCE(p.stock_quantity, 0) > 0 END`;
 
+// The articles the shop shows on its website (products.show_on_website, ticked by default)
+const ON_WEBSITE = 'COALESCE(p.show_on_website, 1) = 1';
+
 // The keys of the shop's settings (store_config) a website may show; the
 // others (tax numbers RC / NIF / NIS / AI, owner, printers, receipts...) are
 // never taken out of the settings.
@@ -42,7 +45,7 @@ function readProducts(api, fewAt = 3) {
                (CASE WHEN COALESCE(p.has_variants, 0) = 1
                      THEN (SELECT COALESCE(SUM(MAX(COALESCE(v.stock_quantity, 0), 0)), 0) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1)
                      ELSE MAX(COALESCE(p.stock_quantity, 0), 0) END) BETWEEN 1 AND ${n} AS few
-        FROM products p WHERE p.is_active = 1 ORDER BY p.name, p.id`);
+        FROM products p WHERE p.is_active = 1 AND ${ON_WEBSITE} ORDER BY p.name, p.id`);
 }
 
 function readVariants(api, fewAt = 3) {
@@ -51,7 +54,7 @@ function readVariants(api, fewAt = 3) {
         SELECT v.product_id, v.color, v.color_code, v.size, v.price, (COALESCE(v.stock_quantity, 0) > 0) AS available,
                (COALESCE(v.stock_quantity, 0) BETWEEN 1 AND ${n}) AS few
         FROM product_variants v JOIN products p ON p.id = v.product_id
-        WHERE v.is_active = 1 AND p.is_active = 1 AND COALESCE(p.has_variants, 0) = 1
+        WHERE v.is_active = 1 AND p.is_active = 1 AND ${ON_WEBSITE} AND COALESCE(p.has_variants, 0) = 1
         ORDER BY v.sort_order, v.rowid`);
 }
 

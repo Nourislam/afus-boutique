@@ -527,6 +527,18 @@ body.buybar-on .bottom-bar{display:none}
 .hero-ctas{display:flex;flex-wrap:wrap;gap:10px}
 .btn-outline{border:max(1px,var(--bw)) solid currentColor;color:inherit;background:transparent}
 .hero-full .btn-primary{background:#fff;color:#111}
+/* Centered: the picture behind the text (Dawn's "image banner") */
+.hero-centered{color:#fff;background:#111;min-height:460px;display:flex;align-items:center;justify-content:center}
+.hero-centered .hero-media{position:absolute;inset:0}
+.hero-centered .hero-media::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.42)}
+.hero-centered .hero-text{position:relative;width:100%}
+.hero-centered .hero-sub{color:rgba(255,255,255,.88)}
+.hero-centered .btn-primary{background:#fff;color:#111}
+.hero-title{text-wrap:balance}
+/* The sale banner over a photo */
+.promo{position:relative;overflow:hidden}
+.promo-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.22;mix-blend-mode:luminosity}
+.promo-row{position:relative}
 
 /* Trust: pay on delivery, delivery, a call first */
 .trust-section{border-block:1px solid var(--border);background:var(--bg)}

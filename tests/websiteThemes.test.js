@@ -186,7 +186,7 @@ describe('website themes: every theme draws the same shop data', () => {
                     expect(files.has(href) || /^(https:\/\/wa\.me\/|tel:\+|images\/[\w.-]+$|data:,$)/.test(href), `${theme.id} ${page}:${id} ${href}`).toBe(true);
                 }
                 for (const [, action] of html.matchAll(/action="([^"]*)"/g)) expect(['search.html', api], action).toContain(action);
-                for (const [, src] of html.matchAll(/src="([^"]*)"/g)) expect(src, src).toMatch(/^(images\/|data:image\/svg\+xml|assets\/store\.js$)/);
+                for (const [, src] of html.matchAll(/src="([^"]*)"/g)) expect(src, src).toMatch(/^(images\/|photos\/[\w.-]+\.webp$|data:image\/svg\+xml|assets\/store\.js$)/);
             }
         }
     });

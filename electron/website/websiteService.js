@@ -24,6 +24,7 @@ const { isPromotionLive, parseIds } = require('../shared/promotions.mjs');
 const providers = require('./providers');
 const { summarize } = require('./catalogSnapshot');
 const { buildPublicData, checkSiteFiles, publicInfo } = require('./publicData');
+const { photoDataUrl } = require('./storefront/photos');
 const { FEATURES } = require('./publicData/public');
 const { createYalidineClient, parcelOf } = require('./couriers/yalidine');
 const { phoneKey } = require('./orders/phone');
@@ -327,6 +328,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             snapshot, theme: t, page: kind, id: kind === 'category' ? category : kind === 'page' ? asked : productId,
             lang: snapshot.shop.language, preview: true,
             assetUrl: (path) => `app://${encodeURIComponent(path)}`,
+            photoUrl: photoDataUrl,
         });
         return {
             theme: t.id, page: asked, html, products: snapshot.products.length,
@@ -639,7 +641,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     function setSettings(part = {}) {
         const s = mustExist(read());
         const pub = {};
-        for (const k of ['delivery', 'tracking', 'sizeGuides', 'fewLeftAt']) if (k in part) pub[k] = part[k];
+        for (const k of ['delivery', 'tracking', 'sizeGuides', 'fewLeftAt', 'hero']) if (k in part) pub[k] = part[k];
         const tools = { ...s.tools };
         if ('confirmMessage' in part) tools.confirmMessage = String(part.confirmMessage || '');
         if ('trackingLinks' in part) tools.trackingLinks = part.trackingLinks;

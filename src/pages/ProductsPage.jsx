@@ -41,6 +41,10 @@ export default function ProductsPage() {
     // Articles without a purchase price (?filter=noCost, from the home screen's "complete the prices")
     const noCostOnly = readFilter(searchParams, 'filter', ['noCost'], '') === 'noCost';
     const [variantsByProduct, setVariantsByProduct] = useState(null);
+    // On the website or not (shown only while the website module is on)
+    const websiteOn = useSettingsStore(state => state.settings.features?.website !== false);
+    const [webFilter, setWebFilter] = useState('all');
+    const onWebsite = (product) => product.show_on_website === undefined || product.show_on_website === null || !!product.show_on_website;
     const setNoCostOnly = (on) => {
         const next = new URLSearchParams(searchParams);
         if (on) next.set('filter', 'noCost'); else next.delete('filter');
@@ -100,7 +104,8 @@ export default function ProductsPage() {
             product.brand?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             product.barcode?.includes(searchQuery);
         const matchesCost = !noCostOnly || (variantsByProduct !== null && lacksCost(product, variantsByProduct[product.id] || []));
-        return matchesCategory && matchesSearch && matchesCost;
+        const matchesWeb = !websiteOn || webFilter === 'all' || (webFilter === 'shown') === onWebsite(product);
+        return matchesCategory && matchesSearch && matchesCost && matchesWeb;
     });
 
     const formatCurrency = (amount) => {
@@ -187,6 +192,19 @@ export default function ProductsPage() {
                             ]}
                             className="w-56"
                         />
+                        {websiteOn && (
+                            <Select
+                                value={webFilter}
+                                onChange={setWebFilter}
+                                options={[
+                                    { value: 'all', label: `${t('products.filterWebsite')}: ${t('products.filterWebsiteAll')}` },
+                                    { value: 'shown', label: t('products.filterWebsiteShown') },
+                                    { value: 'hidden', label: t('products.filterWebsiteHidden') },
+                                ]}
+                                className="w-44"
+                                data-testid="filter-website"
+                            />
+                        )}
                         <button type="button" onClick={() => setNoCostOnly(!noCostOnly)} aria-pressed={noCostOnly} data-testid="filter-no-cost"
                             className={`h-10 px-3 rounded-lg border text-sm inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ${noCostOnly ? 'border-amber-500/50 bg-amber-500/15 text-amber-200' : 'border-dark-border text-zinc-400 hover:text-white'}`}>
                             <Tag className="w-4 h-4" /> {t('products.filterNoCost')}
@@ -248,6 +266,7 @@ export default function ProductsPage() {
                                     </div>
                                     <div className="space-y-1">
                                         <h3 dir="auto" className="font-medium leading-snug line-clamp-2 break-words" title={product.name}>{product.name}</h3>
+                                        {websiteOn && !onWebsite(product) && <Badge className="bg-zinc-500/15 text-zinc-400" data-testid="badge-not-on-website">{t('products.hiddenOnWebsite')}</Badge>}
                                         <p className="text-xs text-zinc-500 leading-snug">
                                             {product.variant_count > 0 ? t('products.variantsInStock', { n: product.variant_count, stock: product.stock_quantity }) : (product.sku || t('products.noSku'))}
                                         </p>
@@ -337,6 +356,7 @@ export default function ProductsPage() {
                                                 <span className="min-w-0">
                                                     <span dir="auto" className="block font-medium break-words">{product.name}</span>
                                                     {product.variant_count > 0 && <span className="text-xs text-zinc-500">{t('products.variantCount', { n: product.variant_count })}</span>}
+                                                    {websiteOn && !onWebsite(product) && <span className="block text-xs text-zinc-500">{t('products.hiddenOnWebsite')}</span>}
                                                 </span>
                                             </div>
                                         </TableCell>

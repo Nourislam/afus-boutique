@@ -22,7 +22,8 @@ const UNSET = {
     tracking: { facebook: '', tiktok: '', snapchat: '', google: '' },
     sizeGuides: [],
 };
-const INFO_UNSET = { ...UNSET, fewLeftAt: 3 };
+const NO_HERO = { image: '', title: '', subtitle: '' };
+const INFO_UNSET = { ...UNSET, hero: NO_HERO, fewLeftAt: 3 };
 /** Every key used anywhere in an object. */
 const keysOf = (o, out = new Set()) => {
     if (Array.isArray(o)) o.forEach(v => keysOf(v, out));
@@ -115,7 +116,7 @@ describe('website public data: SQLite internal -> website public', () => {
             address: '12 rue Didouche', city: 'Alger', wilaya: 'Alger', currency: 'DZD', language: 'fr', hours: [], social: {}, mapUrl: '',
             // No courier ticked on the Website screen: every company is offered
             couriers: ['Yalidine', 'ZR Express', 'Maystro Delivery', 'Noest Express', 'Guepex', 'World Express', 'Procolis', 'EMS Algérie Poste'],
-            features: FEATURES, ...UNSET,
+            features: FEATURES, ...UNSET, hero: NO_HERO,
         });
     });
 
