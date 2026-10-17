@@ -4,6 +4,8 @@
  */
 const TEXTS = {
     home: ['الرئيسية', 'Accueil', 'Home'],
+    legal: ['معلومات قانونية', 'Informations légales', 'Legal'],
+    madeWith: ['صُنع بواسطة', 'Créé avec', 'Made with'],
     all: ['كل السلع', 'Tous les articles', 'All products'],
     sale: ['تخفيضات', 'Promotions', 'Sale'],
     new: ['وصل حديثًا', 'Nouveautés', 'New in'],

@@ -4,6 +4,7 @@
  *
  * ctx: { snap, theme, lang, t, link(kind, id), img(path), preview }
  */
+const { LEGAL_PAGES, legalPage } = require('./legal');
 const { esc, html, money, moneyHtml, phoneHtml, safeColor, phoneDigits, placeholder } = require('./html');
 const { WILAYAS, wilayaLabel } = require('./wilayas');
 const { features: resolveFeatures } = require('../publicData/public');
@@ -243,6 +244,9 @@ function shopExtras(ctx) {
     };
 }
 
+// The Afus Boutique mark (the program's logo), small, in every footer
+const AFUS_MARK = '<svg class="afus-mark" viewBox="0 0 890 890" width="18" height="18" aria-hidden="true" focusable="false"><rect width="890" height="890" rx="210" fill="#1239B0"/><path fill="#fff" fill-rule="evenodd" d="M270.577 657.607L324.731 598.493L325.030 598.728A195.0000 195.0000 0 0 0 599.461 564.025A195.0000 195.0000 0 0 0 563.075 289.812A195.0000 195.0000 0 0 0 460.538 250.620L460.000 250.579L460.000 170.410L460.179 170.419A275.0000 275.0000 0 0 1 639.454 250.546L640.000 251.095L640.000 170.000L720.000 170.000L720.000 720.000L640.000 720.000L640.000 638.905L639.454 639.454A275.0000 275.0000 0 0 1 270.577 657.607Z"/><path fill="#16B26B" fill-rule="evenodd" d="M429.821 170.419L430.000 170.410L430.000 250.579L429.462 250.620A195.0000 195.0000 0 0 0 250.719 461.730A195.0000 195.0000 0 0 0 302.132 577.717L302.610 578.228L248.457 637.342L248.174 637.053A275.0000 275.0000 0 0 1 252.947 248.174A275.0000 275.0000 0 0 1 429.821 170.419Z"/></svg>';
+
 function footer(ctx) {
     const shop = ctx.snap.shop;
     const extras = shopExtras(ctx);
@@ -256,7 +260,9 @@ function footer(ctx) {
         `<div class="ftr-nav"><strong>${esc(ctx.t('products'))}</strong><div class="ftr-links">${[...navItems(ctx).filter(i => i.page !== 'home'), { href: ctx.link('page', 'location'), label: ctx.t('location') }, ...(featuresOf(ctx).cart ? [{ href: ctx.link('page', 'cart'), label: ctx.t('cart') }] : [])].map(i => `<a href="${esc(i.href)}">${esc(i.label)}</a>`).join('')}</div></div>`,
         (shop.phone || where || shop.email || shop.mapUrl) && `<div><strong>${esc(ctx.t('contact'))}</strong>${shop.phone ? `<p>${phoneHtml(shop.phone)}</p>` : ''}${shop.email ? `<p>${esc(shop.email)}</p>` : ''}${where ? `<p>${esc(where)}</p>` : ''}${extras.map ? `<p>${extras.map}</p>` : ''}</div>`,
         (extras.hours || extras.social) && `<div>${extras.hours}${extras.social}</div>`,
-        `</div><div class="container ftr-bottom">© ${year} ${esc(shop.name)} · ${esc(ctx.t('rights'))}</div></footer>`,
+        `</div><nav class="container ftr-legal" aria-label="${esc(ctx.t('legal'))}">${LEGAL_PAGES.map(id => `<a href="${esc(ctx.link('page', id))}">${esc(legalPage(id, ctx.lang, shop).title)}</a>`).join('')}</nav>`,
+        `<div class="container ftr-bottom"><span>© ${year} ${esc(shop.name)} · ${esc(ctx.t('rights'))}</span>`,
+        `<span class="ftr-made">${AFUS_MARK}<span>${esc(ctx.t('madeWith'))} <strong>Afus Boutique</strong></span></span></div></footer>`,
     );
 }
 
