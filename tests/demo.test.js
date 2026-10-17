@@ -23,7 +23,6 @@ const { EcommerceSyncManager } = require('../electron/ecommerce/EcommerceSyncMan
 
 const REAL_FILE = path.join(dir, 'afus-boutique.db');
 const realHash = () => crypto.createHash('sha256').update(fs.readFileSync(REAL_FILE)).digest('hex');
-const fileHash = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const count = (table, where = '') => api.get(`SELECT COUNT(*) AS n FROM ${table} ${where}`).n;
 const RANGE = { startDate: '2000-01-01', endDate: '2999-01-01' };
 
@@ -139,20 +138,6 @@ describe('demo shop: its own database, never the shop\'s', () => {
         expect(realHash()).toBe(realBefore.hash);
     });
 
-    it('training inside the demo works on a copy of the demo; leaving training gives the demo back as it was', () => {
-        const demoFile = init.getDbPath();
-        const before = { hash: fileHash(demoFile), sales: count('sales') };
-        expect(init.startSandbox()).toBe(true);
-        api.run("INSERT INTO sales (id, receipt_number, subtotal, total, status) VALUES ('training-sale', 'TR-1', 500, 500, 'completed')");
-        init.saveDatabase();
-        expect(count('sales')).toBe(before.sales + 1);
-        expect(fileHash(demoFile)).toBe(before.hash);
-        init.stopSandbox();
-        expect(count('sales')).toBe(before.sales);
-        expect(init.isDemo()).toBe(true);
-        expect(realHash()).toBe(realBefore.hash);
-    });
-
     it('reset gives the demo shop back as at the start, the real file is not touched', async () => {
         await demo.reset({ lang: 'fr' });
         expect(init.isDemo()).toBe(true);
@@ -217,13 +202,13 @@ describe('demo shop: its own database, never the shop\'s', () => {
 });
 
 describe('online store with the demo shop', () => {
-    function manager({ demoActive, training = false }) {
+    function manager({ demoActive }) {
         const handlers = {};
         const m = new EcommerceSyncManager({
             store: { runQuery: () => [], getOne: () => null, runInsert: () => ({}) },
             adapters: {}, isEnabled: () => true, ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; } },
         });
-        m.init({ isTraining: () => training, isDemo: () => demoActive });
+        m.init({ isDemo: () => demoActive });
         return { m, call: (channel, ...args) => handlers[channel](null, ...args) };
     }
 
@@ -240,8 +225,7 @@ describe('online store with the demo shop', () => {
         m.stopScheduledSync?.();
     });
 
-    it('training is still told apart, and the real shop is not blocked', async () => {
-        expect(manager({ demoActive: false, training: true }).m.blockedReason()).toBe('TRAINING_ACTIVE');
+    it('the real shop is not blocked', async () => {
         const { m } = manager({ demoActive: false });
         expect(m.blockedReason()).toBe(null);
         m.stopScheduledSync?.();

@@ -17,13 +17,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         rules: () => ipcRenderer.invoke('security:getRules'),
     },
 
-    // Training mode: a copy of the shop's data in memory, thrown away at the end
-    training: {
-        status: () => ipcRenderer.invoke('training:status'),
-        start: (data) => ipcRenderer.invoke('training:start', data),
-        stop: () => ipcRenderer.invoke('training:stop'),
-        progress: () => ipcRenderer.invoke('training:progress'),
-    },
     // Support, licence, updates (Settings › About)
     support: {
         bundle: () => ipcRenderer.invoke('support:bundle'),
@@ -40,7 +33,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         create: (data) => ipcRenderer.invoke('reservations:create', data),
         cancel: (data) => ipcRenderer.invoke('reservations:cancel', data),
     },
-    // Training (7 days) and demo shop (3 months) from the install date
+    // Demo shop (3 months) from the install date
     trial: {
         status: () => ipcRenderer.invoke('trial:status'),
     },

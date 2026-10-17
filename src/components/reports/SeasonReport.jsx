@@ -110,7 +110,7 @@ function SellThroughChart({ rows, label }) {
                     return (
                         <li key={row.key} className="grid grid-cols-[minmax(7.5rem,10rem)_1fr_auto] items-center gap-3 text-sm"
                             title={`${label(row.key)} · ${t('season.chartSold', { sold: row.sold, total: row.bought })}`}>
-                            <span dir="auto" className="font-medium leading-tight">{label(row.key)}</span>
+                            <span dir="auto" className="font-medium leading-tight whitespace-nowrap">{label(row.key)}</span>
                             <span className="h-3 rounded-full overflow-hidden" style={{ background: viz.track }} aria-hidden="true">
                                 <span className="block h-full rounded-full" style={{ width: `${rate}%`, background: viz.series[0] }} />
                             </span>

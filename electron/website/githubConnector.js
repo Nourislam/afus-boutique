@@ -15,7 +15,7 @@
  * settings value (never the key).
  *
  * deps: { client (github.js), store (secureStore.js), saveAccount(meta),
- *         readAccount(), allowed() (false: demo / training, nothing kept),
+ *         readAccount(), allowed() (false: demo shop, nothing kept),
  *         openPage(url, userCode), onConnected(login), now, sleep }
  */
 const { canCreateRepos, canPublishPages, TOKEN_FORMAT } = require('./github');
@@ -95,7 +95,7 @@ function createGithubConnector({ client, store, saveAccount, readAccount, allowe
             failed(error.reason || 'unknown');
             return;
         }
-        // The demo shop or training opened meanwhile: the key is not kept
+        // The demo shop opened meanwhile: the key is not kept
         if (!allowed()) return;
         const granted = user.scopes || scopes || [];
         if (!canCreateRepos(granted)) { failed('scope'); return; }

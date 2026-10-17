@@ -86,10 +86,10 @@ describe('role checks on the main process channels', () => {
     it('every rule names a real channel, and every channel that writes has a rule', () => {
         const channels = registeredChannels();
         for (const channel of Object.keys(ipcGuard.RULES)) expect(channels, channel).toContain(channel);
-        // Writes left open on purpose: login, the trial modes and the
+        // Writes left open on purpose: login, the demo shop and the
         // window's own state (no shop data is changed by them)
         const open = new Set([
-            'auth:logout', 'auth:approve', 'db:employees:verifyPin', 'training:start', 'training:stop',
+            'auth:logout', 'auth:approve', 'db:employees:verifyPin',
             'demo:enter', 'demo:reset', 'demo:exit', 'app:setTheme', 'sync:set-online', 'sync:ack',
             'sync:batch-ack', 'sync:incoming', 'sync:incoming-batch', 'sync:trigger',
         ]);

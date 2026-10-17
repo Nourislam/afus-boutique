@@ -4,7 +4,6 @@ import { PinPad } from '../ui/NumPad';
 import { useAuthStore } from '../../stores/authStore';
 import { toast } from '../ui/Toast';
 import { TitleBar } from '../layout/TitleBar';
-import TrainingBanner from '../training/TrainingBanner';
 import DemoBanner from '../demo/DemoBanner';
 import { useDemoStore } from '../../stores/demoStore';
 import { useTrialStore } from '../../stores/trialStore';
@@ -125,7 +124,6 @@ export default function LoginScreen() {
             <div className="h-screen w-screen flex flex-col bg-dark-primary">
                 <TitleBar loggedIn={false} />
                 <DemoBanner />
-                <TrainingBanner compact />
                 <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6">
                     <div className="w-full max-w-3xl">
                         <button
@@ -186,7 +184,6 @@ export default function LoginScreen() {
         <div className="h-screen w-screen flex flex-col bg-dark-primary">
             <TitleBar loggedIn={false} />
             <DemoBanner />
-            <TrainingBanner compact />
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-center p-6 lg:p-8">
                 {/* The shop: its logo (or initials) and name */}
                 <div className="mb-8 lg:mb-10 text-center max-w-full">

@@ -560,21 +560,42 @@ function WebsiteDashboard({ site, setSite, preview, busy, run }) {
             {tab === 'settings' && <WebsiteSettings site={site} busy={busy} run={run} />}
 
             {tab === 'accounts' && (
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                    {/* Connect GitHub / Connect Cloudflare */}
-                    <section className="card space-y-3" data-testid="website-accounts">
-                        <h2 className="font-semibold">{t('website.accounts')}</h2>
-                        <p className="text-xs text-zinc-500">{t('website.accountsHint')}</p>
-                        <ul className="space-y-2">
-                            <GithubAccount site={site} setSite={setSite} busy={busy} run={run} />
-                            <CloudflareAccount site={site} setSite={setSite} busy={busy} run={run} />
-                        </ul>
-                    </section>
+                <div className="space-y-4" data-testid="website-accounts">
+                    {/* Where the shop is: the two accounts, then the website made, then online */}
+                    <AccountsProgress site={site} />
+                    {/* GitHub (keeps the pages) and Cloudflare (receives the orders): side by side, same height */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                        <GithubAccount site={site} setSite={setSite} busy={busy} run={run} />
+                        <CloudflareAccount site={site} setSite={setSite} busy={busy} run={run} />
+                    </div>
                     {/* Custom Domain (optional) */}
                     <CustomDomain site={site} setSite={setSite} busy={busy} run={run} />
                 </div>
             )}
         </div>
+    );
+}
+
+/** Three steps in one line: both accounts linked, the website made, the website online. */
+function AccountsProgress({ site }) {
+    const { t } = useT();
+    const linked = ['github', 'cloudflare'].every(p => site.accounts?.[p]?.status === 'connected');
+    const steps = [
+        ['accounts', linked],
+        ['created', !!site.created && !!site.site?.publishedAt],
+        ['online', !!site.site?.publishedAt && !site.site?.pending],
+    ];
+    return (
+        <ol className="card flex flex-wrap items-center gap-x-3 gap-y-2 !py-3" data-testid="website-accounts-progress">
+            {steps.map(([id, done], i) => (
+                <li key={id} className="flex items-center gap-2 text-sm">
+                    {i > 0 && <span className="w-6 h-px bg-dark-border" aria-hidden="true" />}
+                    {done ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Circle className="w-4 h-4 text-zinc-500" />}
+                    <span className={done ? 'text-zinc-100' : 'text-zinc-400'}>{t(`website.progress.${id}`)}</span>
+                </li>
+            ))}
+            <li className="text-xs text-zinc-500 ms-auto">{t('website.accountsHint')}</li>
+        </ol>
     );
 }
 
@@ -921,7 +942,7 @@ function GithubAccount({ site, setSite, busy, run }) {
     const minutes = flow ? Math.max(0, Math.ceil((Date.parse(flow.expiresAt) - now) / 60000)) : 0;
 
     return (
-        <li className="rounded-lg border border-dark-border p-3 space-y-3" data-testid="website-github" data-status={account.status} data-waiting={flow ? '1' : '0'}>
+        <div className="card h-full space-y-3" data-testid="website-github" data-status={account.status} data-waiting={flow ? '1' : '0'}>
             <div className="flex flex-wrap items-center gap-3">
                 <span className="w-9 h-9 rounded-lg bg-dark-tertiary flex items-center justify-center flex-none"><Github className="w-5 h-5" /></span>
                 <span className="flex-1 min-w-[8rem]">
@@ -976,7 +997,7 @@ function GithubAccount({ site, setSite, busy, run }) {
                     <p className="text-xs text-zinc-500 leading-relaxed">{t('website.github.permissions')}</p>
                 </div>
             )}
-        </li>
+        </div>
     );
 }
 
@@ -1030,7 +1051,7 @@ function CloudflareAccount({ site, setSite, busy, run }) {
     const badge = flow ? 'waiting' : account.status;
 
     return (
-        <li className="rounded-lg border border-dark-border p-3 space-y-3" data-testid="website-cloudflare" data-status={account.status} data-waiting={flow ? '1' : '0'}>
+        <div className="card h-full space-y-3" data-testid="website-cloudflare" data-status={account.status} data-waiting={flow ? '1' : '0'}>
             <div className="flex flex-wrap items-center gap-3">
                 <span className="w-9 h-9 rounded-lg bg-dark-tertiary flex items-center justify-center flex-none"><Cloud className="w-5 h-5" /></span>
                 <span className="flex-1 min-w-[8rem]">
@@ -1095,7 +1116,7 @@ function CloudflareAccount({ site, setSite, busy, run }) {
                     <p className="text-xs text-zinc-500 leading-relaxed">{t('website.cloudflare.permissions')}</p>
                 </div>
             )}
-        </li>
+        </div>
     );
 }
 

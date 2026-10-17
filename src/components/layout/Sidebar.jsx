@@ -3,20 +3,16 @@ import { createPortal } from 'react-dom';
 import {
     LayoutDashboard, ShoppingCart, Package, Boxes, UserCog, BarChart3, Settings, LogOut, Percent, QrCode,
     History, CreditCard, FileText, LibraryBig, Users, Truck,
-    GraduationCap, Globe, ShoppingBag,
+    Globe, ShoppingBag,
 } from 'lucide-react';
 import { useAuthStore, PERMISSIONS } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useState, useEffect } from 'react';
 import { useT } from '../../i18n';
-import { translateError } from '../../i18n/errors';
 import ShiftSummaryDialog from '../shifts/ShiftSummaryDialog';
 import { ShopLogo } from '../shop/ShopLogo';
-import { toast } from '../ui/Toast';
 import { SIMPLE_PATHS } from '../../lib/uiMode';
 import { offerTabs } from '../../lib/modules';
-import { useTrainingStore } from '../../stores/trainingStore';
-import { useTrialStore } from '../../stores/trialStore';
 
 // Grouped menu. Brands, categories, suppliers and customers live together in
 // "Catalogue"; promotions and packs together in "Offers".
@@ -106,24 +102,6 @@ export function Sidebar() {
     const uiMode = useSettingsStore(state => state.settings.uiMode);
     const simple = uiMode === 'simple';
     const tooltip = useTooltip(collapsed);
-    const trainingActive = useTrainingStore(state => state.active);
-    const startTraining = useTrainingStore(state => state.start);
-    // Training is offered for 7 days from the install date
-    const trainingTrial = useTrialStore(state => state.training);
-    const loadTrial = useTrialStore(state => state.load);
-    useEffect(() => { loadTrial(); }, [loadTrial]);
-    const [startingTraining, setStartingTraining] = useState(false);
-
-    // Training: a copy of the shop in memory (a cashier needs a manager's PIN)
-    const enterTraining = async () => {
-        setStartingTraining(true);
-        try {
-            await startTraining();
-        } catch (e) {
-            if (!e?.cancelled) toast.error(translateError(e));
-            setStartingTraining(false);
-        }
-    };
 
     useEffect(() => {
         if (!currentEmployee) return undefined;
@@ -225,14 +203,6 @@ export function Sidebar() {
             </nav>
 
             <div className="p-2 border-t border-dark-border space-y-0.5">
-                {!trainingActive && trainingTrial.available && (
-                    <button type="button" onClick={enterTraining} disabled={startingTraining} data-testid="nav-training"
-                        className={`sidebar-item w-full text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 ${collapsed ? 'justify-center !px-0' : ''}`}
-                        {...tooltip.props(`${t('training.startHint')} · ${t('trial.trainingLeft', { n: trainingTrial.daysLeft })}`)}>
-                        <GraduationCap className="w-[18px] h-[18px] flex-none" />
-                        <span className={collapsed ? 'sr-only' : 'line-clamp-2 min-w-0'}>{t('training.mode')}</span>
-                    </button>
-                )}
                 {hasPermission(SETTINGS_ITEM.permission) && navItem(SETTINGS_ITEM)}
                 {/* One button: with an open cash drawer it goes through counting and closing */}
                 <button onClick={handleLogout} data-testid="nav-logout" className={`sidebar-item w-full text-red-300 hover:text-red-200 hover:bg-red-500/10 ${collapsed ? 'justify-center !px-0' : ''}`}
@@ -249,10 +219,10 @@ export function Sidebar() {
                     shiftId={currentShiftId}
                     mode="logout"
                     onClose={() => setShowShiftSummary(false)}
-                    onLogout={({ keptOpen = false } = {}) => {
-                        // Closing the drawer always logs out (keptOpen: short break)
+                    onLogout={() => {
+                        // Closing the drawer logs out
                         setShowShiftSummary(false);
-                        if (!keptOpen) setCurrentShiftId(null);
+                        setCurrentShiftId(null);
                         logout();
                     }}
                 />

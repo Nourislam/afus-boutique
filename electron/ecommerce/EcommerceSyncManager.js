@@ -53,11 +53,10 @@ class EcommerceSyncManager {
     }
 
     /**
-     * Why the online store must not be used now: training (a copy of the
-     * stock) or the demo shop (not the shop's stock). null when it may.
+     * Why the online store must not be used now: the demo shop (not the
+     * shop's stock). null when it may.
      */
     blockedReason() {
-        if (this.deps.isTraining?.()) return 'TRAINING_ACTIVE';
         if (this.deps.isDemo?.()) return 'DEMO_ACTIVE';
         return null;
     }
@@ -71,10 +70,9 @@ class EcommerceSyncManager {
      * Start the manager. Must be called once the database is open (it reads
      * the saved connections). The window comes later through setWindow().
      */
-    init({ mainWindow = null, isEnabled, isTraining, isDemo } = {}) {
+    init({ mainWindow = null, isEnabled, isDemo } = {}) {
         this.mainWindow = mainWindow;
         if (isEnabled) this.deps = { ...this.deps, isEnabled };
-        if (isTraining) this.deps = { ...this.deps, isTraining };
         if (isDemo) this.deps = { ...this.deps, isDemo };
         this.ready = true;
         this.registerIpcHandlers();
@@ -161,7 +159,7 @@ class EcommerceSyncManager {
         if (this.ipcRegistered) return;
         this.ipcRegistered = true;
         const ipcMain = this.ipc();
-        // Nothing that reaches the online store or changes the link to it during training or in the demo shop
+        // Nothing that reaches the online store or changes the link to it in the demo shop
         const guarded = (fn) => async (...args) => {
             const reason = this.blockedReason();
             if (reason) return { success: false, message: `${reason}|{}`, error: `${reason}|{}` };
@@ -481,7 +479,7 @@ class EcommerceSyncManager {
      * Sync a specific connection
      */
     async syncConnection(connectionId) {
-        // Training (a copy of the stock) and the demo shop are never sent to the online store
+        // The demo shop is never sent to the online store
         if (this.blockedReason()) return { success: false, message: `${this.blockedReason()}|{}` };
         if (this.isSyncing) {
             return { success: false, message: 'Sync already in progress' };

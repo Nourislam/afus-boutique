@@ -16,7 +16,7 @@
  * deps: { api, getSetting(key), saveSetting(key, value), codedError(code, params),
  *         github: { client, store, openPage, onConnected } (optional),
  *         cloudflare: { client, store, openPage, onConnected, ports, callbackPage } (optional),
- *         blockedMode() -> 'demo' | 'training' | null,
+ *         blockedMode() -> 'demo' | null,
  *         currentEmployee() -> the employee logged in (who changes an order's status) }
  */
 const state = require('./websiteState');
@@ -90,7 +90,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
     }
 
     // The shop's GitHub account. Its state is saved in the website value;
-    // nothing is written while the demo shop or training is open (their
+    // nothing is written while the demo shop is open (its
     // database is not the shop's)
     const client = github.client || createGithubClient({ clientId: '' });
     const store = github.store || NO_STORE;
@@ -932,7 +932,7 @@ function createWebsiteService({ api, getSetting, saveSetting, codedError, github
             if (r.legacy && !legacy) { legacy = true; page--; continue; }
             waiting = r.waiting;
             if (!r.orders.length) break;
-            // Training or the demo shop opened meanwhile: never into that copy (nor acknowledged)
+            // The demo shop opened meanwhile: never into it (nor acknowledged)
             if (blockedMode()) { reason = 'save'; break; }
             let kept;
             try {

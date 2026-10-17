@@ -12,9 +12,9 @@ export default {
     'shift.started': ["Shift started", "Caisse ouverte", "تم فتح الصندوق"],
     'shift.startFailed': ["Failed to start shift", "Impossible d'ouvrir la caisse", "تعذّر فتح الصندوق"],
     'shift.openingCash': ["Opening Cash", "Fond de caisse", "رصيد بداية الصندوق"],
-    'shift.openingCashHint': ["Enter the starting cash amount for this shift.", "Saisissez le montant en caisse au début de la journée.", "أدخل المبلغ الموجود في الصندوق عند البداية."],
+    'shift.openingCashHint': ["The cash in the drawer now (the last count is already written).", "L'argent dans la caisse maintenant (le dernier comptage est déjà saisi).", "المبلغ الموجود في الصندوق الآن (آخر مبلغ عُدّ مكتوب مسبقاً)."],
     'shift.starting': ["Starting Shift...", "Ouverture…", "جارٍ الفتح…"],
-    'shift.start': ["Start Shift", "Ouvrir la caisse", "فتح الصندوق"],
+    'shift.start': ["Start", "Commencer", "ابدأ"],
     'shift.loadFailed': ["Could not load shift details", "Impossible de charger la caisse", "تعذّر تحميل تفاصيل الصندوق"],
     'shift.enterClosing': ["Please enter the closing cash amount", "Saisissez le montant en caisse à la clôture", "أدخل المبلغ الموجود عند الغلق"],
     'shift.closed': ["Shift closed successfully", "Caisse clôturée", "تم غلق الصندوق"],
@@ -34,5 +34,5 @@ export default {
     'shift.notesOptional': ["Notes (Optional)", "Notes (facultatif)", "ملاحظات (اختياري)"],
     'shift.notesPlaceholder': ["Any discrepancies or comments...", "Écart ou remarque…", "أي فرق أو ملاحظة…"],
     'shift.closing': ["Closing...", "Clôture…", "جارٍ الغلق…"],
-    'shift.closeAndLogout': ["Close Shift & Logout", "Clôturer et se déconnecter", "غلق الصندوق والخروج"],
+    'shift.closeAndLogout': ["Close the drawer and log out", "Fermer la caisse et sortir", "أغلق الصندوق واخرج"],
 };

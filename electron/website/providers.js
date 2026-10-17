@@ -6,7 +6,7 @@
  *               shop's own domain (cloudflareConnector.js)
  *
  * Each can always be linked with a key the shop makes itself on the
- * provider's own page (never in the demo shop or in training); the one-click
+ * provider's own page (never in the demo shop); the one-click
  * sign-in is offered too when the installer profile has the public id of the
  * AFUS app for it (profile.json › githubClientId / cloudflareClientId).
  */

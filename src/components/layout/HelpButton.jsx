@@ -61,7 +61,6 @@ export function HelpButton({ loggedIn = true }) {
                     <ul className="space-y-2 text-sm text-zinc-300 list-disc ps-5" data-testid="help-text">
                         {t(textKey).split('\n').map((line) => <li key={line}>{line}</li>)}
                     </ul>
-                    <p className="mt-4 text-xs text-zinc-500">{t('help.more')}</p>
                 </ModalBody>
                 <ModalFooter>
                     <Button onClick={() => setOpen(false)}>{t('common.close')}</Button>

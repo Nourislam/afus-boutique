@@ -39,7 +39,6 @@ export default {
     'pos.first.step1': ["Scan the label, or tap the article on the left", "Scannez l'étiquette, ou touchez l'article à gauche", "امسح الملصق، أو اضغط على السلعة"],
     'pos.first.step2': ["Press Pay and choose how the customer pays", "Appuyez sur Payer et choisissez le moyen de paiement", "اضغط دفع واختر طريقة الدفع"],
     'pos.first.step3': ["The ticket prints (or shows on screen)", "Le ticket s'imprime (ou s'affiche à l'écran)", "تُطبع التذكرة (أو تظهر على الشاشة)"],
-    'pos.first.practise': ["Try first in training", "Essayer d'abord en formation", "جرّب أولًا في التدريب"],
     'pos.cartEmptyHint': ["Add products to get started", "Scannez ou choisissez un article", "امسح أو اختر سلعة للبدء"],
     'pos.subtotal': ["Subtotal", "Sous-total", "المجموع الفرعي"],
     'pos.tax': ["Tax", "Taxe", "الرسم"],
