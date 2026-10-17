@@ -91,6 +91,9 @@ export default {
     'website.renamed': ["Address changed", "Adresse changée", "تم تغيير الرابط"],
 
     // Connect GitHub / Connect Cloudflare
+    'website.progress.accounts': ["Both accounts linked", "Les deux comptes liés", "الحسابان مربوطان"],
+    'website.progress.created': ["Website created", "Site créé", "إنشاء الموقع"],
+    'website.progress.online': ["Website online", "Site en ligne", "الموقع يعمل"],
     'website.accounts': ["Accounts", "Comptes", "الحسابات"],
     'website.accountsHint': ["Two free accounts keep and show your website. Link them once; the program does the rest.", "Deux comptes gratuits gardent et affichent votre site. Liez-les une fois ; le programme fait le reste.", "حسابان مجانيان يحفظان موقعك ويعرضانه. اربطهما مرة واحدة والبرنامج يتكفل بالباقي."],
     'website.account.github': ["GitHub", "GitHub", "GitHub"],

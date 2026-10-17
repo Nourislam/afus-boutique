@@ -3188,7 +3188,7 @@ ipcMain.handle('db:supplierPayments:create', (_, data) => runTransaction(() => {
     runInsert(`
       INSERT INTO supplier_payments (id, purchase_order_id, supplier_id, amount, payment_method, reference, notes, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [id, purchase_order_id, supplier_id, amount, payment_method, reference, notes, 'system']); // TODO: pass user id
+    `, [id, purchase_order_id, supplier_id, amount, payment_method, reference, notes, session.getEmployee()?.id || 'system']);
 
     // 2. Update Purchase Order (if linked)
     if (purchase_order_id) {
