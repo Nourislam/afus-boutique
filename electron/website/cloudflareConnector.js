@@ -118,7 +118,7 @@ function createCloudflareConnector({
     /** Keys received: checked, kept encrypted, then the account is shown as linked. */
     async function keep(tokens, current) {
         const keys = keysOf(tokens);
-        // Cancelled, or the demo shop / training opened meanwhile: nothing is kept
+        // Cancelled, or the demo shop opened meanwhile: nothing is kept
         const stop = () => current.cancelled || !allowed();
         if (stop()) { revokeQuietly(keys); return; }
         // Without a refresh key the link would end within the hour

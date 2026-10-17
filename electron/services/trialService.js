@@ -1,8 +1,8 @@
 /**
- * How long the training mode and the demo shop are offered, counted from the
- * day the program was installed: training 7 days, demo shop 3 months. After
- * that their buttons leave the screens, the main process refuses them, and
- * the demo shop's folder is removed (the shop's own data is never touched).
+ * How long the demo shop is offered, counted from the day the program was
+ * installed: 3 months. After that its button leaves the screens, the main
+ * process refuses it, and the demo shop's folder is removed (the shop's own
+ * data is never touched).
  *
  * Install date = the earliest of: the date kept in <data folder>/install.json
  * (written at the first start), the date kept in the shop's settings
@@ -14,7 +14,6 @@ const fs = require('fs');
 const path = require('path');
 
 const DAY = 24 * 60 * 60 * 1000;
-const TRAINING_DAYS = 7;
 const DEMO_MONTHS = 3;
 const FILE = 'install.json';
 
@@ -83,14 +82,12 @@ function refresh(dir, api, now = Date.now()) {
 
 /** What is still offered, for the screens and the checks. */
 function status({ installedAt, now }) {
-    const trainingEnds = installedAt + TRAINING_DAYS * DAY;
     const demoEnds = addMonths(installedAt, DEMO_MONTHS);
     const left = (end) => Math.max(0, Math.ceil((end - now) / DAY));
     return {
         installedAt: new Date(installedAt).toISOString(),
-        training: { available: now < trainingEnds, endsAt: new Date(trainingEnds).toISOString(), daysLeft: left(trainingEnds) },
         demo: { available: now < demoEnds, endsAt: new Date(demoEnds).toISOString(), daysLeft: left(demoEnds) },
     };
 }
 
-module.exports = { refresh, status, oldestData, TRAINING_DAYS, DEMO_MONTHS, FILE };
+module.exports = { refresh, status, oldestData, DEMO_MONTHS, FILE };

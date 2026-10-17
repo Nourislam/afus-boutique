@@ -6,7 +6,6 @@ import { create } from 'zustand';
 function afterSwitch(notice) {
     try {
         sessionStorage.removeItem('pos_auth');
-        sessionStorage.removeItem('training_exercise');
         sessionStorage.setItem('demo_notice', notice);
     } catch { /* storage unavailable */ }
     window.location.hash = '#/';

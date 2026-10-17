@@ -3,7 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog, protocol, shell, nativeTheme, Menu,
 const path = require('path');
 const fs = require('fs');
 const { BRAND, dataDirectory, databasePath } = require('./brand');
-const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener, startSandbox, stopSandbox, isSandbox, isDemo, getDbPath } = require('./database/init');
+const { initDatabase, runQuery, runInsert, runTransaction, getOne, addDatabaseChangeListener, isDemo, getDbPath } = require('./database/init');
 const dbApi = require('./database/api');
 const catalog = require('./services/catalogService');
 const dashboard = require('./services/dashboardService');
@@ -232,7 +232,7 @@ if (!gotTheLock) {
       return;
     }
 
-    // Install date, training / demo shop windows (an expired demo is only closed, its data kept)
+    // Install date, demo shop window (an expired demo is only closed, its data kept)
     refreshTrial();
     setInterval(refreshTrial, 60 * 60 * 1000);
     // Website info typed by an older version: copied once to Settings › Shop
@@ -247,9 +247,8 @@ if (!gotTheLock) {
 
     // Online store connections (optional module): started once the database is
     // open so the saved connections are loaded; the window is given by createWindow()
-    // Never synchronised with the online store while training (the stock seen is a copy)
     // Never with the demo shop either (its stock is not the shop's)
-    EcommerceSyncManager.init({ isEnabled: () => !isSandbox() && !isDemo() && (getSettingValue('features') || {}).ecommerce === true, isTraining: isSandbox, isDemo });
+    EcommerceSyncManager.init({ isEnabled: () => !isDemo() && (getSettingValue('features') || {}).ecommerce === true, isDemo });
 
 
   // Register app protocol for serving images
@@ -527,7 +526,7 @@ ipcMain.handle('backup:list', () => (isDemo()
 
 // Are the shop's data safe? (the reminder bar for the owner)
 ipcMain.handle('backup:status', () => {
-  if (isDemo() || isSandbox()) return { demo: isDemo(), training: isSandbox() };
+  if (isDemo()) return { demo: isDemo() };
   const backups = backupService.listBackups(backupFolder());
   return { lastBackupAt: backups.length ? backups[0].createdAt : null, external: readExternalStatus(), autoDaily: getBackupSettings().autoDaily };
 });
@@ -584,9 +583,7 @@ ipcMain.handle('backup:inspect', async (_, name) => {
 });
 
 ipcMain.handle('backup:restore', async (_, name) => {
-  // Training works on a copy: the shop's data cannot be replaced from it
   if (isDemo()) return demoBlocked();
-  if (isSandbox()) return { success: false, error: catalog.coded('TRAINING_ACTIVE', {}) };
   const dir = backupFolder();
   const dbPath = databasePath(app.getPath('userData'));
   try {
@@ -668,7 +665,7 @@ ipcMain.handle('backup:openFolder', async () => {
  */
 function runDailyBackup() {
   // The shop's settings are read from the shop's data only
-  if (isDemo() || isSandbox()) return;
+  if (isDemo()) return;
   try {
     const settings = getBackupSettings();
     if (!settings.autoDaily) return;
@@ -686,9 +683,7 @@ function runDailyBackup() {
 }
 
 ipcMain.handle('backup:reset', async () => {
-  // Training works on a copy: the shop's data cannot be replaced from it
   if (isDemo()) return demoBlocked();
-  if (isSandbox()) return { success: false, error: catalog.coded('TRAINING_ACTIVE', {}) };
   const dbPath = databasePath(app.getPath('userData'));
   try {
     if (fs.existsSync(dbPath)) {
@@ -750,7 +745,7 @@ ipcMain.handle('support:bundle', async () => {
     electron: process.versions.electron,
     dataPath: app.getPath('userData'),
     counts: {
-      demo: isDemo(), training: isSandbox(),
+      demo: isDemo(),
       products: count('products'), variants: count('product_variants'), sales: count('sales'), customers: count('customers'),
       employees: count('employees'), backups: backupService.listBackups(backupFolder()).length,
       databaseBytes: (() => { try { return fs.statSync(getDbPath()).size; } catch { return 'n/a'; } })(),
@@ -1172,25 +1167,20 @@ ipcMain.handle('auth:approve', (_, { employeeId, pin }) => {
 });
 ipcMain.handle('security:getRules', () => guard.readRules(dbApi));
 
-// Training mode (services/trainingService.js): a manager or the owner starts it,
-// or a cashier with a manager's PIN. Everything happens in a copy in memory.
-const trainingService = require('./services/trainingService');
-ipcMain.handle('training:status', () => ({ active: isSandbox() }));
-
 // ------------------------------------------------------------------
 // Demo shop (services/demoService.js): its own folder and database file.
-// Entering, starting again and leaving end the session (log in again) and a
-// training copy; the online store only ever sees the shop's own data.
+// Entering, starting again and leaving end the session (log in again); the
+// online store only ever sees the shop's own data.
 // ------------------------------------------------------------------
 const demoService = require('./services/demoService');
 const { demoStaff } = require('./services/demoData');
-// How long training (7 days) and the demo shop (3 months) are offered,
-// from the install date (services/trialService.js). Worked out from the
-// shop's own data only: never while the demo shop or a training copy is open.
+// How long the demo shop (3 months) is offered, from the install date
+// (services/trialService.js). Worked out from the shop's own data only:
+// never while the demo shop is open.
 const trialService = require('./services/trialService');
 let trialClock = null;
 function refreshTrial() {
-  if (isDemo() || isSandbox()) return;
+  if (isDemo()) return;
   try { trialClock = trialService.refresh(app.getPath('userData'), dbApi); } catch (error) { console.error('Trial dates:', error); }
 }
 function trialStatus() {
@@ -1230,7 +1220,7 @@ function afterShopSwitch() {
 }
 ipcMain.handle('demo:status', () => {
   const lang = (getSettingValue('store_config') || {}).defaultLanguage || 'ar';
-  return { active: isDemo(), training: isSandbox(), staff: isDemo() ? demoStaff(lang) : [] };
+  return { active: isDemo(), staff: isDemo() ? demoStaff(lang) : [] };
 });
 ipcMain.handle('demo:enter', async (_, { lang } = {}) => {
   if (!trialStatus().demo.available) throw catalog.codedError('TRIAL_DEMO_ENDED', {});
@@ -1250,25 +1240,6 @@ ipcMain.handle('demo:exit', async () => {
   afterShopSwitch();
   return { success: true, exited: result.exited };
 });
-ipcMain.handle('training:start', (_, { approval } = {}) => {
-  const actor = session.getEmployee();
-  if (!actor) throw catalog.codedError('LOGIN_REQUIRED', {});
-  if (!isSandbox() && !trialStatus().training.available) throw catalog.codedError('TRIAL_TRAINING_ENDED', {});
-  if (!session.isManager(actor) && !guard.approver(dbApi, approval)) throw catalog.codedError('TRAINING_NEEDS_MANAGER', {});
-  if (isSandbox()) return { active: true };
-  // Written in the shop's log before the copy is made
-  logSystemAction('training_start', `Training mode started by ${actor.name}`, null, actor.id);
-  startSandbox();
-  trainingService.seed(dbApi, { productName: shopT('training.product'), customerName: shopT('training.customer') });
-  EcommerceSyncManager.refreshSchedule();
-  return { active: true };
-});
-ipcMain.handle('training:stop', () => {
-  stopSandbox();
-  EcommerceSyncManager.refreshSchedule();
-  return { active: false };
-});
-ipcMain.handle('training:progress', () => trainingService.progress(dbApi));
 
 ipcMain.handle('db:employees:create', (_, employee) => {
   runInsert(`
@@ -1844,7 +1815,7 @@ const bringBack = () => {
 };
 const website = createWebsiteService({
   api: dbApi, getSetting: getSettingValue, saveSetting: saveSettingValue, codedError: catalog.codedError,
-  blockedMode: () => (isDemo() ? 'demo' : isSandbox() ? 'training' : null),
+  blockedMode: () => (isDemo() ? 'demo' : null),
   currentEmployee: () => session.getEmployee(),
   github: {
     get client() {
@@ -2597,8 +2568,6 @@ function getShopSettingsForPrint() {
   const { getImageBase64: imageAsBase64 } = require('./services/imageService');
   settings.shopLogoDataUri = settings.shopLogo ? imageAsBase64(settings.shopLogo) : null;
   settings.receiptPaperWidthMm = getPrinterSettings().receipt.paperWidthMm;
-  // Tickets and invoices printed in training say so in large letters
-  settings.training = isSandbox();
   settings.demo = isDemo();
   return settings;
 }

@@ -145,7 +145,7 @@ function createDomainManager(deps) {
 
     /** The shop's domain (had already, or just bought): saved, then connected step by step. */
     function set({ domain, source = 'own', provider = null } = {}) {
-        // Saving the name only (also in the demo shop / training: nothing goes online from there)
+        // Saving the name only (also in the demo shop: nothing goes online from there)
         const s = read();
         const clean = state.cleanDomain(domain);
         if (!clean) throw fail('WEBSITE_DOMAIN_INVALID');

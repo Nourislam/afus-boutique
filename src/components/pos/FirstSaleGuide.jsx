@@ -1,49 +1,28 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Rocket, GraduationCap, PackagePlus } from 'lucide-react';
+import { Rocket, PackagePlus } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { toast } from '../ui/Toast';
 import { useT } from '../../i18n';
-import { translateError } from '../../i18n/errors';
-import { useTrainingStore } from '../../stores/trainingStore';
-import { useTrialStore } from '../../stores/trialStore';
 
 /**
- * A shop that has never sold: how the first sale goes, in three short steps,
- * and the offer to try it first in training mode (nothing is kept there).
+ * A shop that has never sold: how the first sale goes, in three short steps.
  * Shown in the empty ticket of the sales screen until the first real sale.
  */
 export default function FirstSaleGuide() {
     const { t } = useT();
     const navigate = useNavigate();
-    const trainingActive = useTrainingStore(state => state.active);
-    const startTraining = useTrainingStore(state => state.start);
-    const trainingTrial = useTrialStore(state => state.training);
-    const loadTrial = useTrialStore(state => state.load);
     const [steps, setSteps] = useState(null);
-    const [starting, setStarting] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
         window.electronAPI.dashboard.firstSteps()
             .then(data => { if (!cancelled) setSteps(data); })
             .catch(() => { if (!cancelled) setSteps(null); });
-        loadTrial();
         return () => { cancelled = true; };
-    }, [loadTrial]);
+    }, []);
 
-    // Only before the first real sale (training has its own guide)
-    if (!steps || steps.sales > 0 || trainingActive) return null;
-
-    const practise = async () => {
-        setStarting(true);
-        try {
-            await startTraining('sale');
-        } catch (e) {
-            if (!e?.cancelled) toast.error(translateError(e));
-            setStarting(false);
-        }
-    };
+    // Only before the first real sale
+    if (!steps || steps.sales > 0) return null;
 
     return (
         <div className="mt-4 w-full rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 text-start text-sm text-zinc-300" data-testid="first-sale-guide">
@@ -53,18 +32,11 @@ export default function FirstSaleGuide() {
                 <li>{t('pos.first.step2')}</li>
                 <li>{t('pos.first.step3')}</li>
             </ol>
-            <div className="mt-3 flex flex-wrap gap-2">
-                {steps.products === 0 && (
+            {steps.products === 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
                     <Button size="sm" onClick={() => navigate('/products')}><PackagePlus className="w-4 h-4" /> {t('dash.first.product')}</Button>
-                )}
-                {/* Training: 7 days from the install date */}
-                {trainingTrial.available && (
-                    <Button size="sm" variant="secondary" onClick={practise} loading={starting} data-testid="first-sale-training">
-                        <GraduationCap className="w-4 h-4" /> {t('pos.first.practise')}
-                    </Button>
-                )}
-            </div>
-            {trainingTrial.available && <p className="mt-2 text-xs text-zinc-500">{t('training.startHint')}</p>}
+                </div>
+            )}
         </div>
     );
 }

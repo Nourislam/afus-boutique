@@ -7,9 +7,6 @@ const { databasePath } = require('../brand');
 
 let db = null;
 let SQL = null;
-// Training mode: while set, `db` is an in-memory copy and `realDb` the shop's
-// database, which nothing touches until the copy is thrown away.
-let realDb = null;
 const changeListeners = [];
 // Depth of the currently open transaction (0 = none). While a transaction is
 // open, writes are not flushed to disk and failures throw instead of being
@@ -41,11 +38,10 @@ function getDbPath() {
 
 /**
  * Switch the open shop ('real' or 'demo'). Only changes which file the next
- * initDatabase() opens; ends a training copy first.
+ * initDatabase() opens.
  */
 function setProfile(next) {
     if (next !== 'real' && next !== 'demo') throw new Error(`Unknown profile ${next}`);
-    if (realDb) stopSandbox();
     profile = next;
     if (profile === 'demo') fs.mkdirSync(getDataRoot(), { recursive: true });
 }
@@ -55,7 +51,6 @@ const isDemo = () => profile === 'demo';
 
 /** Close the open database without saving (used before the demo file is rebuilt). */
 function closeDatabase() {
-    if (realDb) stopSandbox();
     if (db) { try { db.close(); } catch { /* already closed */ } }
     db = null;
 }
@@ -74,8 +69,6 @@ function timestampSuffix() {
 }
 
 async function initDatabase() {
-    // Reloading from the file always ends a training copy first
-    if (realDb) stopSandbox();
     const dbPath = getDbPath();
     console.log('Database path:', dbPath);
 
@@ -646,8 +639,6 @@ function getTableColumns(tableName) {
 }
 
 function saveDatabase() {
-    // Training copy: nothing is ever written to the shop's file
-    if (realDb) return;
     if (db) {
         const data = db.export();
         const buffer = Buffer.from(data);
@@ -718,30 +709,6 @@ function getDatabase() {
     return db;
 }
 
-/**
- * Training mode: from now on every query works on a copy of the shop's data
- * kept in memory. The shop's database stays as it is and is never saved
- * while the copy is in use.
- */
-function startSandbox() {
-    if (realDb) return false;
-    if (!db || !SQL) throw new Error('Database not ready');
-    const copy = new SQL.Database(db.export());
-    realDb = db;
-    db = copy;
-    return true;
-}
-
-/** Leave training mode: the copy and everything done in it are thrown away. */
-function stopSandbox() {
-    if (!realDb) return false;
-    try { db.close(); } catch { /* already closed */ }
-    db = realDb;
-    realDb = null;
-    return true;
-}
-
-const isSandbox = () => realDb !== null;
 
 // Helper function to run queries and return results as array of objects
 function runQuery(sql, params = []) {
@@ -840,7 +807,7 @@ function getOne(sql, params = []) {
 }
 
 module.exports = {
-    initDatabase, getDatabase, saveDatabase, startSandbox, stopSandbox, isSandbox, runQuery, runInsert, runStatement, runTransaction,
+    initDatabase, getDatabase, saveDatabase, runQuery, runInsert, runStatement, runTransaction,
     getOne, getTableColumns, addDatabaseChangeListener, getDbPath, bindable,
     setProfile, getProfile, isDemo, getDataRoot, realDbPath, closeDatabase, DEMO_FOLDER, DEMO_FILE,
 };

@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { translateError } from '../../i18n/errors';
-import { Banknote, Receipt, AlertCircle, Clock, Shirt, Calculator, LogOut, CheckCircle2 } from 'lucide-react';
+import { Banknote, Receipt, AlertCircle, Clock, Shirt, Calculator, CheckCircle2 } from 'lucide-react';
 import { toast } from '../ui/Toast';
 import { Button } from '../ui/Button';
 import { useAuthStore } from '../../stores/authStore';
@@ -18,11 +17,12 @@ export const formatDuration = (minutes) => {
 };
 
 /**
- * Closing a cash drawer: what the employee sold, the cash that should be in
- * the drawer, and the cash actually counted. The count is typed before the
- * expected amount is shown, so the difference is honest.
+ * Closing a cash drawer, on one screen: what was sold, the cash that should
+ * be in the drawer, the cash counted (typed once) and the difference at once;
+ * one button closes it. Nothing is printed (the Z report stays in Employees ›
+ * history, printed on demand).
  *
- * mode 'logout': opened when leaving; can also leave with the drawer open.
+ * mode 'logout': leaving closes the drawer and logs out.
  * mode 'close': closing someone's drawer (handover) without logging out.
  */
 export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 'logout', ownerName }) {
@@ -31,13 +31,10 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
     const [closingCash, setClosingCash] = useState('');
     const [counts, setCounts] = useState({});
     const [showCounter, setShowCounter] = useState(false);
-    const [revealed, setRevealed] = useState(false);
     const [notes, setNotes] = useState('');
     const [submitting, setSubmitting] = useState(false);
     // Escape = cancel (not while the drawer is being closed)
     useEscape(() => { if (!submitting) onClose?.(); });
-    // Closing report (Z) printed on the ticket printer once the drawer is closed
-    const [printZ, setPrintZ] = useState(true);
     const currentEmployee = useAuthStore(state => state.currentEmployee);
     const settings = useSettingsStore(state => state.settings);
 
@@ -58,7 +55,6 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
 
     const handleCloseShift = async () => {
         if (closingCash === '' || Number(closingCash) < 0) return toast.error(t('shift.enterClosing'));
-        if (!revealed) { setRevealed(true); return undefined; }
         setSubmitting(true);
         try {
             const byOther = currentEmployee && stats.employee_id && currentEmployee.id !== stats.employee_id;
@@ -71,9 +67,6 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                 cashCount: showCounter ? counts : null,
             });
             toast.success(t('shift.closed'));
-            if (printZ) {
-                try { await window.electronAPI.shifts.printZ(shiftId); } catch (error) { toast.error(t('z.printFailed', { error: translateError(error) })); }
-            }
             window.dispatchEvent(new Event('pos:shift-changed'));
             onLogout();
         } catch {
@@ -153,10 +146,9 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                             <div className="h-px bg-dark-border" />
                             <div className="flex justify-between text-base font-bold">
                                 <span>{t('shift.expectedCash')}</span>
-                                <span className="tabular">{revealed ? formatMoney(stats.expected_cash) : '••••'}</span>
+                                <span className="tabular" data-testid="shift-expected">{formatMoney(stats.expected_cash)}</span>
                             </div>
                         </div>
-                        {!revealed && <p className="form-hint">{t('shift.blindHint')}</p>}
                     </div>
 
                     {/* Counting */}
@@ -195,7 +187,7 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                                     ))}
                                 </div>
                             )}
-                            {revealed && difference !== null && (
+                            {difference !== null && (
                                 <div className={`mt-3 flex items-center gap-2 text-sm font-medium ${Math.abs(difference) < 0.01 ? 'text-emerald-400' : difference > 0 ? 'text-amber-300' : 'text-rose-400'}`}>
                                     {Math.abs(difference) < 0.01 ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
                                     {Math.abs(difference) < 0.01
@@ -210,24 +202,11 @@ export default function ShiftSummaryDialog({ shiftId, onClose, onLogout, mode = 
                             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="input h-20 resize-none py-2" placeholder={t('shift.notesPlaceholder')} />
                         </div>
 
-                        <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer select-none">
-                            <input type="checkbox" checked={printZ} onChange={(e) => setPrintZ(e.target.checked)} className="w-4 h-4" data-testid="shift-print-z" />
-                            {t('z.printOnClose')}
-                        </label>
-
                         <div className="flex flex-col gap-2">
                             <Button onClick={handleCloseShift} loading={submitting} disabled={closingCash === ''} className="w-full" data-testid="shift-close">
-                                {!revealed ? t('shift.checkCount') : mode === 'logout' ? t('shift.closeAndLogout') : t('shift.closeDrawer')}
+                                {mode === 'logout' ? t('shift.closeAndLogout') : t('shift.closeDrawer')}
                             </Button>
-                            <div className="flex gap-2">
-                                <Button variant="secondary" className="flex-1" onClick={onClose} disabled={submitting}>{t('common.cancel')}</Button>
-                                {/* Leave without closing (lunch break…): the drawer stays open in this employee's name */}
-                                {mode === 'logout' && (
-                                    <Button variant="ghost" className="flex-1" onClick={() => onLogout({ keptOpen: true })} disabled={submitting} title={t('shift.keepOpenHint')}>
-                                        <LogOut className="w-4 h-4 flip-rtl" /> {t('shift.keepOpen')}
-                                    </Button>
-                                )}
-                            </div>
+                            <Button variant="secondary" className="w-full" onClick={onClose} disabled={submitting}>{t('common.cancel')}</Button>
                         </div>
                     </div>
                 </div>
