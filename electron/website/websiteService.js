@@ -50,7 +50,9 @@ const fs = require('fs');
 const path = require('path');
 
 // The shop's website API and the tables of its database, uploaded to its own Cloudflare account
-const WORKER_SOURCE = () => fs.readFileSync(path.join(__dirname, 'worker', 'worker.mjs'), 'utf8');
+// The Worker with the communes of each wilaya written in (it checks the order's commune)
+const WORKER_SOURCE = () => fs.readFileSync(path.join(__dirname, 'worker', 'worker.mjs'), 'utf8')
+    .replace('/*@COMMUNES@*/{}', () => fs.readFileSync(path.join(__dirname, '..', 'shared', 'communes.json'), 'utf8'));
 const SCHEMA_SQL = () => fs.readFileSync(path.join(__dirname, 'worker', 'schema.sql'), 'utf8');
 
 // Without a GitHub setup (tests of the website alone): nothing can be linked

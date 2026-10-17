@@ -101,6 +101,8 @@ const TEXTS = {
     yourOrder: ["طلبك", "Votre commande", "Your order"],
     commune: ["البلدية", "Commune", "Town"],
     chooseWilaya: ["اختر الولاية", "Choisir la wilaya", "Choose the province"],
+    chooseCommune: ["اختر البلدية", "Choisir la commune", "Choose the town"],
+    chooseWilayaFirst: ["اختر الولاية أولاً", "Choisissez d'abord la wilaya", "Choose the province first"],
     delivery: ["طريقة الاستلام", "Réception", "Delivery"],
     deliveryHome: ["توصيل إلى المنزل", "Livraison à domicile", "Home delivery"],
     confirmOrder: ["تأكيد الطلب", "Confirmer la commande", "Confirm the order"],

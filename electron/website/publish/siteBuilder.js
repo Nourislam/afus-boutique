@@ -22,6 +22,7 @@ const { money, placeholder } = require('../storefront/html');
 const { readPhoto } = require('../storefront/photos');
 
 const STORE_SCRIPT = path.join(__dirname, '..', 'storefront', 'assets', 'store.js');
+const COMMUNES = path.join(__dirname, '..', '..', 'shared', 'communes.json');
 const TRACK_SCRIPT = path.join(__dirname, '..', 'storefront', 'assets', 'track.js');
 
 const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(jpe?g|png|webp|gif)$/i;
@@ -98,6 +99,8 @@ function buildSite({ snapshot, theme, orderUrl = null, readImage = () => null, l
     // The website's own style sheet and script (no inline script: Content-Security-Policy)
     files.push({ path: STYLE, content: css(theme) });
     files.push({ path: SCRIPT, content: fs.readFileSync(STORE_SCRIPT, 'utf8') });
+    // The communes of each wilaya, for the order forms' list (loaded by the script)
+    files.push({ path: 'assets/communes.json', content: fs.readFileSync(COMMUNES, 'utf8') });
     for (const f of fontFiles()) files.push({ path: f.path, content: f.data });
     // The ads / visit tools, only when the shop turned one on
     if (Object.values(snap.shop.tracking || {}).some(Boolean)) files.push({ path: TRACK, content: fs.readFileSync(TRACK_SCRIPT, 'utf8') });

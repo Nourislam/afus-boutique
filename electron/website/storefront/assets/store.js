@@ -61,6 +61,63 @@
             .then(function (data) { catalog = data; return data; });
     }
 
+    /* The communes of each wilaya (assets/communes.json): the commune field becomes a list */
+    var communes = null;
+    function loadCommunes() {
+        if (!communes) {
+            communes = fetch(base + 'assets/communes.json', { credentials: 'same-origin' })
+                .then(function (r) { if (!r.ok) throw new Error('communes'); return r.json(); })
+                .catch(function () { return null; });
+        }
+        return communes;
+    }
+    /**
+     * For each wilaya + commune pair of the form: once the list is there, the
+     * typed field is swapped for a list of the chosen wilaya's communes (in the
+     * page's language); without the list the typed field stays.
+     */
+    function communeLists(form, texts) {
+        var ar = document.documentElement.lang === 'ar';
+        [['wilaya', 'commune'], ['office_wilaya', 'office_commune']].forEach(function (pair) {
+            var w = form.elements[pair[0]];
+            var input = form.elements[pair[1]];
+            if (!w || !input || input.tagName !== 'INPUT') return;
+            loadCommunes().then(function (data) {
+                if (!data) return;
+                var select = document.createElement('select');
+                select.required = true;
+                select.disabled = input.disabled;
+                select.setAttribute('data-commune-list', '');
+                function fill() {
+                    var list = data[String(parseInt(w.value, 10) || '')] || [];
+                    var keep = select.value;
+                    select.innerHTML = '';
+                    var first = document.createElement('option');
+                    first.value = '';
+                    first.textContent = texts[list.length ? 'chooseCommune' : 'chooseWilayaFirst'] || '';
+                    select.appendChild(first);
+                    list.forEach(function (c) {
+                        var o = document.createElement('option');
+                        o.value = ar ? c[1] : c[0];
+                        o.textContent = ar ? c[1] : c[0];
+                        select.appendChild(o);
+                    });
+                    if (keep && list.some(function (c) { return (ar ? c[1] : c[0]) === keep; })) select.value = keep;
+                }
+                fill();
+                // The typed text (when there was one) is kept if it is in the list
+                if (input.value) select.value = input.value;
+                input.removeAttribute('name');
+                input.hidden = true;
+                select.name = pair[1];
+                input.parentNode.insertBefore(select, input.nextSibling);
+                w.addEventListener('change', fill);
+                // The block of a delivery not chosen turns its fields off: the list follows
+                new MutationObserver(function () { select.disabled = input.disabled; }).observe(input, { attributes: true, attributeFilter: ['disabled'] });
+            });
+        });
+    }
+
     /* Money as the pages write it ("1 234 567 د.ج") */
     function money(amount, fmt) {
         var value = Math.round((Number(amount) || 0) * 100) / 100;
@@ -568,11 +625,16 @@
         form.addEventListener('change', function (e) {
             if (e.target.name === 'delivery') showDelivery();
             // The office is usually in the customer's wilaya
-            if (e.target.name === 'wilaya' && form.elements.office_wilaya && !form.elements.office_wilaya.value) form.elements.office_wilaya.value = e.target.value;
+            if (e.target.name === 'wilaya' && form.elements.office_wilaya && !form.elements.office_wilaya.value) {
+                form.elements.office_wilaya.value = e.target.value;
+                // Its commune list follows
+                form.elements.office_wilaya.dispatchEvent(new Event('change'));
+            }
             if (tried) recheck(); else if (e.target.name) check(e.target.name);
         });
         form.addEventListener('input', function (e) { if (tried && e.target.name) { check(e.target.name); recheck(); } });
         showDelivery();
+        communeLists(form, texts);
         /** On sending: the first wrong field (and the message under the button), or null. */
         function verify() {
             tried = true;

@@ -8,6 +8,7 @@ import { toast } from '../ui/Toast';
 import { ShopLogo } from '../shop/ShopLogo';
 import { useT } from '../../i18n';
 import { WILAYAS } from '../../data/wilayas';
+import COMMUNES from '../../../electron/shared/communes.json';
 import { resizeImageDataUrl } from '../../lib/imageResize';
 
 // A link the website accepts: https, to the expected site (the others are left out of the website)
@@ -55,6 +56,13 @@ export function ShopInfoForm({ value, onChange }) {
         label: `${w.code} - ${lang === 'ar' ? w.ar : w.fr}`,
         hint: lang === 'ar' ? w.fr : w.ar,
     })), [lang]);
+
+    // The communes of the chosen wilaya ("16 - الجزائر" -> 16), the other language's name as a hint
+    const wilayaNumber = parseInt(value.businessWilaya, 10) || 0;
+    const communes = useMemo(() => (COMMUNES[String(wilayaNumber)] || []).map(([latin, arabic]) => {
+        const name = lang === 'ar' ? arabic : latin;
+        return { value: name, label: name, hint: lang === 'ar' ? latin : arabic };
+    }), [wilayaNumber, lang]);
 
     useEffect(() => {
         let cancelled = false;
@@ -162,16 +170,29 @@ export function ShopInfoForm({ value, onChange }) {
                         <Combobox
                             label={t('shop.wilaya')}
                             value={value.businessWilaya || ''}
-                            onChange={(v) => set('businessWilaya', v)}
+                            onChange={(v) => onChange({ ...value, businessWilaya: v, ...(parseInt(v, 10) !== wilayaNumber ? { businessCity: '' } : {}) })}
                             options={wilayas}
                             placeholder={t('shop.wilayaPlaceholder')}
                             emptyText={t('shop.wilayaNone')}
                         />
-                        <Input
-                            label={t('shop.city')}
-                            value={value.businessCity || ''}
-                            onChange={(e) => set('businessCity', e.target.value)}
-                        />
+                        {communes.length ? (
+                            <Combobox
+                                label={t('shop.commune')}
+                                value={value.businessCity || ''}
+                                onChange={(v) => set('businessCity', v)}
+                                options={value.businessCity && !communes.some(c => c.value === value.businessCity)
+                                    ? [{ value: value.businessCity, label: value.businessCity }, ...communes] : communes}
+                                placeholder={t('shop.communePlaceholder')}
+                                emptyText={t('shop.wilayaNone')}
+                            />
+                        ) : (
+                            <Input
+                                label={t('shop.commune')}
+                                value={value.businessCity || ''}
+                                onChange={(e) => set('businessCity', e.target.value)}
+                                placeholder={t('shop.communeFirst')}
+                            />
+                        )}
                         <Input
                             label={t('shop.address')}
                             value={value.businessAddress || ''}

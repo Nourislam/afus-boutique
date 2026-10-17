@@ -91,7 +91,7 @@ describe('website public data: SQLite internal -> website public', () => {
             for (const k of Object.keys(row)) expect(k, k).not.toMatch(/cost|wholesale|supplier|sku|barcode|qr|stock|min_/);
         }
         // Settings: only the shop's own description keys
-        expect(Object.keys(internal.store).sort()).toEqual(['businessAddress', 'businessCity', 'businessEmail', 'businessName', 'businessPhone', 'businessWilaya', 'currency', 'defaultLanguage', 'shopDescription', 'shopLogo']);
+        expect(Object.keys(internal.store).sort()).toEqual(['businessAddress', 'businessCity', 'businessEmail', 'businessName', 'businessPhone', 'businessWilaya', 'currency', 'defaultLanguage', 'shopDescription', 'shopFacebook', 'shopHours', 'shopInstagram', 'shopLogo', 'shopMapUrl', 'shopTiktok']);
         // The coupon promotion is not even read
         expect(internal.promotions.map(p => p.id).sort()).toEqual(['expired', 'live']);
     });

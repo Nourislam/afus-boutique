@@ -55,7 +55,7 @@ function trackerHosts(track) {
 
 /** The few words the website's script writes (cart messages). */
 const SCRIPT_TEXTS = ['added', 'chooseFirst', 'notThisOne', 'viewCart', 'remove', 'cartEmpty', 'maxQty',
-    'errName', 'errPhone', 'errWilaya', 'errCommune', 'errAddress', 'errCourier', 'errOffice', 'errForm',
+    'errName', 'errPhone', 'errWilaya', 'errCommune', 'chooseCommune', 'chooseWilayaFirst', 'errAddress', 'errCourier', 'errOffice', 'errForm',
     'errFullName', 'fullName', 'yourPhone', 'wilaya', 'commune', 'addressField', 'waColor', 'waSize', 'waQty', 'waDelivery', 'deliveryHome', 'deliveryOffice', 'orderText',
     'deliveryChoose', 'deliveryByPhone', 'notDelivered', 'deliveryFree', 'couponOk', 'couponBad', 'couponDown'];
 const scriptTexts = (t) => Object.fromEntries(SCRIPT_TEXTS.map(k => [k, t(k)]));

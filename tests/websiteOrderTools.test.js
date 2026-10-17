@@ -104,12 +104,19 @@ describe('website order tools, end to end', () => {
         // The page claims a delivery price: ignored
         expect((await jsonPost(checkout({ order_key: 'k-fee-alger-000000001', delivery_fee: 0 }))).status).toBe(201);
         const office = { delivery: 'office', address: '', courier_company: 'Yalidine', office_wilaya: '31 - Oran', office_commune: 'Bir El Djir', courier_office: 'Agence' };
-        expect((await jsonPost(checkout({ order_key: 'k-fee-oran-0000000001', wilaya: '31 - Oran', ...office }))).status).toBe(201);
+        expect((await jsonPost(checkout({ order_key: 'k-fee-oran-0000000001', wilaya: '31 - Oran', commune: 'Bir El Djir', ...office }))).status).toBe(201);
         const big = JSON.stringify([{ product_id: 'jean', product_name: 'Jean', size: '40', color: 'Noir', quantity: 4, unit_price: 3000 }]);
-        expect((await jsonPost(checkout({ order_key: 'k-fee-free-0000000001', wilaya: '31 - Oran', items: big }))).status).toBe(201);
+        expect((await jsonPost(checkout({ order_key: 'k-fee-free-0000000001', wilaya: '31 - Oran', commune: 'Es Senia', items: big }))).status).toBe(201);
         // Illizi: not delivered, the order is refused and nothing waits
-        const off = await jsonPost(checkout({ order_key: 'k-fee-off-00000000001', wilaya: '33 - Illizi' }));
+        const off = await jsonPost(checkout({ order_key: 'k-fee-off-00000000001', wilaya: '33 - Illizi', commune: 'Illizi' }));
         expect(off).toMatchObject({ status: 400, body: { error: 'not_delivered' } });
+        // The commune belongs to the wilaya: one of another wilaya is refused (Arabic or Latin
+        // name, any accents); a name the list does not know (typed without it) is kept
+        const wrong = await jsonPost(checkout({ order_key: 'k-commune-wrong-00001', wilaya: '31 - Oran', commune: 'Kouba' }));
+        expect(wrong).toMatchObject({ status: 400, body: { error: 'place' } });
+        expect((await jsonPost(checkout({ order_key: 'k-commune-wrong-00002', wilaya: '31 - Oran', commune: 'القبة' }))).status).toBe(400);
+        expect((await jsonPost(checkout({ order_key: 'k-commune-wrong-00003', wilaya: '31 - Oran', delivery: 'office', address: '', courier_company: 'Yalidine', office_wilaya: '31 - Oran', office_commune: 'Kouba', courier_office: 'Agence' }))).status).toBe(400);
+        clearHits();
         expect(d1().exec('SELECT order_key, delivery_fee FROM orders ORDER BY order_key')[0].values).toEqual([
             ['k-fee-alger-000000001', 400], ['k-fee-free-0000000001', 0], ['k-fee-oran-0000000001', 400],
         ]);
